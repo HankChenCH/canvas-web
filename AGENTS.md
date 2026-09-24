@@ -27,8 +27,10 @@ pnpm --filter playground dev
 ## 红线（双闸，CI 锁死）
 
 1. **依赖方向**：`editor-vue → editor → { canvas-next, browser-renderer }`、`browser-renderer → canvas-next`，
-   仅此四条正向边。反向/绕行（如 editor-vue 直接 import canvas-next、任何包依赖 playground、内核 import Vue）都被
-   dependency-cruiser 拦截。改依赖方向必须同时改 `.dependency-cruiser.cjs` 与对应包 `package.json`。
+   仅此四条正向边。反向/绕行（如 editor-vue 直接 import canvas-next、任何包依赖根级 `playground/`、内核 import Vue）都被
+   dependency-cruiser 拦截；editor 的运行时 npm 依赖仅 immer（`editor-immer-only-npm-deps` 机审）。
+   改依赖方向必须同时改 `.dependency-cruiser.cjs` 与对应包 `package.json`。
+   注意 playground 位于仓库根 `playground/`（不在 packages/ 下），写规则时 to.path 用 `^playground/`。
 2. **无 DOM lib**：`canvas-next`、`editor`（以及暂未用到 DOM 的 `browser-renderer`）tsconfig 不含 `"DOM"` lib——
    `document`/`window` 等宿主类型直接编译报错。浏览器包只有 `editor-vue` 与 `playground`。
    `browser-renderer` 将来需要 Canvas2D 类型时在用到它的文件里局部 `/// <reference lib="dom" />`，不要整体放开 lib。
