@@ -1,0 +1,24 @@
+{
+    "name": "@hankchen/canvas-next-browser-renderer",
+    "version": "0.1.0",
+    "private": true,
+    "license": "MIT",
+    "description": "Canvas2D 五原语渲染后端（矩形/图片 cover/文本基线消化、字体与 QR 物化）",
+    "type": "module",
+    "exports": {
+        ".": {
+            "types": "./src/index.ts",
+            "default": "./src/index.ts"
+        }
+    },
+    "scripts": {
+        "test": "vitest run",
+        "typecheck": "tsc --noEmit -p tsconfig.json"
+    },
+    "dependencies": {
+        "@hankchen/canvas-next": "workspace:*"
+    },
+    "devDependencies": {
+        "vitest": "^5.0.1"
+    }
+}

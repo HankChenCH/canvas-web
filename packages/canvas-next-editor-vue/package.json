@@ -1,0 +1,29 @@
+{
+    "name": "@hankchen/canvas-next-editor-vue",
+    "version": "0.1.0",
+    "private": true,
+    "license": "MIT",
+    "description": "Vue 3 薄绑定：响应式桥、composables、画布表面组件、textarea 文本编辑 overlay、schema 驱动属性面板注册表",
+    "type": "module",
+    "exports": {
+        ".": {
+            "types": "./src/index.ts",
+            "default": "./src/index.ts"
+        }
+    },
+    "scripts": {
+        "test": "vitest run",
+        "typecheck": "vue-tsc --noEmit -p tsconfig.json"
+    },
+    "dependencies": {
+        "@hankchen/canvas-next-editor": "workspace:*"
+    },
+    "peerDependencies": {
+        "vue": "^3.5.0"
+    },
+    "devDependencies": {
+        "vue": "^3.5.43",
+        "vue-tsc": "^3.3.11",
+        "vitest": "^5.0.1"
+    }
+}

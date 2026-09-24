@@ -1,0 +1,22 @@
+{
+    "compilerOptions": {
+        "target": "ES2022",
+        "lib": ["ES2022"],
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "moduleDetection": "force",
+        // 红线：结构包（canvas-next、editor）不加 DOM lib——document/window 等
+        // 宿主类型直接编译报错（浏览器基线桌面 evergreen，ES2022 全量可用）
+        "strict": true,
+        "noUncheckedIndexedAccess": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "noFallthroughCasesInSwitch": true,
+        "verbatimModuleSyntax": true,
+        "isolatedModules": true,
+        // 源码直出：发布推迟到宿主接入前，先行 workspace 引用，只做类型检查不产 dist
+        "noEmit": true,
+        "skipLibCheck": true,
+        "types": []
+    }
+}

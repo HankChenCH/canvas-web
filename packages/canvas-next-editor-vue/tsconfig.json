@@ -1,0 +1,8 @@
+{
+    "extends": "../../tsconfig.base.json",
+    "compilerOptions": {
+        // UI 绑定层：允许 DOM 类型（内核与文档模型不允许）
+        "lib": ["ES2022", "DOM"]
+    },
+    "include": ["src/**/*.ts", "src/**/*.vue", "tests/**/*.ts"]
+}

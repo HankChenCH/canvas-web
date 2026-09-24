@@ -1,0 +1,20 @@
+{
+    "name": "canvas-web",
+    "version": "0.1.0",
+    "private": true,
+    "description": "画布编辑器与前端渲染：graph 契约的 Web 端实现（pnpm workspace）",
+    "packageManager": "pnpm@10.34.5",
+    "engines": {
+        "node": ">=22.12"
+    },
+    "scripts": {
+        "test": "pnpm -r test",
+        "typecheck": "pnpm -r typecheck",
+        "depcruise": "depcruise packages playground --config .dependency-cruiser.cjs",
+        "check:guardrails": "bash scripts/check-guardrails.sh"
+    },
+    "devDependencies": {
+        "dependency-cruiser": "^18.4.0",
+        "typescript": "~5.9.3"
+    }
+}
