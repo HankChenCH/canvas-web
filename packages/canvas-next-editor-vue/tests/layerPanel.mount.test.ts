@@ -50,22 +50,31 @@ const textLayer = (priority: number, text: string): Layer => ({
     autowrap: false,
 })
 
-const tableLayer = (rows: readonly Layer[]): Layer => ({
+const tableLayer = (rows: readonly Layer[], width = 600): Layer => ({
     type: 'TableLayer',
     priority: 5,
-    shape: baseShape(600, 200),
+    shape: baseShape(width, 200),
     align: baseAlign,
     position: basePosition,
     rows: rows as TableRowLayer[],
 })
 
-const rowLayer = (priority: number): Layer => ({
+const rowLayer = (priority: number, cells: readonly Layer[] = []): Layer => ({
     type: 'TableRowLayer',
     priority,
     shape: baseShape(600, 100),
     align: baseAlign,
     position: basePosition,
-    cells: [],
+    cells: cells as TableRowLayer['cells'],
+})
+
+const cellLayer = (width: number): Layer => ({
+    type: 'TableCellLayer',
+    priority: 0,
+    shape: baseShape(width, 60),
+    align: baseAlign,
+    position: basePosition,
+    content: null,
 })
 
 const rowLabels = (wrapper: ReturnType<typeof mount>): string[] =>
@@ -170,6 +179,84 @@ describe('LayerPanel：渲染与联动', () => {
 
         const table = editor.store.doc!.layers[0]!
         expect(table.type === 'TableLayer' && table.rows.map((row) => row.priority)).toEqual([20, 30])
+        wrapper.unmount()
+    })
+})
+
+describe('LayerPanel：表格容器结构编辑（工单 12）', () => {
+    it('表节点「加行」按钮走 addTableRow：新行带格与文本内容、行宽=表宽、自动选中', async () => {
+        const editor = makeEditor([tableLayer([rowLayer(30)])])
+        const wrapper = mount(LayerPanel, { props: { editor } })
+
+        await wrapper.find('[data-key="layers.0"]').find('[data-add-row]').trigger('click')
+        await wrapper.vm.$nextTick()
+
+        const table = editor.store.doc!.layers[0]!
+        expect(table.type === 'TableLayer' && table.rows).toHaveLength(2)
+        const newRow = table.type === 'TableLayer' ? table.rows[1]! : null
+        expect(newRow?.shape.width).toBe(600)
+        expect(newRow?.cells).toHaveLength(1)
+        expect(newRow?.cells[0]!.content?.type).toBe('TextLayer')
+        expect(editor.store.ui.selection).toEqual(['layers', 0, 'rows', 1])
+        wrapper.unmount()
+    })
+
+    it('行节点「加格」按钮走 addTableCell：新格带文本内容、自动选中', async () => {
+        const editor = makeEditor([tableLayer([rowLayer(30)])])
+        const wrapper = mount(LayerPanel, { props: { editor } })
+
+        await wrapper.find('[data-key="layers.0.rows.0"]').find('[data-add-cell]').trigger('click')
+        await wrapper.vm.$nextTick()
+
+        const table = editor.store.doc!.layers[0]!
+        const row = table.type === 'TableLayer' ? table.rows[0]! : null
+        expect(row?.cells).toHaveLength(1)
+        expect(row?.cells[0]!.content?.type).toBe('TextLayer')
+        expect(row?.cells[0]!.shape.width).toBe(600) // 首格宽 = 行宽
+        expect(editor.store.ui.selection).toEqual(['layers', 0, 'rows', 0, 'cells', 0])
+        wrapper.unmount()
+    })
+
+    it('格拖放：同行重排直接改 cells 数组序（格0 恒在最左）', async () => {
+        const editor = makeEditor([
+            tableLayer([rowLayer(30, [cellLayer(200), cellLayer(300)])]),
+        ])
+        const wrapper = mount(LayerPanel, { props: { editor } })
+
+        // 格 1（宽 200）拖到格 2（宽 300）下半 → cells 序 [300, 200]
+        mockRect(wrapper.find('[data-key="layers.0.rows.0.cells.1"]'))
+        await wrapper.find('[data-key="layers.0.rows.0.cells.0"]').trigger('dragstart')
+        await wrapper.find('[data-key="layers.0.rows.0.cells.1"]').trigger('dragover', { clientY: 20 })
+        await wrapper.find('[data-key="layers.0.rows.0.cells.1"]').trigger('drop')
+        await wrapper.vm.$nextTick()
+
+        const table = editor.store.doc!.layers[0]!
+        const row = table.type === 'TableLayer' ? table.rows[0]! : null
+        expect(row?.cells.map((cell) => cell.shape.width)).toEqual([300, 200])
+        wrapper.unmount()
+    })
+
+    it('行跨表拖放：行宽同步目标表宽（跨容器重建路径）', async () => {
+        const editor = makeEditor([
+            tableLayer([rowLayer(30, [cellLayer(600)])]),
+            tableLayer([rowLayer(20, [cellLayer(300)])], 300),
+        ])
+        const wrapper = mount(LayerPanel, { props: { editor } })
+
+        // 表A（layers.0）的行拖到表B（layers.1）行下半 → 行宽 600 → 300
+        mockRect(wrapper.find('[data-key="layers.1.rows.0"]'))
+        await wrapper.find('[data-key="layers.0.rows.0"]').trigger('dragstart')
+        await wrapper.find('[data-key="layers.1.rows.0"]').trigger('dragover', { clientY: 20 })
+        await wrapper.find('[data-key="layers.1.rows.0"]').trigger('drop')
+        await wrapper.vm.$nextTick()
+
+        const target = editor.store.doc!.layers[1]!
+        expect(target.type === 'TableLayer' && target.rows).toHaveLength(2)
+        const moved = target.type === 'TableLayer' ? target.rows[1]! : null
+        expect(moved?.shape.width).toBe(300)
+        expect(moved?.cells).toHaveLength(1) // 格与内容原样随行
+        const source = editor.store.doc!.layers[0]!
+        expect(source.type === 'TableLayer' && source.rows).toHaveLength(0)
         wrapper.unmount()
     })
 })

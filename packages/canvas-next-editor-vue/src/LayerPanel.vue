@@ -1,12 +1,15 @@
 <script setup lang="ts">
 /**
- * <LayerPanel>：图层面板（工单 10）——树形大纲（根层 = 视觉逆序，表格三层嵌套
- * 展开）、拖动重排（根层走 priority 中点插值 / 表格行直接改数组序，两套语义
- * 分立，坐标折算全在内核）、增删（新增置顶 min−1、删除含子树）、点选/悬停与
- * 画布双向联动。视觉沿用 .cn-props 主题命名空间（与属性面板同一套设计令牌）。
+ * <LayerPanel>：图层面板（工单 10/12）——树形大纲（根层 = 视觉逆序，表格三层
+ * 嵌套展开）、拖动重排（根层走 priority 中点插值 / 行格直接改数组序，两套语义
+ * 分立；行可跨表、格可跨行——跨容器落点走内核重建路径同步尺寸）、增删（新增
+ * 置顶 min−1、加行/加格走重建路径、删除含子树）、点选/悬停与画布双向联动。
+ * 视觉沿用 .cn-props 主题命名空间（与属性面板同一套设计令牌）。
  *
  * 拖放约定：行上半 = insert-before 当前行、下半 = insert-after（面板底经最后
- * 一行的下半可达）；行拖放仅限同一表内。内核对原位/相邻落点自动空转（无历史步）。
+ * 一行的下半可达）；行落点 = 任意行的行节点（同表重排/跨表移动内核自动分流），
+ * 格落点 = 任意格节点（同行重排/跨行移动同款）。内核对原位/相邻落点自动空转
+ * （无历史步）。
  */
 import { computed, ref } from 'vue'
 
@@ -29,9 +32,9 @@ interface FlatRow {
     node: LayerOutlineNode
     indentLevel: number
     label: string
-    /** 组内序号：root = 面板序（内核 moveRootLayer 吃面板坐标）；row = 行数组序 */
+    /** 组内序号：root = 面板序（内核 moveRootLayer 吃面板坐标）；row = 行数组序；cell = 格数组序 */
     indexInGroup: number
-    /** 行节点的宿主表路径（同表拖放约束 + moveTableRow 入参）；非行 null */
+    /** 行节点的宿主表路径（行拖放落点折算 + moveTableRow 入参）；非行 null */
     tablePath: LayerPath | null
     draggable: boolean
 }
@@ -75,7 +78,7 @@ const flatRows = computed<readonly FlatRow[]>(() => {
             label: labelFor(node, ordinal),
             indexInGroup,
             tablePath: rowTablePath,
-            draggable: node.role === 'root' || node.role === 'row',
+            draggable: node.role === 'root' || node.role === 'row' || node.role === 'cell',
         })
         node.children.forEach((child, i) => walk(child, indentLevel + 1, i, rowTablePath))
     }
@@ -95,28 +98,42 @@ function hover(row: FlatRow | null): void {
     props.editor.setHovered(row === null ? null : row.node.path)
 }
 
-// ---- 增删（内核 action：新增置顶 min−1；删除含子树） ----
+// ---- 增删（内核 action：根层新增置顶 min−1；行/格新增走重建路径；删除含子树） ----
 
 function add(type: LayerType): void {
     props.editor.addRootLayer(type)
+}
+
+/** 表节点的「加行」：缺省行 + 缺省格（带文本内容），行宽=表宽 */
+function addRow(row: FlatRow): void {
+    props.editor.addTableRow(row.node.path)
+}
+
+/** 行节点的「加格」：缺省格 + 文本内容，行高取最高格 */
+function addCell(row: FlatRow): void {
+    props.editor.addTableCell(row.node.path)
 }
 
 function remove(row: FlatRow): void {
     props.editor.deleteLayer(row.node.path)
 }
 
-// ---- 拖放重排（根层与行两套语义，坐标折算全在内核） ----
+// ---- 拖放重排（根层/行/格三套落点，坐标折算与同步全在内核） ----
 
-type DragSource = { kind: 'root'; from: number } | { kind: 'row'; from: number; tablePath: LayerPath }
+type DragSource =
+    | { kind: 'root'; from: number }
+    | { kind: 'row'; from: number; tablePath: LayerPath; rowPath: LayerPath }
+    | { kind: 'cell'; from: number; cellPath: LayerPath }
 const dragSource = ref<DragSource | null>(null)
 const dropHint = ref<{ key: string; edge: 'before' | 'after' } | null>(null)
 
-/** 同组才可落：根层 ↔ 根层；行 ↔ 同一表的行 */
-function sameGroup(row: FlatRow): boolean {
+/** 同类才可落：根层 ↔ 根层；行 ↔ 任意表的行节点（跨表内核分流）；格 ↔ 任意行的格节点 */
+function canDrop(row: FlatRow): boolean {
     const source = dragSource.value
     if (!source) return false
     if (source.kind === 'root') return row.node.role === 'root'
-    return row.node.role === 'row' && row.tablePath !== null && row.tablePath.join('.') === source.tablePath.join('.')
+    if (source.kind === 'row') return row.node.role === 'row'
+    return row.node.role === 'cell'
 }
 
 function onDragStart(row: FlatRow, event: DragEvent): void {
@@ -124,14 +141,16 @@ function onDragStart(row: FlatRow, event: DragEvent): void {
     dragSource.value =
         row.node.role === 'root'
             ? { kind: 'root', from: row.indexInGroup }
-            : { kind: 'row', from: row.indexInGroup, tablePath: row.tablePath! }
+            : row.node.role === 'row'
+                ? { kind: 'row', from: row.indexInGroup, tablePath: row.tablePath!, rowPath: row.node.path }
+                : { kind: 'cell', from: row.indexInGroup, cellPath: row.node.path }
     // Firefox 需要 setData 才会启动拖拽；其余环境无副作用
     event.dataTransfer?.setData('text/plain', row.key)
     if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
 }
 
 function onDragOver(row: FlatRow, event: DragEvent): void {
-    if (!sameGroup(row)) return
+    if (!canDrop(row)) return
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
     // 落点用 clientY − 行顶：offsetY 相对 event.target（行内子元素），与 currentTarget
     // 的行盒参照系错位，指针压在 label 上时判定会漂移
@@ -141,7 +160,7 @@ function onDragOver(row: FlatRow, event: DragEvent): void {
 }
 
 function onDrop(row: FlatRow, event: DragEvent): void {
-    if (!sameGroup(row)) return
+    if (!canDrop(row)) return
     // 落点以 dragover 写入的 dropHint 为准（hint 与当前行不一致 = 悬空落点，拒绝）；
     // 不在 drop 里重算 offsetY——drop 事件的合成场景（jsdom）拿不到可靠坐标
     const hint = dropHint.value
@@ -150,8 +169,16 @@ function onDrop(row: FlatRow, event: DragEvent): void {
     event.preventDefault()
     // insert-before 上半落当前序号、下半 +1（内核对原位/相邻落点自动空转）
     const to = hint.edge === 'before' ? row.indexInGroup : row.indexInGroup + 1
-    if (source.kind === 'root') props.editor.moveRootLayer(source.from, to)
-    else props.editor.moveTableRow(source.tablePath, source.from, to)
+    if (source.kind === 'root') {
+        props.editor.moveRootLayer(source.from, to)
+    } else if (source.kind === 'row') {
+        const sameTable = row.tablePath !== null && row.tablePath.join('.') === source.tablePath.join('.')
+        if (sameTable) props.editor.moveTableRow(source.tablePath, source.from, to)
+        else props.editor.moveTableRowToTable(source.rowPath, row.tablePath!, to)
+    } else {
+        // 目标行路径 = 格节点路径去掉尾段 (cells, index)；同行重排/跨行移动内核分流
+        props.editor.moveTableCellToRow(source.cellPath, row.node.path.slice(0, -2) as LayerPath, to)
+    }
     dragSource.value = null
     dropHint.value = null
 }
@@ -224,6 +251,26 @@ function isHovered(row: FlatRow): boolean {
                 <span class="cn-layers__label min-w-0 flex-1 truncate font-mono text-[11px] leading-4">
                     {{ row.label }}
                 </span>
+                <button
+                    v-if="row.node.role === 'root' && row.node.type === 'TableLayer'"
+                    type="button"
+                    data-add-row
+                    class="cn-layers__delete hidden size-5 shrink-0 items-center justify-center rounded text-[10px] leading-none text-cn-muted hover:bg-cn-accent/15 hover:text-cn-accent group-hover:flex"
+                    title="加行（缺省行 + 缺省格与文本，行宽=表宽）"
+                    @click.stop="addRow(row)"
+                >
+                    +行
+                </button>
+                <button
+                    v-if="row.node.role === 'row'"
+                    type="button"
+                    data-add-cell
+                    class="cn-layers__delete hidden size-5 shrink-0 items-center justify-center rounded text-[10px] leading-none text-cn-muted hover:bg-cn-accent/15 hover:text-cn-accent group-hover:flex"
+                    title="加格（缺省格 + 文本内容，行高取最高格）"
+                    @click.stop="addCell(row)"
+                >
+                    +格
+                </button>
                 <button
                     type="button"
                     class="cn-layers__delete hidden size-5 shrink-0 items-center justify-center rounded text-[10px] leading-none text-cn-muted hover:bg-cn-danger/15 hover:text-cn-danger group-hover:flex"

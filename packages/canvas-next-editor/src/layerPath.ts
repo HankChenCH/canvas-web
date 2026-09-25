@@ -49,6 +49,18 @@ export function pathsEqual(a: LayerPath | null, b: LayerPath | null): boolean {
     return true
 }
 
+/**
+ * 前缀判定：path 落在 prefix 子树内（含相等）。跨容器移动后重挂选择路径用
+ * （工单 12）——子树整体换容器时，移动前捕获的路径按前缀重挂到新位置。
+ */
+export function pathStartsWith(path: LayerPath, prefix: LayerPath): boolean {
+    if (path.length < prefix.length) return false
+    for (let i = 0; i < prefix.length; i += 1) {
+        if (path[i] !== prefix[i]) return false
+    }
+    return true
+}
+
 /** 沿路径导航（根可为 immer draft：同一套下降逻辑同时服务只读解析与事务写入） */
 function navigate(root: unknown, path: LayerPath): unknown {
     // (属性名, 索引) 成对推进；尾段 'content' 无索引，落到内容层本身

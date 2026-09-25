@@ -42,6 +42,7 @@ export {
 export {
     isLayerPath,
     layerBoxByPath,
+    pathStartsWith,
     pathsEqual,
     remapPathAfterSplice,
     resolveLayer,
@@ -54,12 +55,26 @@ export {
     buildLayerOutline,
     createDefaultLayer,
     deleteLayerInDraft,
+    moveGuard,
     moveRootLayerInDraft,
     moveTableRowInDraft,
     type DeletedLayerRef,
     type LayerOutlineNode,
     type LayerOutlineRole,
 } from './layerPanel'
+export {
+    addTableCellInDraft,
+    addTableRowInDraft,
+    canonicalizeTableSyncInDraft,
+    growRowToCellInDraft,
+    moveTableCellInDraft,
+    moveTableCellToRowInDraft,
+    moveTableRowToTableInDraft,
+    setCellAutoHeightInDraft,
+    syncContentIntoCellInDraft,
+    syncRowWidthInDraft,
+    type MovedSubtreeRef,
+} from './tableEditing'
 export {
     classifyHistoryShortcut,
     type HistoryShortcut,

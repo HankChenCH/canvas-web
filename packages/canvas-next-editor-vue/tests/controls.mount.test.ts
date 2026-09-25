@@ -170,6 +170,22 @@ describe('BooleanField', () => {
         await wrapper.find('input').setValue(true)
         expect(wrapper.emitted('change')!.at(-1)).toEqual([true])
     })
+
+    it('modelValue 不变的回同步：内核把标志归一回原值时 DOM 勾选态跟回（工单 12 采纳语义）', async () => {
+        const wrapper = mount(BooleanField, {
+            props: { field: { key: ['shape', 'autoHeight'], label: '高自适应', control: 'boolean' }, modelValue: false },
+        })
+        // 用户点开（DOM checked=true，change 已发），内核采纳后标志固化回 false——
+        // VDOM :checked 值未变（false → false），组件须自行把 DOM 勾选态拉回去
+        const input = wrapper.find('input')
+        input.element.checked = true
+        await input.trigger('change')
+        expect(wrapper.emitted('change')!.at(-1)).toEqual([true])
+
+        await wrapper.setProps({ modelValue: false })
+        await wrapper.vm.$nextTick()
+        expect(wrapper.find('input').element.checked).toBe(false)
+    })
 })
 
 describe('AnchorField', () => {

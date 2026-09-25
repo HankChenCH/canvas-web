@@ -42,6 +42,7 @@ import type { LayerBox, Layer, LayerType } from '@hankchen/canvas-next'
 import { hitTest as hitTestAt } from './hitTest'
 import {
     layerBoxByPath,
+    pathStartsWith,
     pathsEqual,
     remapPathAfterSplice,
     resolveLayer,
@@ -55,6 +56,16 @@ import {
     moveTableRowInDraft,
     type DeletedLayerRef,
 } from './layerPanel'
+import {
+    addTableCellInDraft,
+    addTableRowInDraft,
+    canonicalizeTableSyncInDraft,
+    moveTableCellInDraft,
+    moveTableCellToRowInDraft,
+    moveTableRowToTableInDraft,
+    setCellAutoHeightInDraft,
+    type MovedSubtreeRef,
+} from './tableEditing'
 import { EditorStore, type EditorChange, type TransactOptions } from './store'
 
 /** transact 回调向外传值的容器：TS 会把闭包内赋值的 let 窄化回初值类型，盒属性访问不受影响 */
@@ -406,13 +417,29 @@ export class EditorSession {
      * （领域形态，如 ['shape','backgroundColor']、['position','x']、单段 ['fontSize']），
      * 拼上图层路径即 patch path。数值收整/钳位等取值策略由注册表层负责，内核透传。
      * 路径无法解析或字段悬空时静默空转；连续输入经 mergeKey 合并为一步历史。
+     *
+     * 表格子树的权威收口（工单 12）：格 autoHeight 是带重算的切换（采纳内容动态高
+     * 并固化，非裸标志写）；其余写入后按解码强同步的不变量重断言（行宽=表宽、
+     * 内容宽/高重同步、行高取最高格）——往返恒等在任何字段编辑后不破。
      */
     updateSpec(path: LayerPath, key: readonly string[], value: unknown, options: TransactOptions = {}): void {
         this.store.transact((draft) => {
             const layer = resolveLayer(draft, path)
             if (!layer) return
+            if (layer.type === 'TableCellLayer' && key.length === 2 && key[0] === 'shape' && key[1] === 'autoHeight') {
+                setCellAutoHeightInDraft(draft, path, Boolean(value), this.textPolicies)
+                return
+            }
             // draft 语义解除 readonly；字段形态由注册表与领域类型把关，内核透传
             writeSpecField(layer as unknown as Record<string, unknown>, key, value)
+            // 解码不变量：autoHeight 置位即声明高归零（decodeBase 对 auto 标志恒清零，
+            // PHP setHeight('auto') 同门；文本层由布局按行数×行高+padding 动态求高，
+            // 其余类型按各自兜底）——否则保存再打开声明高被清，往返恒等破。
+            // 格的 autoHeight 写入已在上方拦截（采纳/固化语义），不会走到这里。
+            if ((layer as { shape?: { autoHeight?: boolean } }).shape?.autoHeight === true) {
+                ;(layer as { shape: { height: number } }).shape.height = 0
+            }
+            canonicalizeTableSyncInDraft(draft, path, key, this.textPolicies)
         }, options)
     }
 
@@ -516,6 +543,101 @@ export class EditorSession {
         if (pathsEqual(this.store.ui.hovered, removed.v.path)) this.store.setHovered(null)
     }
 
+    // ---- 表格容器结构编辑（工单 12）：重建路径与 graph 解码同一套 add 同步语义 ----
+
+    /**
+     * 新增表格行（面板「加行」入口）：缺省行 + 缺省格（带文本内容）走重建路径
+     * （行宽=表宽、内容宽=格宽、固定格压平内容高、行高取最高格——语义见
+     * tableEditing.addTableRowInDraft），并自动选中新行；一次调用 = 一步历史。
+     */
+    addTableRow(tablePath: LayerPath): void {
+        if (!this.store.doc) return
+        const index: TxOut<number> = { v: -1 }
+        this.store.transact((draft) => {
+            index.v = addTableRowInDraft(draft, tablePath) ?? -1
+        })
+        if (index.v >= 0) this.store.setSelection([...tablePath, 'rows', index.v])
+    }
+
+    /**
+     * 新增表格单元格（面板「加格」入口）：缺省格 + 缺省文本内容走重建路径
+     * （内容宽=格宽、固定格压平内容高、行高取最高格），并自动选中新格；
+     * 一次调用 = 一步历史。
+     */
+    addTableCell(rowPath: LayerPath): void {
+        if (!this.store.doc) return
+        const index: TxOut<number> = { v: -1 }
+        this.store.transact((draft) => {
+            index.v = addTableCellInDraft(draft, rowPath) ?? -1
+        })
+        if (index.v >= 0) this.store.setSelection([...rowPath, 'cells', index.v])
+    }
+
+    /**
+     * 单元格移动：落点为「insert-before 原始序号」的目标行 + 序号。同行退化为
+     * 数组序重排（与行重排同款 moveGuard 语义），跨行走重建路径（目标行高取
+     * 最高格、内容层归属随格重同步）。一次调用 = 一步历史。
+     */
+    moveTableCellToRow(cellPath: LayerPath, targetRowPath: LayerPath, toCell: number): void {
+        if (!this.store.doc) return
+        const sourceRowPath = cellPath.slice(0, -2)
+        if (pathsEqual(sourceRowPath, targetRowPath)) {
+            const from = cellPath[cellPath.length - 1]
+            if (typeof from === 'number') this.moveTableCell(sourceRowPath, from, toCell)
+            return
+        }
+        const moved: TxOut<MovedSubtreeRef | null> = { v: null }
+        this.store.transact((draft) => {
+            moved.v = moveTableCellToRowInDraft(draft, cellPath, targetRowPath, toCell, this.textPolicies)
+        })
+        if (moved.v !== null) this.remapMovedSubtree(moved.v)
+    }
+
+    /** 同行单元格重排（直接改 cells 数组序，容器内嵌套数组序语义） */
+    moveTableCell(rowPath: LayerPath, fromCell: number, toCell: number): void {
+        if (!this.store.doc) return
+        const moved: TxOut<{ from: number; to: number } | null> = { v: null }
+        this.store.transact((draft) => {
+            moved.v = moveTableCellInDraft(draft, rowPath, fromCell, toCell)
+        })
+        if (moved.v === null) return
+        this.remapPathSlices(rowPath, 'cells', moved.v.from, moved.v.to)
+    }
+
+    /**
+     * 行移动：落点为「insert-before 原始序号」的目标表 + 序号。同表退化为数组序
+     * 重排（moveTableRow），跨表走重建路径（行宽同步目标表宽——addRow 副作用）。
+     * 一次调用 = 一步历史。
+     */
+    moveTableRowToTable(rowPath: LayerPath, targetTablePath: LayerPath, toRow: number): void {
+        if (!this.store.doc) return
+        const sourceTablePath = rowPath.slice(0, -2)
+        if (pathsEqual(sourceTablePath, targetTablePath)) {
+            const from = rowPath[rowPath.length - 1]
+            if (typeof from === 'number') this.moveTableRow(sourceTablePath, from, toRow)
+            return
+        }
+        const moved: TxOut<MovedSubtreeRef | null> = { v: null }
+        this.store.transact((draft) => {
+            moved.v = moveTableRowToTableInDraft(draft, rowPath, targetTablePath, toRow)
+        })
+        if (moved.v !== null) this.remapMovedSubtree(moved.v)
+    }
+
+    /**
+     * 格 autoHeight 切换：开且带内容 = 采纳内容动态高（autowrap 文本即
+     * 「行数×行高+padding」）并固化（解码对带内容的格恒归一为固定高）；开且空格 =
+     * 置标志；关 = 清标志。采纳可能增高，行高随之取最高格。一次调用 = 一步历史。
+     */
+    setCellAutoHeight(cellPath: LayerPath, on: boolean): void {
+        if (!this.store.doc) return
+        const applied: TxOut<boolean> = { v: false }
+        this.store.transact((draft) => {
+            applied.v = setCellAutoHeightInDraft(draft, cellPath, on, this.textPolicies)
+        })
+        if (applied.v) this.pruneDanglingPaths()
+    }
+
     // ---- 撤销/重做（工单 08）：双栈语义全在 store，会话只透传查询与动作 ----
 
     get canUndo(): boolean {
@@ -528,10 +650,14 @@ export class EditorSession {
 
     undo(): void {
         this.store.undo()
+        // 历史回放不携带 ui 路径态：撤销后选择/悬停可能指向已消失的图层（如撤销
+        // 新增行），按「路径可解析」清理悬空态（工单 12 选择协同）
+        this.pruneDanglingPaths()
     }
 
     redo(): void {
         this.store.redo()
+        this.pruneDanglingPaths()
     }
 
     // ---- 订阅与失效 ----
@@ -579,6 +705,40 @@ export class EditorSession {
         if (selection !== this.store.ui.selection) this.store.setSelection(selection)
         const hovered = remap(this.store.ui.hovered)
         if (hovered !== this.store.ui.hovered) this.store.setHovered(hovered)
+    }
+
+    /**
+     * 跨容器移动后的选择/悬停重映射（工单 12）：先做源容器纯删除与目标容器纯
+     * 插入的索引平移（移动子树内的路径在源删除步被置 null，不参与平移），再把
+     * 移动前落在移动子树内的路径按前缀重挂到新位置（子树内部相对结构不变，
+     * 仅容器段整体替换）。
+     */
+    private remapMovedSubtree(moved: MovedSubtreeRef): void {
+        const selectionBefore = this.store.ui.selection
+        const hoveredBefore = this.store.ui.hovered
+        this.remapPathSlices(moved.source.containerPath, moved.source.key, moved.source.from, moved.source.to)
+        this.remapPathSlices(moved.target.containerPath, moved.target.key, moved.target.from, moved.target.to)
+        const rebase = (before: LayerPath | null): LayerPath | null => {
+            if (before === null || !pathStartsWith(before, moved.fromPath)) return null
+            return [...moved.toPath, ...before.slice(moved.fromPath.length)] as LayerPath
+        }
+        const selection = rebase(selectionBefore)
+        if (selection !== null && !pathsEqual(this.store.ui.selection, selection)) {
+            this.store.setSelection(selection)
+        }
+        const hovered = rebase(hoveredBefore)
+        if (hovered !== null && !pathsEqual(this.store.ui.hovered, hovered)) {
+            this.store.setHovered(hovered)
+        }
+    }
+
+    /** 悬空路径清理：选择/悬停指向已不存在的图层即清空（撤销/重做与采纳类收口共用） */
+    private pruneDanglingPaths(): void {
+        const doc = this.store.doc
+        if (!doc) return
+        const { selection, hovered } = this.store.ui
+        if (selection !== null && resolveLayer(doc, selection) === null) this.store.setSelection(null)
+        if (hovered !== null && resolveLayer(doc, hovered) === null) this.store.setHovered(null)
     }
 
     private onStoreChange(change: EditorChange): void {

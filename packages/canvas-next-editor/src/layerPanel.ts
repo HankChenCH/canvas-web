@@ -127,8 +127,9 @@ export function createDefaultLayer(type: LayerType): Layer {
  * 「insert-before 原始序号 to」移动的公共守卫与落点折算：from/to 须为安全整数、
  * from ∈ [0, n)、to ∈ [0, n]；to ∈ {from, from+1}（原位/相邻落点）为无操作。
  * 返回摘除自身后的插入下标；null = 无操作（n < 2 时任何入参都落入无操作集）。
+ * 工单 12 的同行格重排复用同一守卫（与行重排同款语义）。
  */
-function moveGuard(n: number, from: number, to: number): number | null {
+export function moveGuard(n: number, from: number, to: number): number | null {
     if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to)) return null
     if (from < 0 || from >= n || to < 0 || to > n) return null
     if (to === from || to === from + 1) return null
