@@ -1,15 +1,14 @@
 /**
- * 工单 03 目验样例：文本与图片渲染。
+ * 工单 04 目验样例：QR 与物化状态机。
  * 仍是宿主交接的 graph JSON 手写体（部分层缺键、带字符串数字，演练宽松解码）。
  *
  * 目验要点：
- * - 中文长段 autowrap：贪心逐簇断行 + 禁则（行首不见句读、行末不见起始标点），
- *   显式换行的空行保留，autoHeight 随行数生长
- * - 字素簇：家庭 emoji 👨‍👩‍👧‍👦 按单簇计宽断行，不拆碎
- * - 图片 cover：源图 400×16:9 宽幅 → 等比缩放居中裁切，中缝圆标落在内容盒中线
- * - URL 字体：/fonts/open-sans.ttf 经 FontFace 注册后生效（失败回落系统默认）
- * - priority 叠放：100 背景 → 40 图片 → 30 文字 → 25 段落 → 15 表格 → 10 QR 最上
- * - QR 仍为占位盒（二维码生成随物化在工单 04 接入）
+ * - QR：固定选项（UTF-8、纠错 High、无静区、黑白）生成 PNG 后按盒宽缩放铺放；
+ *   未声明 height 按宽兜底正方形（对齐 QrCodeLayer 语义）
+ * - 物化状态机：图片/字体/QR 经 Materializer 异步物化，pending 灰叉占位、
+ *   done 绘制真实内容、failed 红叉红框（/demo-missing.png 演示失败态）
+ * - 中文长段 autowrap + 禁则；家庭 emoji 字素簇；图片 cover；URL 字体（工单 03）
+ * - priority 叠放：100 背景 → 40 图片 → 30 文字 → 25 段落 → 15 表格 → 12 失败演示 → 10 QR 最上
  */
 export const DEMO_GRAPH_JSON = `{
   "canvas": { "width": 560, "height": 420 },
@@ -107,11 +106,23 @@ export const DEMO_GRAPH_JSON = `{
       ]
     },
     {
+      "type": "ImageLayer",
+      "priority": 12,
+      "spec": {
+        "shape": {
+          "width": 70, "height": 70, "backgroundColor": "#1e293b",
+          "border": { "top": { "width": 1, "color": "#f87171" }, "bottom": { "width": 1, "color": "#f87171" }, "left": { "width": 1, "color": "#f87171" }, "right": { "width": 1, "color": "#f87171" } }
+        },
+        "position": { "x": 260, "y": 200, "position": "top-left" }
+      },
+      "data": { "valueType": "StaticValue", "value": "/demo-missing.png" }
+    },
+    {
       "type": "QrCodeLayer",
       "priority": 10,
       "spec": {
         "shape": {
-          "width": 72, "height": 72, "backgroundColor": "#38bdf8",
+          "width": 72, "backgroundColor": "#38bdf8",
           "border": { "top": { "width": 3, "color": "#f8fafc" }, "bottom": { "width": 3, "color": "#f8fafc" }, "left": { "width": 3, "color": "#f8fafc" }, "right": { "width": 3, "color": "#f8fafc" } }
         },
         "position": { "x": -16, "y": -16, "position": "bottom-right" }
