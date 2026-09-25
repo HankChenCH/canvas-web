@@ -118,3 +118,35 @@ export function layerBoxByPath(
     }
     return box
 }
+
+/**
+ * 结构变更后的路径重映射（纯函数，工单 10）：containerPath 容器的 key 子列表发生
+ * 「摘除 from 处 1 项、插回 to 处」（to = 插入后的最终下标；to === from 即纯删除）。
+ * 前缀匹配容器外的路径原样返回；被移出容器的子树返回 null（调用方落地为清除选择）。
+ */
+export function remapPathAfterSplice(
+    path: LayerPath,
+    containerPath: LayerPath,
+    key: 'layers' | 'rows' | 'cells',
+    from: number,
+    to: number,
+): LayerPath | null {
+    if (path.length < containerPath.length + 2) return path
+    for (let i = 0; i < containerPath.length; i += 1) {
+        if (path[i] !== containerPath[i]) return path
+    }
+    if (path[containerPath.length] !== key) return path
+    const index = path[containerPath.length + 1]
+    if (typeof index !== 'number') return path
+    const rest = path.slice(containerPath.length + 2)
+    const head: LayerPath = [...containerPath, key]
+
+    if (from === to) {
+        if (index === from) return null
+        return index > from ? [...head, index - 1, ...rest] : path
+    }
+    if (index === from) return [...head, to, ...rest]
+    if (from < index && index <= to) return [...head, index - 1, ...rest]
+    if (to <= index && index < from) return [...head, index + 1, ...rest]
+    return path
+}

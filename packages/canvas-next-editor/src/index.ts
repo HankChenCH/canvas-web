@@ -42,11 +42,23 @@ export {
     isLayerPath,
     layerBoxByPath,
     pathsEqual,
+    remapPathAfterSplice,
     resolveLayer,
     selectionParentPath,
     type LayerPath,
 } from './layerPath'
 export { hitTest } from './hitTest'
+export {
+    addRootLayerInDraft,
+    buildLayerOutline,
+    createDefaultLayer,
+    deleteLayerInDraft,
+    moveRootLayerInDraft,
+    moveTableRowInDraft,
+    type DeletedLayerRef,
+    type LayerOutlineNode,
+    type LayerOutlineRole,
+} from './layerPanel'
 export {
     classifyHistoryShortcut,
     type HistoryShortcut,
@@ -78,4 +90,11 @@ export {
     type Padding,
     type VerticalAlign,
 } from '@hankchen/canvas-next'
-export type { Canvas, Layer, LayerBox } from '@hankchen/canvas-next'
+export type {
+    Canvas,
+    Layer,
+    LayerBox,
+    TableLayer,
+    TableCellLayer,
+    TableRowLayer,
+} from '@hankchen/canvas-next'

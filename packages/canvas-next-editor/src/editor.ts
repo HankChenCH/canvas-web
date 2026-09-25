@@ -28,10 +28,27 @@ import {
     type Viewport,
     type ZoomBounds,
 } from './camera'
-import type { LayerBox, Layer } from '@hankchen/canvas-next'
+import type { LayerBox, Layer, LayerType } from '@hankchen/canvas-next'
 import { hitTest as hitTestAt } from './hitTest'
-import { layerBoxByPath, resolveLayer, selectionParentPath, type LayerPath } from './layerPath'
+import {
+    layerBoxByPath,
+    pathsEqual,
+    remapPathAfterSplice,
+    resolveLayer,
+    selectionParentPath,
+    type LayerPath,
+} from './layerPath'
+import {
+    addRootLayerInDraft,
+    deleteLayerInDraft,
+    moveRootLayerInDraft,
+    moveTableRowInDraft,
+    type DeletedLayerRef,
+} from './layerPanel'
 import { EditorStore, type EditorChange, type TransactOptions } from './store'
+
+/** transact 回调向外传值的容器：TS 会把闭包内赋值的 let 窄化回初值类型，盒属性访问不受影响 */
+type TxOut<T> = { v: T }
 
 /** 沿字段路径下降写入（中间段悬空即放弃；尾段原位赋值，immer draft 语义下生效） */
 function writeSpecField(target: Record<string, unknown>, key: readonly string[], value: unknown): void {
@@ -318,6 +335,73 @@ export class EditorSession {
         }, options)
     }
 
+    // ---- 图层面板结构编辑（工单 10）：重排/增删走单一 action，重排两套语义分立 ----
+
+    /**
+     * 根层重排（图层面板拖动）：面板坐标（0 = 视觉最上层），to 为 insert-before
+     * 落点。数组序 splice + 移动层 priority 中点插值（保持「数组按 priority 降序」
+     * 的契约语义，保存再打开顺序不变），一次调用 = 一步历史。语义细节见
+     * layerPanel.moveRootLayerInDraft。
+     */
+    moveRootLayer(fromPanel: number, toPanel: number): void {
+        if (!this.store.doc) return
+        const moved: TxOut<{ from: number; to: number } | null> = { v: null }
+        this.store.transact((draft) => {
+            moved.v = moveRootLayerInDraft(draft, fromPanel, toPanel)
+        })
+        if (moved.v === null) return
+        this.remapPathSlices([], 'layers', moved.v.from, moved.v.to)
+    }
+
+    /**
+     * 表格行重排（图层面板行拖动）：直接改 rows 数组序（容器内嵌套数组序语义，
+     * priority 不参与，与根层语义分立），一次调用 = 一步历史。行内后代的选择/
+     * 悬停路径随行重映射。
+     */
+    moveTableRow(tablePath: LayerPath, fromRow: number, toRow: number): void {
+        if (!this.store.doc) return
+        const moved: TxOut<{ from: number; to: number } | null> = { v: null }
+        this.store.transact((draft) => {
+            moved.v = moveTableRowInDraft(draft, tablePath, fromRow, toRow)
+        })
+        if (moved.v === null) return
+        this.remapPathSlices(tablePath, 'rows', moved.v.from, moved.v.to)
+    }
+
+    /**
+     * 新增根层（图层面板「新增」入口）：工厂缺省形态 + 置顶 priority = min − 1
+     * （空画布 0），push 到数组尾（视觉最上层）并自动选中新层；一次调用 = 一步历史。
+     */
+    addRootLayer(type: LayerType): void {
+        if (!this.store.doc) return
+        const index: TxOut<number> = { v: -1 }
+        this.store.transact((draft) => {
+            index.v = addRootLayerInDraft(draft, type)
+        })
+        if (index.v >= 0) this.store.setSelection(['layers', index.v])
+    }
+
+    /**
+     * 删除图层（含子树）：根层整删、行/格 splice、格内容置 null（语义见
+     * layerPanel.deleteLayerInDraft）；选中/悬停落在被删子树内即清空，其余路径
+     * 平移重映射。一次调用 = 一步历史。
+     */
+    deleteLayer(path: LayerPath): void {
+        if (!this.store.doc) return
+        const removed: TxOut<DeletedLayerRef | null> = { v: null }
+        this.store.transact((draft) => {
+            removed.v = deleteLayerInDraft(draft, path)
+        })
+        if (removed.v === null) return
+        if (removed.v.kind === 'list') {
+            this.remapPathSlices(removed.v.containerPath, removed.v.key, removed.v.index, removed.v.index)
+            return
+        }
+        // 格内容删除：无下标平移，命中该路径的选择/悬停清空
+        if (pathsEqual(this.store.ui.selection, removed.v.path)) this.store.setSelection(null)
+        if (pathsEqual(this.store.ui.hovered, removed.v.path)) this.store.setHovered(null)
+    }
+
     // ---- 撤销/重做（工单 08）：双栈语义全在 store，会话只透传查询与动作 ----
 
     get canUndo(): boolean {
@@ -363,6 +447,25 @@ export class EditorSession {
     }
 
     // ---- 内部：合帧与重绘 ----
+
+    /**
+     * 结构变更后重映射 ui 分支的路径态（选择/悬停）：路径是数组下标身份，
+     * 容器 splice 后按 remapPathAfterSplice 平移，被移出子树的路径落地为清除。
+     * ui 整体替换、不进历史；值未变的路径 set* 内部值等短路。
+     */
+    private remapPathSlices(
+        containerPath: LayerPath,
+        key: 'layers' | 'rows' | 'cells',
+        from: number,
+        to: number,
+    ): void {
+        const remap = (path: LayerPath | null): LayerPath | null =>
+            path === null ? null : remapPathAfterSplice(path, containerPath, key, from, to)
+        const selection = remap(this.store.ui.selection)
+        if (selection !== this.store.ui.selection) this.store.setSelection(selection)
+        const hovered = remap(this.store.ui.hovered)
+        if (hovered !== this.store.ui.hovered) this.store.setHovered(hovered)
+    }
 
     private onStoreChange(change: EditorChange): void {
         if (change.scope === 'doc') this.invalidate('both')
