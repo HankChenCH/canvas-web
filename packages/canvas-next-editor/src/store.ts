@@ -1,27 +1,67 @@
 /**
- * headless 编辑器内核的 observable store（工单 05 起步形态）。
+ * headless 编辑器内核的 observable store。
  *
  * - doc 分支：解码后的领域画布（@hankchen/canvas-next 的 Canvas），唯一事实源。
- *   工单 05 只做整体替换打开；immer produceWithPatches 事务管线在工单 06/08 落地。
- * - ui 分支：视口/选择/工具等易变状态，整体替换、**永不进历史**（红线 3 的
- *   编辑器延伸：物化等派生状态只住这里，不写文档）。
- * - 通知携带变更位置（scope/branch），绑定层与渲染调度据此细分脏区。
+ *   写入口唯一：transact —— immer produceWithPatches 产物浅替换 + patch 广播。
+ *   历史（工单 06 最小事务管线）：mergeKey 相同的连续事务合并为一步
+ *   （一次拖动 = 一步历史），pointerup 后 closeMerge 闭合；完整双栈 undo/redo
+ *   在工单 08 落地，patch 本身可序列化（协作的将来之路）。
+ * - ui 分支：视口/选择/悬停/拖动会话等易变状态，整体替换、**永不进历史**
+ *   （红线 3 的编辑器延伸：派生状态只住这里，不写文档）。
+ * - 通知携带变更位置（scope/branch）与 patch 组，绑定层与渲染调度据此细分脏区。
  */
+import { enablePatches, produceWithPatches, type Draft, type Patch } from 'immer'
+
 import type { Canvas } from '@hankchen/canvas-next'
 
-import type { Viewport } from './camera'
+import type { Point, Viewport } from './camera'
+import { pathsEqual, type LayerPath } from './layerPath'
+
+enablePatches()
+
+/** 拖动会话（ui 分支）：目标路径 + 起点场景坐标 + 起始 position 偏移 */
+export interface DragGesture {
+    path: LayerPath
+    startScene: Point
+    startPosition: { x: number; y: number }
+}
 
 export interface EditorUi {
     viewport: Viewport
+    /** 当前选中图层路径（数组路径，patch path 前缀）；null = 无选择 */
+    selection: LayerPath | null
+    /** 悬停图层路径（gizmo hover 高亮）；null = 无悬停 */
+    hovered: LayerPath | null
+    /** 进行中的拖动会话；null = 无拖动 */
+    drag: DragGesture | null
 }
 
-export type EditorChange = { scope: 'doc' } | { scope: 'ui'; branch: keyof EditorUi }
+/** 一步历史：一次（或同键合并的多次）文档事务的正向/逆向 patch 组 */
+export interface HistoryStep {
+    /** 事务合并键（拖动/滑杆）；null = 已闭合、不再合并 */
+    mergeKey: string | null
+    patches: Patch[]
+    inversePatches: Patch[]
+}
+
+export type EditorChange =
+    | { scope: 'doc'; patches: Patch[]; inversePatches: Patch[] }
+    | { scope: 'ui'; branch: keyof EditorUi }
 
 type Listener = (change: EditorChange) => void
 
+/** 文档事务：收到 doc 的 immer draft，原位改字段即可 */
+export type DocRecipe = (draft: Draft<Canvas>) => void
+
+export interface TransactOptions {
+    /** 同键连续事务合并为一步历史（拖动的每次 pointermove 传同键） */
+    mergeKey?: string
+}
+
 export class EditorStore {
     private docValue: Canvas | null = null
-    private uiValue: EditorUi = { viewport: { x: 0, y: 0, zoom: 1 } }
+    private uiValue: EditorUi = { viewport: { x: 0, y: 0, zoom: 1 }, selection: null, hovered: null, drag: null }
+    private historySteps: HistoryStep[] = []
     private readonly listeners = new Set<Listener>()
 
     get doc(): Canvas | null {
@@ -32,16 +72,80 @@ export class EditorStore {
         return this.uiValue
     }
 
-    /** 打开/替换文档（整体替换；编辑事务进历史的能力由后续工单在写入路径上接管） */
+    /** 历史（已提交步）；工单 08 在此扩双栈与 undo/redo，消费面走本查询 */
+    get history(): readonly HistoryStep[] {
+        return this.historySteps
+    }
+
+    /** 打开/替换文档：ui 选择态与历史一并重置（新文档不继承旧路径/旧事务） */
     openDocument(canvas: Canvas): void {
         this.docValue = canvas
-        this.notify({ scope: 'doc' })
+        this.historySteps = []
+        this.uiValue = { ...this.uiValue, selection: null, hovered: null, drag: null }
+        this.notify({ scope: 'doc', patches: [], inversePatches: [] })
+    }
+
+    /**
+     * 文档事务唯一入口：produceWithPatches 求新树，无变化即空转（不进历史不通知）；
+     * 有变化则浅替换 doc、按 mergeKey 合并或追加历史步、广播 patch 组。
+     */
+    transact(recipe: DocRecipe, options: TransactOptions = {}): void {
+        if (this.docValue === null) return
+        const [next, patches, inversePatches] = produceWithPatches(this.docValue, recipe)
+        if (patches.length === 0) return
+
+        const mergeKey = options.mergeKey ?? null
+        const last = this.historySteps[this.historySteps.length - 1]
+        if (mergeKey !== null && last !== undefined && last.mergeKey === mergeKey) {
+            // 正向依序拼接；逆向要后事务先撤，故新组插在前
+            this.historySteps[this.historySteps.length - 1] = {
+                mergeKey,
+                patches: [...last.patches, ...patches],
+                inversePatches: [...inversePatches, ...last.inversePatches],
+            }
+        } else {
+            this.historySteps.push({ mergeKey, patches, inversePatches })
+        }
+
+        this.docValue = next
+        this.notify({ scope: 'doc', patches, inversePatches })
+    }
+
+    /**
+     * 闭合拖动/滑杆事务（pointerup、blur 提交）：最后一步的 mergeKey 清空后，
+     * 同键的后续事务不再并入。给键名时只在键匹配时闭合（防误伤其它键的开放步）。
+     */
+    closeMerge(mergeKey?: string): void {
+        const last = this.historySteps[this.historySteps.length - 1]
+        if (last === undefined || last.mergeKey === null) return
+        if (mergeKey !== undefined && last.mergeKey !== mergeKey) return
+        this.historySteps[this.historySteps.length - 1] = { ...last, mergeKey: null }
     }
 
     /** 视口更新：ui 分支整体替换，旧切片引用保持原值（computed 引用短路依赖此语义） */
     setViewport(viewport: Viewport): void {
         this.uiValue = { ...this.uiValue, viewport }
         this.notify({ scope: 'ui', branch: 'viewport' })
+    }
+
+    /** 选中：值等短路（重复点选同一层不重绘） */
+    setSelection(path: LayerPath | null): void {
+        if (pathsEqual(this.uiValue.selection, path)) return
+        this.uiValue = { ...this.uiValue, selection: path }
+        this.notify({ scope: 'ui', branch: 'selection' })
+    }
+
+    /** 悬停：值等短路（指针在同一层内移动不重绘覆盖层） */
+    setHovered(path: LayerPath | null): void {
+        if (pathsEqual(this.uiValue.hovered, path)) return
+        this.uiValue = { ...this.uiValue, hovered: path }
+        this.notify({ scope: 'ui', branch: 'hovered' })
+    }
+
+    /** 拖动会话开始/结束（null）；会话对象住 ui 分支，文档只收位置事务 */
+    setDrag(gesture: DragGesture | null): void {
+        this.uiValue = { ...this.uiValue, drag: gesture }
+        this.notify({ scope: 'ui', branch: 'drag' })
     }
 
     subscribe(listener: Listener): () => void {

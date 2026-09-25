@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
     DEFAULT_ZOOM_BOUNDS,
     clampZoom,
+    fitRect,
     fitViewport,
     nextZoomByWheel,
     panBy,
@@ -157,6 +158,33 @@ describe('fitViewport（一键适应画布：整页可见、居中、钳位）',
             y: 0,
             zoom: 1,
         })
+    })
+})
+
+describe('fitRect（适应选区：任意场景矩形整块可见、居中；fitViewport 的推广）', () => {
+    it('矩形按更紧侧缩放，矩形中心（可为负坐标/溢出画布）落在视口中心', () => {
+        const surface: Size = { width: 600, height: 450 }
+        const viewport = fitRect({ x: 100, y: 200, width: 300, height: 150 }, surface, BOUNDS, 0)
+        expect(viewport.zoom).toBeCloseTo(2, 12)
+        const center = screenToScene(viewport, 300, 225)
+        expect(center.x).toBeCloseTo(250, 10)
+        expect(center.y).toBeCloseTo(275, 10)
+        // 四角可见（紧侧贴边：宽是约束侧，竖向居中留边）
+        const topLeft = sceneToScreen(viewport, 100, 200)
+        expect(topLeft).toEqual({ x: 0, y: 75 })
+        const bottomRight = sceneToScreen(viewport, 400, 350)
+        expect(bottomRight).toEqual({ x: 600, y: 375 })
+    })
+
+    it('margin 内缩与上界钳位沿用 fitViewport 语义', () => {
+        const viewport = fitRect({ x: -50, y: -50, width: 100, height: 100 }, { width: 1000, height: 1000 }, BOUNDS, 0)
+        expect(viewport.zoom).toBe(BOUNDS.max)
+        const center = screenToScene(viewport, 500, 500)
+        expect(center.x).toBeCloseTo(0, 10)
+    })
+
+    it('退化矩形/视口回落恒等视口', () => {
+        expect(fitRect({ x: 10, y: 10, width: 0, height: 50 }, { width: 100, height: 100 }, BOUNDS, 0)).toEqual({ x: 0, y: 0, zoom: 1 })
     })
 })
 

@@ -1,10 +1,12 @@
 <script setup lang="ts">
 /**
- * <CanvasSurface>：双层画布表面组件（工单 05）。
+ * <CanvasSurface>：双层画布表面组件（工单 05 起步，工单 06 接选择/拖动管线）。
  *
  * - 内容层 + gizmo 覆盖层两层 canvas，覆盖层 pointer-events: none；
  *   重绘全部由 editor 会话内部合帧驱动（组件不订阅 store 驱动重绘）。
- * - 事件桥：wheel 三态语义（classifyWheel）→ 会话相机动作；中键/空格+左键拖拽平移。
+ * - 事件桥：wheel 三态语义（classifyWheel）→ 会话相机动作；中键/空格+左键拖拽平移；
+ *   左键点选与拖动（selectAt/beginDrag/dragTo/endDrag）、hover 跟随、Escape 升级
+ *   选择归属链——全部经内核意图级 API，组件只做坐标与指针状态翻译。
  * - 呈现环境：ResizeObserver 重设视口尺寸、matchMedia 监听 dpr 变更并重设物理
  *   缓冲（缩放物理像素清晰）；contextlost/restored 强制全量重绘。
  * - DOM 装配完成后 emit ready（带两层 canvas），宿主在其回调里构建渲染后端、
@@ -110,31 +112,64 @@ onMounted(() => {
     host.addEventListener('wheel', onWheel, { passive: false })
     teardown.push(() => host.removeEventListener('wheel', onWheel))
 
-    // 拖拽平移：中键或空格+左键（空格按住期间光标呈抓手）
-    let pointerId: number | null = null
+    // 拖拽平移（中键/空格+左键）与选择/拖动图层（左键）共用一个活跃指针：
+    // mode 'pan' 抓取相机，'drag' 移动选中图层（内核侧记录会话与事务合并）
+    let active: { id: number; mode: 'pan' | 'drag' } | null = null
     let last: { x: number; y: number } = { x: 0, y: 0 }
 
+    const sceneAt = (e: PointerEvent) => {
+        const point = hostPoint(e)
+        return editor.toScenePoint(point.x, point.y)
+    }
+
     const onPointerDown = (e: PointerEvent) => {
+        if (active !== null) return
         const wantPan = e.button === 1 || (e.button === 0 && spaceHeld.value)
-        if (!wantPan || pointerId !== null) return
+        if (wantPan) {
+            e.preventDefault()
+            active = { id: e.pointerId, mode: 'pan' }
+            last = { x: e.clientX, y: e.clientY }
+            panning.value = true
+            host.setPointerCapture(e.pointerId)
+            return
+        }
+        if (e.button !== 0) return
         e.preventDefault()
-        pointerId = e.pointerId
-        last = { x: e.clientX, y: e.clientY }
-        panning.value = true
-        host.setPointerCapture(e.pointerId)
+        // 点选：命中即选中（画布与后续面板同源），命中层同时进入拖动会话
+        const scene = sceneAt(e)
+        const path = editor.selectAt(scene.x, scene.y)
+        if (path && editor.beginDrag(path, scene.x, scene.y)) {
+            active = { id: e.pointerId, mode: 'drag' }
+            host.setPointerCapture(e.pointerId)
+        }
     }
 
     const onPointerMove = (e: PointerEvent) => {
-        if (e.pointerId !== pointerId) return
-        // 抓取语义：内容跟随指针（拖向右 = 相机向左）
-        editor.panBy(e.clientX - last.x, e.clientY - last.y)
-        last = { x: e.clientX, y: e.clientY }
+        if (active !== null) {
+            if (e.pointerId !== active.id) return
+            if (active.mode === 'pan') {
+                // 抓取语义：内容跟随指针（拖向右 = 相机向左）
+                editor.panBy(e.clientX - last.x, e.clientY - last.y)
+                last = { x: e.clientX, y: e.clientY }
+            } else {
+                const scene = sceneAt(e)
+                editor.dragTo(scene.x, scene.y)
+            }
+            return
+        }
+        // 无手势时悬停跟随（gizmo hover 高亮；值等短路在内核，移动中不重绘）
+        const scene = sceneAt(e)
+        editor.hoverAt(scene.x, scene.y)
     }
 
-    const endPan = (e: PointerEvent) => {
-        if (e.pointerId !== pointerId) return
-        pointerId = null
-        panning.value = false
+    const onPointerUp = (e: PointerEvent) => {
+        if (active === null || e.pointerId !== active.id) return
+        if (active.mode === 'drag') {
+            editor.endDrag() // 闭合 mergeKey 事务：一次拖动 = 一步历史
+        } else {
+            panning.value = false
+        }
+        active = null
         if (host.hasPointerCapture(e.pointerId)) host.releasePointerCapture(e.pointerId)
     }
 
@@ -143,16 +178,23 @@ onMounted(() => {
         if (e.button === 1) e.preventDefault()
     }
 
+    // 指针离场清 hover（拖动/平移中由抓取接管，无需处理）
+    const onPointerLeave = () => {
+        if (active === null) editor.setHovered(null)
+    }
+
     host.addEventListener('pointerdown', onPointerDown)
     host.addEventListener('pointermove', onPointerMove)
-    host.addEventListener('pointerup', endPan)
-    host.addEventListener('pointercancel', endPan)
+    host.addEventListener('pointerup', onPointerUp)
+    host.addEventListener('pointercancel', onPointerUp)
+    host.addEventListener('pointerleave', onPointerLeave)
     host.addEventListener('mousedown', onMouseDown)
     teardown.push(() => {
         host.removeEventListener('pointerdown', onPointerDown)
         host.removeEventListener('pointermove', onPointerMove)
-        host.removeEventListener('pointerup', endPan)
-        host.removeEventListener('pointercancel', endPan)
+        host.removeEventListener('pointerup', onPointerUp)
+        host.removeEventListener('pointercancel', onPointerUp)
+        host.removeEventListener('pointerleave', onPointerLeave)
         host.removeEventListener('mousedown', onMouseDown)
     })
 
@@ -172,11 +214,18 @@ onMounted(() => {
     const onKeyUp = (e: KeyboardEvent) => {
         if (e.code === 'Space') spaceHeld.value = false
     }
+    // Escape 升级选择归属链（格→行→表→清空）；输入法/输入框内不拦
+    const onEscape = (e: KeyboardEvent) => {
+        if (e.key !== 'Escape' || isEditableTarget(e.target)) return
+        editor.escapeSelection()
+    }
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('keyup', onKeyUp)
+    window.addEventListener('keydown', onEscape)
     teardown.push(() => {
         window.removeEventListener('keydown', onKeyDown)
         window.removeEventListener('keyup', onKeyUp)
+        window.removeEventListener('keydown', onEscape)
     })
 
     // 2D context 同样存在 contextlost；默认自动恢复，恢复后强制全量重绘（MDN）

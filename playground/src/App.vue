@@ -1,8 +1,8 @@
 <script setup lang="ts">
-// 工单 05 目验：相机与视口——2400×1500 大画布上空格/中键拖拽平移、
-// plain/shift 滚轮、ctrl/捏合以指针为中心缩放、一键适应画布、缩放百分比显示。
-// 重绘由会话内 rAF 合帧驱动；双层 canvas 分离内容层与 gizmo 覆盖层
-// （资源物化标识画在覆盖层，演示「覆盖层重绘不触发内容层」的分层结构）。
+// 工单 06 目验：选择与拖动——左键点选（视觉最上层优先）/拖动（九锚点一视同仁）、
+// hover 高亮、表格 cell→row→table 的 Escape 级联、一次拖动一步历史、适应选区。
+// 工单 05 的相机目验（平移/滚轮三态/缩放至指针/适应画布）全部保留；
+// 重绘由会话内 rAF 合帧驱动，覆盖层 = 资源物化标识 + 选区 gizmo（分层结构演示）。
 import { computed, onBeforeUnmount, ref } from 'vue'
 
 import {
@@ -13,10 +13,11 @@ import {
 } from '@hankchen/canvas-next-browser-renderer'
 import type { ResourceState } from '@hankchen/canvas-next-browser-renderer'
 import { EditorSession } from '@hankchen/canvas-next-editor'
-import type { OverlayPainter } from '@hankchen/canvas-next-editor'
+import { resolveLayer, type LayerPath, type OverlayPainter } from '@hankchen/canvas-next-editor'
 import {
     CanvasSurface,
     createRafScheduler,
+    drawSelectionGizmo,
     useViewport,
     type CanvasSurfaceReady,
 } from '@hankchen/canvas-next-editor-vue'
@@ -31,21 +32,25 @@ const viewport = useViewport(editor)
 const zoomPercent = computed(() => Math.round(viewport.value.zoom * 100))
 
 const assetsNote = ref('资源物化中…')
+const selectionNote = ref('未选中图层（左键点选，Esc 逐级升级）')
 
 let materializer: Materializer | null = null
 let overlayCtx: CanvasRenderingContext2D | null = null
 let unsubscribeAssets: (() => void) | null = null
+let unsubscribeSelection: (() => void) | null = null
 
-/** 覆盖层画笔：工单 04 的资源状态标识。与内容层同一呈现变换（场景坐标，
- *  经共享的 applyViewportTransform 施加），但重绘入口独立（invalidate('overlay')），
- *  验证分层结构。 */
+/** 覆盖层画笔：资源状态标识（工单 04）+ 选区 gizmo（工单 06）。与内容层同一
+ *  呈现变换（场景坐标，经共享的 applyViewportTransform 施加），但重绘入口独立
+ *  （选择/悬停只脏覆盖层）。 */
 const overlayPainter: OverlayPainter = (args) => {
     const ctx = overlayCtx
-    if (!ctx || !args.doc) return
+    if (!ctx) return
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height)
+    if (!args.doc) return
     applyViewportTransform(ctx, { dpr: args.dpr, zoom: args.viewport.zoom, x: args.viewport.x, y: args.viewport.y })
     drawResourceMarkers(ctx, args.doc, (materializer?.state ?? {}) as ResourceState)
+    drawSelectionGizmo(ctx, editor, args)
 }
 
 function assetsStatus(state: ResourceState, pendingCount: number): string {
@@ -53,6 +58,34 @@ function assetsStatus(state: ResourceState, pendingCount: number): string {
     if (pendingCount > 0) return `资源物化中（在途 ${pendingCount}）…`
     if (failed.length > 0) return `部分资源物化失败（占位 + 红叉标识）：${failed.length} 项`
     return '资源就绪，已渲染'
+}
+
+/** 路径的领域读法：['layers', 1, 'rows', 0, …] → 图层 1 · 行0 · … */
+function describePath(path: LayerPath): string {
+    let label = `图层 ${String(path[1])}`
+    for (let i = 2; i < path.length; i += 2) {
+        const key = String(path[i])
+        if (key === 'content') label += ' · 格内容'
+        else if (key === 'rows') label += ` · 行${String(path[i + 1])}`
+        else if (key === 'cells') label += ` · 格${String(path[i + 1])}`
+    }
+    return label
+}
+
+/** 选中读数（拖动中随文档事务实时联动——属性面板将来读同一数据） */
+function syncSelectionNote(): void {
+    const doc = editor.store.doc
+    const path = editor.store.ui.selection
+    if (!doc || !path) {
+        selectionNote.value = '未选中图层（左键点选，Esc 逐级升级）'
+        return
+    }
+    const layer = resolveLayer(doc, path)
+    if (!layer) {
+        selectionNote.value = describePath(path)
+        return
+    }
+    selectionNote.value = `${describePath(path)}｜${layer.type} · 锚点 ${layer.position.anchor} · x=${layer.position.x} y=${layer.position.y}`
 }
 
 function onReady({ contentCanvas, overlayCanvas }: CanvasSurfaceReady) {
@@ -73,10 +106,18 @@ function onReady({ contentCanvas, overlayCanvas }: CanvasSurfaceReady) {
         editor.invalidate('content') // 物化状态只脏内容层（覆盖层标识另经 overlay 分支）
     })
 
+    unsubscribeSelection = editor.subscribe((change) => {
+        // 选择变更与拖动中的文档事务都刷新选中读数
+        if (change.scope === 'doc' || (change.scope === 'ui' && change.branch === 'selection')) {
+            syncSelectionNote()
+        }
+    })
+
     const doc = decodeGraph(JSON.parse(DEMO_GRAPH_JSON))
     editor.openDocument(doc)
     materializer.materialize(doc)
     editor.fitToSurface() // 初始进入：整页 fit-min 语义
+    syncSelectionNote()
 }
 
 // 工具栏：以当前视口中心为锚做倍率/复位，平移不跳变
@@ -94,8 +135,13 @@ function fitToCanvas(): void {
     editor.fitToSurface()
 }
 
+function fitToSelection(): void {
+    editor.fitToSelection()
+}
+
 onBeforeUnmount(() => {
     unsubscribeAssets?.()
+    unsubscribeSelection?.()
     editor.dispose()
 })
 </script>
@@ -104,8 +150,9 @@ onBeforeUnmount(() => {
     <main class="stage">
         <header class="header">
             <h1>canvas-web playground</h1>
-            <p>相机与视口（工单 05）：2400×1500 大画布导航 / 滚轮三态 / 缩放至指针 / 一键适应 / DPR 物理缓冲</p>
+            <p>选择与拖动（工单 06）：点选/拖动图层 · hover 高亮 · 表格级联选中 · 九锚点拖动 · 适应选区（工单 02–05 目验保留）</p>
             <p class="assets-note">{{ assetsNote }}</p>
+            <p class="selection-note" data-selection>{{ selectionNote }}</p>
         </header>
 
         <section class="toolbar" aria-label="视图工具栏">
@@ -114,6 +161,7 @@ onBeforeUnmount(() => {
             <button type="button" title="放大（以视口中心为锚）" @click="zoomBy(1.25)">＋</button>
             <button type="button" @click="zoomTo100">100%</button>
             <button type="button" class="fit" @click="fitToCanvas">适应画布</button>
+            <button type="button" class="fit" title="视口适配当前选中的图层盒" @click="fitToSelection">适应选区</button>
         </section>
 
         <section class="canvas-frame" aria-label="画布目验区">
@@ -122,13 +170,13 @@ onBeforeUnmount(() => {
 
         <section class="legend">
             <ul>
-                <li>平移：空格（或中键）拖拽、plain 滚轮上下左右、<b>shift + 滚轮横向</b>；触控板双指滚动 = 平移</li>
-                <li>缩放：<b>ctrl/cmd + 滚轮</b>（触控板双指捏合同义，浏览器恒派 ctrl+wheel）以<b>指针为中心</b>缩放，范围 5%–800%，工具栏可配倍率</li>
-                <li>「适应画布」= 整页 fit-min 并居中（初始进入自动执行一次）</li>
-                <li>双层 canvas：内容层渲染五原语，gizmo 覆盖层画<span class="marker">资源物化标识</span>（灰叉 pending / 红叉 failed）——覆盖层重绘不触发内容层</li>
-                <li>DPR：物理缓冲 = 视口 × devicePixelRatio（换屏/页面缩放自动重设缓冲），相机平移对齐物理像素，高倍缩放依然清晰</li>
-                <li>重绘经 rAF 合帧，每屏帧至多一次；视口 {x, y, zoom} 住 store 的 ui 分支，永不进历史</li>
-                <li>工单 02–04 目验样例保留：priority 叠放 / cover / 中文禁则断行 / 表格 / 失败资源（右上红框）/ QR 固定选项（右下，负溢出贴角）</li>
+                <li><b>点选</b>：左键点击图层（视觉最上层优先，负溢出画布外也可命中）；点表格选中格，<b>Esc 逐级升级 格→行→表</b>，再按清空；点空白处取消选择</li>
+                <li><b>拖动</b>：左键按住拖动，位置实时跟随（九锚点一视同仁，只改 x/y 增量）；<b>一次拖动 = 一步历史</b>（mergeKey 事务合并，撤销/重做界面在工单 08）</li>
+                <li><b>hover</b>：指针扫过的图层有淡蓝高亮，选中层蓝框常显（都画在 gizmo 覆盖层，不触发内容层重绘）</li>
+                <li><b>适应选区</b>：视口适配选中图层盒（表格可适配到行/格）；无选中时同「适应画布」</li>
+                <li>平移：空格（或中键）拖拽、plain 滚轮上下左右、<b>shift + 滚轮横向</b>；缩放 <b>ctrl/cmd + 滚轮</b>以指针为中心，范围 5%–800%</li>
+                <li>顶部读数显示选中路径与 x/y/锚点（拖动时数值联动；正式属性面板在工单 09）</li>
+                <li>工单 02–04 目验样例保留：priority 叠放 / cover / 中文禁则断行 / 表格 / 失败资源（右上红框）/ QR 固定选项（右下，贴角负边距）</li>
             </ul>
         </section>
     </main>
@@ -167,6 +215,13 @@ onBeforeUnmount(() => {
     margin-top: 2px;
     font-size: 12px;
     color: #94a3b8;
+}
+
+.selection-note {
+    margin-top: 2px;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: #2563eb;
 }
 
 .toolbar {

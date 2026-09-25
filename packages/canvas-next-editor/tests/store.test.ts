@@ -14,8 +14,8 @@ describe('EditorStore 初始态', () => {
     })
 })
 
-describe('doc 分支：整体替换（patch 管线在工单 06/08 落地）', () => {
-    it('openDocument 替换文档并以 {scope: doc} 通知', () => {
+describe('doc 分支：整体替换（patch 事务管线见 transact.test.ts）', () => {
+    it('openDocument 替换文档并以 {scope: doc}（空 patch 组）通知', () => {
         const store = new EditorStore()
         const changes: EditorChange[] = []
         store.subscribe((c) => changes.push(c))
@@ -23,7 +23,7 @@ describe('doc 分支：整体替换（patch 管线在工单 06/08 落地）', ()
         const document = doc()
         store.openDocument(document)
         expect(store.doc).toBe(document)
-        expect(changes).toEqual([{ scope: 'doc' }])
+        expect(changes).toEqual([{ scope: 'doc', patches: [], inversePatches: [] }])
     })
 
     it('再次打开替换引用，旧文档对象不被改写', () => {

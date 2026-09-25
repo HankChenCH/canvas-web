@@ -15,15 +15,21 @@ import type { PreviewViewportTransform, ViewportAwareBackend } from '@hankchen/c
 
 import {
     DEFAULT_ZOOM_BOUNDS,
+    fitRect,
     fitViewport,
     nextZoomByWheel,
     panBy,
+    screenToScene,
     snapViewportToPhysicalPixels,
     zoomAtPoint,
+    type Point,
     type Size,
     type Viewport,
     type ZoomBounds,
 } from './camera'
+import type { LayerBox } from '@hankchen/canvas-next'
+import { hitTest as hitTestAt } from './hitTest'
+import { layerBoxByPath, resolveLayer, selectionParentPath, type LayerPath } from './layerPath'
 import { EditorStore, type EditorChange } from './store'
 
 /** 帧调度器：返回取消函数（绑定层注入 requestAnimationFrame 的包装） */
@@ -39,6 +45,9 @@ export interface OverlayPaintArgs {
 export type OverlayPainter = (args: OverlayPaintArgs) => void
 
 export type InvalidateTarget = 'content' | 'overlay' | 'both'
+
+/** 拖动事务的合并键：一次拖动的全部 pointermove 并成一步历史 */
+const DRAG_MERGE_KEY = 'drag'
 
 export interface EditorSessionOptions {
     scheduleFrame: FrameScheduler
@@ -142,6 +151,111 @@ export class EditorSession {
         this.store.setViewport(fitViewport(doc, this.surfaceSize, this.zoomBounds, this.fitMargin))
     }
 
+    /** 自适应选区视图：视口适配选中盒；无选择/退化盒回落适应画布 */
+    fitToSelection(): void {
+        const doc = this.store.doc
+        if (!doc) return
+        const selection = this.store.ui.selection
+        const box = selection ? layerBoxByPath(doc, selection, this.textPolicies) : null
+        if (!box || box.width <= 0 || box.height <= 0 || this.surfaceSize.width <= 0 || this.surfaceSize.height <= 0) {
+            this.fitToSurface()
+            return
+        }
+        this.store.setViewport(fitRect(box, this.surfaceSize, this.zoomBounds, this.fitMargin))
+    }
+
+    // ---- 选择与拖动（工单 06）：命中/选择/拖动几何全部经内核纯函数 ----
+
+    /** 屏幕（css 像素）→ 场景：绑定层的唯一坐标入口（zoom 折算收口在此） */
+    toScenePoint(screenX: number, screenY: number): Point {
+        return screenToScene(this.store.ui.viewport, screenX, screenY)
+    }
+
+    /** 场景点命中查询（不产生副作用） */
+    hitTest(sceneX: number, sceneY: number): LayerPath | null {
+        const doc = this.store.doc
+        return doc ? hitTestAt(doc, sceneX, sceneY, this.textPolicies) : null
+    }
+
+    /** 路径处图层的绝对盒（gizmo 选择框与后续面板共用；与命中同一布局策略） */
+    layerBoxAt(path: LayerPath): LayerBox | null {
+        const doc = this.store.doc
+        return doc ? layerBoxByPath(doc, path, this.textPolicies) : null
+    }
+
+    /** 点选：命中即选中并返回路径，未中清空选择（画布与后续面板同源） */
+    selectAt(sceneX: number, sceneY: number): LayerPath | null {
+        const path = this.hitTest(sceneX, sceneY)
+        this.store.setSelection(path)
+        return path
+    }
+
+    /** 直接设置选择（面板/键盘入口） */
+    setSelection(path: LayerPath | null): void {
+        this.store.setSelection(path)
+    }
+
+    /** Escape 升级：沿归属链 cell→row→table 逐级取父，链尽清空选择 */
+    escapeSelection(): void {
+        const selection = this.store.ui.selection
+        if (!selection) return
+        this.store.setSelection(selectionParentPath(selection))
+    }
+
+    /** 悬停命中（指针移动时调用；离场传 null 或用 setHovered） */
+    hoverAt(sceneX: number, sceneY: number): void {
+        this.store.setHovered(this.hitTest(sceneX, sceneY))
+    }
+
+    /** 设置悬停路径 */
+    setHovered(path: LayerPath | null): void {
+        this.store.setHovered(path)
+    }
+
+    /**
+     * 开始拖动会话：记录目标路径、起点场景坐标与起始 position 偏移（ui 分支）。
+     * 已在拖动中或路径无法解析时返回 false。
+     */
+    beginDrag(path: LayerPath, sceneX: number, sceneY: number): boolean {
+        if (this.store.ui.drag) return false
+        const doc = this.store.doc
+        const layer = doc ? resolveLayer(doc, path) : null
+        if (!layer) return false
+        this.store.setDrag({
+            path,
+            startScene: { x: sceneX, y: sceneY },
+            startPosition: { x: layer.position.x, y: layer.position.y },
+        })
+        return true
+    }
+
+    /**
+     * 拖动进行中：position = 起点 + 场景位移。九锚点一视同仁——锚点偏移不动，
+     * 只累加 x/y（x += dx/zoom 的 zoom 折算已由 toScenePoint 收口）；一次拖动的
+     * 全部位移经同 mergeKey 事务并成一步历史，属性面板读同一文档数据即联动。
+     */
+    dragTo(sceneX: number, sceneY: number): void {
+        const drag = this.store.ui.drag
+        if (!drag) return
+        const dx = sceneX - drag.startScene.x
+        const dy = sceneY - drag.startScene.y
+        this.store.transact((draft) => {
+            const layer = resolveLayer(draft, drag.path)
+            if (!layer) return
+            // immer draft 原位写 position；类型层的 readonly 由 draft 语义解除
+            const position = layer.position as { x: number; y: number }
+            position.x = drag.startPosition.x + dx
+            position.y = drag.startPosition.y + dy
+        }, { mergeKey: DRAG_MERGE_KEY })
+    }
+
+    /** 结束拖动：闭合合并事务（下一步历史定格），会话态清空 */
+    endDrag(): void {
+        if (!this.store.ui.drag) return
+        this.store.setDrag(null)
+        this.store.closeMerge(DRAG_MERGE_KEY)
+    }
+
     // ---- 订阅与失效 ----
 
     subscribe(listener: (change: EditorChange) => void): () => void {
@@ -173,6 +287,8 @@ export class EditorSession {
     private onStoreChange(change: EditorChange): void {
         if (change.scope === 'doc') this.invalidate('both')
         else if (change.branch === 'viewport') this.invalidate('both')
+        // 选择/悬停/拖动会话只影响 gizmo（拖动中的图层位移走 doc 分支另触发双层）
+        else this.invalidate('overlay')
     }
 
     private requestFrame(): void {

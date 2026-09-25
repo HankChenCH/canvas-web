@@ -27,6 +27,14 @@ export interface Size {
     height: number
 }
 
+/** 场景矩形（适应选区的目标盒等） */
+export interface Rect {
+    x: number
+    y: number
+    width: number
+    height: number
+}
+
 /** 缩放范围（可配置；缺省 5%–800%，工单 05 拍板） */
 export interface ZoomBounds {
     min: number
@@ -101,16 +109,26 @@ export function fitViewport(
     bounds: ZoomBounds,
     margin: number,
 ): Viewport {
+    return fitRect({ x: 0, y: 0, width: canvas.width, height: canvas.height }, surface, bounds, margin)
+}
+
+/** 适应任意场景矩形（工单 06 适应选区）：矩形整块可见、矩形中心对齐视口中心 */
+export function fitRect(
+    rect: Rect,
+    surface: Size,
+    bounds: ZoomBounds,
+    margin: number,
+): Viewport {
     const innerW = surface.width - margin * 2
     const innerH = surface.height - margin * 2
-    if (canvas.width <= 0 || canvas.height <= 0 || innerW <= 0 || innerH <= 0) {
+    if (rect.width <= 0 || rect.height <= 0 || innerW <= 0 || innerH <= 0) {
         return { x: 0, y: 0, zoom: 1 }
     }
-    const zoom = Math.min(bounds.max, Math.min(innerW / canvas.width, innerH / canvas.height))
+    const zoom = Math.min(bounds.max, Math.min(innerW / rect.width, innerH / rect.height))
     return {
-        // 画布中心 (cw/2, ch/2) 落在视口中心 (surface/2)：cam = 画布中心 - 视口中心 / zoom
-        x: canvas.width / 2 - innerW / 2 / zoom - margin / zoom,
-        y: canvas.height / 2 - innerH / 2 / zoom - margin / zoom,
+        // 矩形中心 (rect.cx, rect.cy) 落在视口中心 (surface/2)：cam = 中心 - 视口中心 / zoom
+        x: rect.x + rect.width / 2 - surface.width / 2 / zoom,
+        y: rect.y + rect.height / 2 - surface.height / 2 / zoom,
         zoom,
     }
 }
