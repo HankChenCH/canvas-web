@@ -80,6 +80,13 @@ export {
     type HistoryShortcut,
     type HistoryShortcutInput,
 } from './historyShortcut'
+export { FontCatalog, type FontCatalogEntry } from './fontCatalog'
+export {
+    UploadHandlerMissingError,
+    uploadDisplayName,
+    type UploadFile,
+    type UploadHandler,
+} from './upload'
 export {
     EditorStore,
     type DocRecipe,

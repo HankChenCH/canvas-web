@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { decodeGraph } from '@hankchen/canvas-next'
 import type { Canvas as CanvasDoc } from '@hankchen/canvas-next'
 
-import { Canvas2DBackend } from '../src/canvas2d-backend'
+import { Canvas2DBackend, type DrawableImage } from '../src/canvas2d-backend'
 import {
     Materializer,
     fontResourceKey,
@@ -327,5 +327,75 @@ describe('Materializer：并发上限与代理注入点', () => {
         expect(withImageProxy('https://remote.example.com/a.png', undefined)).toBe(
             'https://remote.example.com/a.png',
         )
+    })
+})
+
+describe('Materializer.whenSettled：全量物化排空闸（工单 13 导出前置）', () => {
+    it('无在途装载时立即 resolve（携带当前状态快照）', async () => {
+        const { backend } = fakeBackend()
+        const { loaders } = stubLoaders(async () => ({ width: 8, height: 8 }))
+        const m = new Materializer(backend, { loaders })
+
+        const settled = await m.whenSettled()
+        expect(m.pendingCount).toBe(0)
+        expect(settled).toEqual({})
+    })
+
+    it('在途装载全部落定后 resolve（done/failed 均算落定）', async () => {
+        const { backend } = fakeBackend()
+        const gates = new Map<string, { resolve: (image: DrawableImage) => void; reject: (error: Error) => void }>()
+        const loaders: ResourceLoaders = {
+            loadImage: (url) =>
+                new Promise<DrawableImage>((resolve, reject) => {
+                    gates.set(url, { resolve, reject })
+                }),
+            loadFont: () => Promise.resolve('family'),
+            loadQr: () => Promise.resolve({ width: 4, height: 4 }),
+        }
+        const m = new Materializer(backend, { loaders })
+        m.materialize(imageDoc(['a.png', 'bad.png']))
+
+        let settled = false
+        void m.whenSettled().then(() => {
+            settled = true
+        })
+        await flush()
+        expect(settled).toBe(false) // 两片仍在途
+
+        gates.get('a.png')!.resolve({ width: 4, height: 4 })
+        await flush()
+        expect(settled).toBe(false) // bad.png 仍未落定（挂起的不放行）
+
+        gates.get('bad.png')!.reject(new Error('x'))
+        await flush()
+        expect(settled).toBe(true)
+        expect(m.pendingCount).toBe(0)
+        expect(m.state[imageResourceKey('bad.png')]?.status).toBe('failed')
+    })
+
+    it('闸在首次全量落定时 resolve：其后新调度的装载由下一次 await 覆盖', async () => {
+        const { backend } = fakeBackend()
+        const gates = new Map<string, (image: DrawableImage) => void>()
+        const loaders: ResourceLoaders = {
+            loadImage: (url) =>
+                new Promise<DrawableImage>((resolve) => {
+                    gates.set(url, resolve)
+                }),
+            loadFont: () => Promise.resolve('family'),
+            loadQr: () => Promise.resolve({ width: 4, height: 4 }),
+        }
+        const m = new Materializer(backend, { loaders })
+        m.materialize(imageDoc(['a.png']))
+
+        const waiting = m.whenSettled()
+        gates.get('a.png')!({ width: 4, height: 4 })
+        await expect(waiting).resolves.toBeDefined()
+        // 闸已收口：resolve 后新调度的装载不再阻塞旧 promise（宿主对新物化再次 await）
+        m.materialize(imageDoc(['a.png', 'b.png']))
+        expect(m.pendingCount).toBe(1)
+        await flush()
+        gates.get('b.png')!({ width: 4, height: 4 })
+        await flush()
+        expect(m.pendingCount).toBe(0)
     })
 })

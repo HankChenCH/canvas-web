@@ -9,6 +9,7 @@ import type { FieldControl } from './fieldSchema'
 import AnchorField from './AnchorField.vue'
 import BooleanField from './BooleanField.vue'
 import BorderField from './BorderField.vue'
+import FontField from './FontField.vue'
 import ColorField from './ColorField.vue'
 import NumberField from './NumberField.vue'
 import PaddingField from './PaddingField.vue'
@@ -26,4 +27,5 @@ export const controlRegistry: Record<FieldControl, Component> = {
     anchor: markRaw(AnchorField),
     padding: markRaw(PaddingField),
     border: markRaw(BorderField),
+    font: markRaw(FontField),
 }

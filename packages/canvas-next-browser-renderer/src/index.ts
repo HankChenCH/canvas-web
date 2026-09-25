@@ -37,3 +37,12 @@ export {
 } from './materializer'
 export { drawResourceMarkers } from './markers'
 export { sha256Hex } from './sha256'
+export {
+    PREVIEW_TEXT_KEYWORD,
+    PREVIEW_TEXT_VALUE,
+    exportPreviewPng,
+    type PreviewPngOptions,
+    type PreviewPngResult,
+} from './exportPng'
+// png.ts 的字节级工具（crc32/parsePngChunks 等）不进包公共出口：仅 exportPng 与
+// Node 测试（tests/png.test.ts 直连模块）消费，导出面保持最小。

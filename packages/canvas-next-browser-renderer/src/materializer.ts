@@ -115,6 +115,7 @@ export class Materializer {
 
     private readonly entries = new Map<string, ResourceEntry>()
     private readonly listeners = new Set<(state: ResourceState) => void>()
+    private readonly settleResolvers: Array<(state: ResourceState) => void> = []
     private readonly queue: ResourceRef[] = []
     private active = 0
 
@@ -170,9 +171,25 @@ export class Materializer {
         return () => this.listeners.delete(listener)
     }
 
+    /**
+     * 全量物化排空闸（工单 13，PNG 导出前置）：在途装载全部落定后 resolve，
+     * 携带终态快照（failed 不算在途——预览语义按占位出图，宿主可据快照提示）。
+     * 闸在 pending 首次归零时收口：其后新调度的装载归下一次 await 覆盖。
+     */
+    whenSettled(): Promise<ResourceState> {
+        if (this.pendingCount === 0) return Promise.resolve(this.state)
+        return new Promise((resolve) => {
+            this.settleResolvers.push(resolve)
+        })
+    }
+
     private notify(): void {
         const state = this.state
         for (const listener of this.listeners) listener(state)
+        if (this.pendingCount === 0 && this.settleResolvers.length > 0) {
+            const resolvers = this.settleResolvers.splice(0)
+            for (const resolve of resolvers) resolve(state)
+        }
     }
 
     /** 并发上限内的队列泵：完成一个补位一个 */

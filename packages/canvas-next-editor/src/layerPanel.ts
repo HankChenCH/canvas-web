@@ -7,9 +7,10 @@
  *
  * 两套重排语义分立：
  * - 根层重排走 priority 中点插值（保持「数组按 priority 降序」的契约语义，
- *   保存再打开顺序不变）；插到上下邻之间 → priority = (上邻 + 下邻) / 2，
- *   置顶 = min − 1、置底 = max + 1；插值撞上邻居（精度耗尽/同值冲突）时对全表
- *   做一次按视觉序的 0..N-1 归一化重赋（patch 大，仅兜底）。
+ *   保存再打开顺序不变）；插到上下邻之间 → priority = ⌊(上邻 + 下邻) / 2⌋，
+ *   置顶 = min − 1、置底 = max + 1；priority 恒为整数（wire 解码 intval 同门，
+ *   小数会在保存→打开时漂移），无整数间隙/同值冲突时对全表做一次按视觉序的
+ *   带间隙阶梯归一化重赋（patch 大，仅兜底）。
  * - 表格行重排直接改 rows 数组序（行/格/内容是嵌套数组序语义，绘制按序遍历，
  *   priority 字段在容器内不参与排序）。
  *
@@ -160,24 +161,27 @@ export function moveRootLayerInDraft(
     const moved = movedRaw as Draft<Layer>
     layers.splice(arrTo, 0, moved)
 
-    // 中点插值：落点的下邻（数组左，视觉垫底侧，priority 更大）/上邻（数组右，视觉最上侧，更小）
+    // 插值：落点的下邻（数组左，视觉垫底侧，priority 更大）/上邻（数组右，视觉最上侧，更小）。
+    // priority 必须保持整数——wire 解码按 PHP intval 语义取整，小数 priority 在
+    // 保存→打开时值漂移、往返恒等即破（工单 13）：中间落点只在「下邻−上邻 ≥ 2」
+    // （存在整数间隙）时取整数中点；置顶/置底恒为整数（max+1 / min−1）。
     const below = arrTo > 0 ? layers[arrTo - 1]! : null
     const above = arrTo < n - 1 ? layers[arrTo + 1]! : null
-    let priority: number
+    let priority: number | null = null
     if (below !== null && above !== null) {
-        priority = (below.priority + above.priority) / 2
-    } else if (above !== null) {
-        priority = above.priority + 1 // 数组头 = 视觉垫底：max + 1
+        if (below.priority - above.priority >= 2) {
+            priority = Math.floor((below.priority + above.priority) / 2)
+        }
+    } else if (below !== null) {
+        priority = below.priority - 1 // 数组尾 = 视觉最上：min − 1
     } else {
-        // n ≥ 2 保证落点至少一侧有邻居：无上邻即数组尾，下邻必在
-        priority = below!.priority - 1 // 数组尾 = 视觉最上：min − 1
+        // n ≥ 2 保证落点至少一侧有邻居：无下邻即数组头，上邻必在
+        priority = above!.priority + 1 // 数组头 = 视觉垫底：max + 1
     }
 
-    // 严格介于上下邻之间才算有效插值（下邻 priority 更大、上邻更小）；
-    // 精度耗尽/同值冲突（含搬入同值邻居之间）→ 全表归一化兜底
-    const strictlyBetween =
-        (below === null || priority < below.priority) && (above === null || priority > above.priority)
-    if (strictlyBetween) {
+    // 无整数间隙（相邻整数/同值，含搬入同值邻居之间）→ 全表归一化兜底：
+    // 按视觉序带间隙重赋，恢复整数间隔并为后续插值留出余量
+    if (priority !== null) {
         moved.priority = priority
     } else {
         normalizeRootPriorities(layers)
@@ -185,10 +189,15 @@ export function moveRootLayerInDraft(
     return { from: arrFrom, to: arrTo }
 }
 
-/** 全表归一化：按数组序（头=垫底）重赋 0..N-1，恢复整数间隙；仅作插值冲突的兜底 */
+/**
+ * 全表归一化：按数组序（头=垫底）重赋带间隙的整数阶梯（(N−1−i) × GAP），
+ * 恢复整数间隔并为后续中点插值留余量；仅作「无整数间隙」时的兜底。
+ */
+const ROOT_PRIORITY_GAP = 1024
+
 function normalizeRootPriorities(layers: Draft<Layer>[]): void {
     for (let i = 0; i < layers.length; i += 1) {
-        layers[i]!.priority = layers.length - 1 - i
+        layers[i]!.priority = (layers.length - 1 - i) * ROOT_PRIORITY_GAP
     }
 }
 

@@ -38,7 +38,7 @@ import {
     type Viewport,
     type ZoomBounds,
 } from './camera'
-import type { LayerBox, Layer, LayerType } from '@hankchen/canvas-next'
+import type { LayerBox, Layer, LayerType, ImageLayer } from '@hankchen/canvas-next'
 import { hitTest as hitTestAt } from './hitTest'
 import {
     layerBoxByPath,
@@ -67,6 +67,8 @@ import {
     type MovedSubtreeRef,
 } from './tableEditing'
 import { EditorStore, type EditorChange, type TransactOptions } from './store'
+import { FontCatalog, type FontCatalogEntry } from './fontCatalog'
+import { UploadHandlerMissingError, uploadDisplayName, type UploadFile, type UploadHandler } from './upload'
 
 /** transact 回调向外传值的容器：TS 会把闭包内赋值的 let 窄化回初值类型，盒属性访问不受影响 */
 type TxOut<T> = { v: T }
@@ -138,6 +140,14 @@ export interface EditorSessionOptions {
     fitMargin?: number
     /** 文本布局策略（断行/度量注入缝，缺省启发式对齐版） */
     textPolicies?: TextLayoutPolicies
+    /**
+     * 上传实现注入点（工单 13）：本机资源 → 可物化引用。core 不内置任何实现；
+     * 未注入时 canUpload 为 false、上传动作抛 UploadHandlerMissingError（宿主
+     * 据此做降级提示），生产宿主接自己的存储，playground 以 data URL 兜底。
+     */
+    uploadHandler?: UploadHandler
+    /** 内置字体清单（URL 列表可配置；缺省空清单，清单 ≠ 物化，加载走渲染端管线） */
+    fontCatalog?: readonly FontCatalogEntry[]
 }
 
 export class EditorSession {
@@ -146,7 +156,13 @@ export class EditorSession {
     private readonly scheduleFrame: FrameScheduler
     private readonly zoomBounds: ZoomBounds
     private readonly fitMargin: number
-    private readonly textPolicies?: TextLayoutPolicies
+    /**
+     * 生效的文本布局策略（构造注入值，缺省 undefined = 启发式对齐版）：公开只读，
+     * 供导出等旁路面复用同一注入值——导出与编辑画布的断行/盒高才不分叉（工单 13）。
+     */
+    readonly textPolicies?: TextLayoutPolicies
+    private readonly uploadHandler: UploadHandler | null
+    private readonly fontCatalogValue: FontCatalog
 
     private backend: RenderBackend | null = null
     private overlayPainter: OverlayPainter | null = null
@@ -162,6 +178,8 @@ export class EditorSession {
         this.zoomBounds = options.zoomBounds ?? DEFAULT_ZOOM_BOUNDS
         this.fitMargin = options.fitMargin ?? 0
         this.textPolicies = options.textPolicies
+        this.uploadHandler = options.uploadHandler ?? null
+        this.fontCatalogValue = new FontCatalog(options.fontCatalog)
         this.store = new EditorStore()
         this.unsubscribeStore = this.store.subscribe((change) => this.onStoreChange(change))
     }
@@ -474,6 +492,54 @@ export class EditorSession {
         this.store.transact((draft) => {
             draft[key] = value
         }, options)
+    }
+
+    // ---- 上传（工单 13）：本机资源 → 可物化引用，实现经 uploadHandler 注入 ----
+
+    /** 上传可用性：未注入 uploadHandler 时为 false（宿主据此隐藏/禁用上传入口） */
+    get canUpload(): boolean {
+        return this.uploadHandler !== null
+    }
+
+    /** 字体清单（内置可配置 + 自定义上传追加；清单 ≠ 物化，加载走渲染端物化管线） */
+    get fontCatalog(): FontCatalog {
+        return this.fontCatalogValue
+    }
+
+    /**
+     * 本机图片 → 新增图片图层并写入可物化引用（全流程 = 一步历史）：上传经注入
+     * 实现，引用与 addRootLayerInDraft 落同一事务（撤销一次即回退整个上传建层），
+     * 完成后自动选中新层。文档未打开直接返回 null（不产生上传副作用——字节不离开
+     * 本机）；上传失败异常上抛、文档不动。
+     */
+    async uploadImageAsLayer(file: UploadFile): Promise<LayerPath | null> {
+        if (!this.store.doc) return null
+        const ref = await this.requireUpload(file)
+        const index: TxOut<number> = { v: -1 }
+        this.store.transact((draft) => {
+            index.v = addRootLayerInDraft(draft, 'ImageLayer')
+            if (index.v < 0) return
+            ;(draft.layers[index.v] as Draft<ImageLayer>).src = ref
+        })
+        if (index.v < 0) return null
+        const path: LayerPath = ['layers', index.v]
+        this.store.setSelection(path)
+        return path
+    }
+
+    /**
+     * 本机字体 → 可物化引用并加入字体清单（自定义条目，上传后即可选可用）。
+     * 不写文档：引用落到哪个文本层由宿主/绑定层决定（属性面板字体控件）。
+     */
+    async uploadFont(file: UploadFile): Promise<string> {
+        const ref = await this.requireUpload(file)
+        this.fontCatalogValue.addCustom({ label: uploadDisplayName(file), ref })
+        return ref
+    }
+
+    private requireUpload(file: UploadFile): Promise<string> {
+        if (this.uploadHandler === null) return Promise.reject(new UploadHandlerMissingError())
+        return this.uploadHandler(file)
     }
 
     // ---- 图层面板结构编辑（工单 10）：重排/增删走单一 action，重排两套语义分立 ----

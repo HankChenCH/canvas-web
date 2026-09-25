@@ -29,6 +29,7 @@ export type FieldControl =
     | 'anchor'
     | 'padding'
     | 'border'
+    | 'font'
 
 export interface FieldDef {
     /** 图层内字段路径（领域形态）；画布级字段相对画布根 */
@@ -115,7 +116,8 @@ const TEXT_SECTION: FieldSection = {
     title: '文本',
     fields: [
         { key: ['text'], label: '内容', control: 'textarea', data: true },
-        { key: ['font'], label: '字体', control: 'text' },
+        // 字体选择：清单下拉 + 本机上传（fontPicker 注入缝）；未注入退化文本输入
+        { key: ['font'], label: '字体', control: 'font' },
         { key: ['fontSize'], label: '字号', control: 'number', integer: true, min: 1 },
         { key: ['fontColor'], label: '字色', control: 'color' },
         { key: ['angle'], label: '旋转角', control: 'number', integer: true },

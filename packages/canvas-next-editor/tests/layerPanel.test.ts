@@ -246,14 +246,15 @@ describe('连续重排的 priority 健壮性（工单 10：不耗尽、不冲突
         expect(session.store.history).toHaveLength(1)
     })
 
-    it('小数 priority 经 encode→decode 往返后视觉序不变（保存再打开顺序不乱）', () => {
+    it('整数中点插值经 encode→decode 往返字节恒等（保存再打开无漂移，工单 13）', () => {
         const session = makeSession(stackDoc())
-        session.moveRootLayer(2, 1) // 中点插值产生小数 priority
+        session.moveRootLayer(2, 1) // 中点插值：(20 + 10) / 2 = 15
         const wire = JSON.parse(JSON.stringify(encodeGraph(session.store.doc!)))
         const reopened = decodeGraph(wire)
         expect(buildLayerOutline(reopened).map((node) => node.path)).toEqual(
             buildLayerOutline(session.store.doc!).map((node) => node.path),
         )
+        expect(JSON.stringify(encodeGraph(reopened))).toBe(JSON.stringify(encodeGraph(session.store.doc!)))
     })
 
     it('删除与行重排后的文档经 encode→decode 往返，面板大纲不变', () => {

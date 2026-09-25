@@ -9,7 +9,8 @@
  * （usePropertyPanel）、动态控件注册表（<component :is> + markRaw）与面板组件。
  * 工单 11：textarea 文本编辑 overlay——双击进入（CanvasSurface 转发）、IME 原生
  * 合成 + 提交守卫、四路退出收拢到内核 commitTextEdit 漏斗、blur 延迟提交豁免。
- * 后续工单：表格编辑（12）。
+ * 工单 12：表格编辑。工单 13：FontField 字体清单控件（fontPicker 注入缝，
+ * 未注入退化文本输入）。
  * 红线：只依赖 editor 内核，不得绕过内核直接 import canvas-next 或
  * browser-renderer。
  */
@@ -30,6 +31,7 @@ export {
     type LayerRole,
 } from './fieldSchema'
 export { createGizmoOverlayPainter, drawSelectionGizmo, type GizmoOptions } from './gizmo'
+export { FONT_PICKER_KEY, injectFontPicker, uploadFileFromDom, type FontPickerContext } from './fontPicker'
 export { controlRegistry } from './controls'
 export { default as LayerPanel } from './LayerPanel.vue'
 export { default as PropertyField } from './PropertyField.vue'

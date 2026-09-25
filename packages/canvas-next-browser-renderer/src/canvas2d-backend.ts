@@ -77,6 +77,18 @@ export class Canvas2DBackend implements RenderBackend, ViewportAwareBackend {
         this.fontFamilies.set(font, family)
     }
 
+    /**
+     * 派生同资源的导出后端（工单 13）：把本后端已物化的图片/字体注册复制到新
+     * 渲染面——导出画布不经预览视口（恒等变换全幅渲染），但资源沿用编辑面的
+     * 物化结果，不重新装载。
+     */
+    forkWith(ctx: CanvasRenderingContext2D): Canvas2DBackend {
+        const fork = new Canvas2DBackend(ctx)
+        for (const [src, image] of this.images) fork.images.set(src, image)
+        for (const [font, family] of this.fontFamilies) fork.fontFamilies.set(font, family)
+        return fork
+    }
+
     setViewportTransform(transform: PreviewViewportTransform | null): void {
         this.viewportTransform = transform
     }

@@ -1,20 +1,23 @@
 <script setup lang="ts">
-// 工单 06 目验：选择与拖动——左键点选（视觉最上层优先）/拖动（九锚点一视同仁）、
-// hover 高亮、表格 cell→row→table 的 Escape 级联、一次拖动一步历史、适应选区。
-// 工单 08 目验：撤销/重做——顶栏按钮（可用态随历史栈联动）与 Ctrl/Cmd+Z、
-// Ctrl/Cmd+Shift+Z（或 Ctrl+Y）快捷键；输入法合成中不触发（isComposing/229 守卫）。
-// 工单 05 的相机目验（平移/滚轮三态/缩放至指针/适应画布）全部保留；
-// 重绘由会话内 rAF 合帧驱动，覆盖层 = 资源物化标识 + 选区 gizmo（分层结构演示）。
-import { computed, onBeforeUnmount, ref } from 'vue'
+// 工单 13 目验：保存/导出/上传/字体清单——保存 = 导出 graph JSON 文件并可再次
+// 打开无损复原（保存时机归宿主，内核只经 store 订阅暴露「文档已变更」信号）；
+// 导出 = 浏览器预览 PNG（先等全量物化，出图带预览语义标注，ADR 0004：预览图
+// 非终图）；上传 = 内核 uploadHandler 注入点 + data URL 兜底（本机选图→图层）；
+// 字体清单 = 内置清单可配置 + 自定义字体上传后可选。
+// 工单 11/08/05 的目验保留：文本编辑 overlay、撤销重做快捷键、相机导航。
+import { computed, onBeforeUnmount, provide, ref } from 'vue'
 
 import {
     Canvas2DBackend,
     Materializer,
     applyViewportTransform,
     drawResourceMarkers,
+    exportPreviewPng,
 } from '@hankchen/canvas-next-browser-renderer'
 import type { ResourceState } from '@hankchen/canvas-next-browser-renderer'
 import { EditorSession, classifyHistoryShortcut } from '@hankchen/canvas-next-editor'
+import type { FontCatalogEntry, UploadFile } from '@hankchen/canvas-next-editor'
+import { FONT_PICKER_KEY, uploadFileFromDom, type FontPickerContext } from '@hankchen/canvas-next-editor-vue'
 import { resolveLayer, type LayerPath, type OverlayPainter } from '@hankchen/canvas-next-editor'
 import {
     CanvasSurface,
@@ -26,12 +29,54 @@ import {
     useViewport,
     type CanvasSurfaceReady,
 } from '@hankchen/canvas-next-editor-vue'
-import { decodeGraph } from '@hankchen/canvas-next'
+import { decodeGraph, encodeGraph } from '@hankchen/canvas-next'
 
 import { DEMO_GRAPH_JSON } from './demoGraph'
 
-// 缩放范围可配置（缺省即 5%–800%）；适应画布留 48px 呼吸边
-const editor = new EditorSession({ scheduleFrame: createRafScheduler(), fitMargin: 48 })
+// 缩放范围可配置（缺省即 5%–800%）；适应画布留 48px 呼吸边。
+// 上传注入点：playground 以 data URL 兜底（文件内联进 graph，可离线演示；生产
+// 宿主接自己的存储返回 URL）。字体清单：内置清单可配置（清单 ≠ 物化，加载仍走
+// 渲染端物化管线），自定义字体上传后追加。
+const editor = new EditorSession({
+    scheduleFrame: createRafScheduler(),
+    fitMargin: 48,
+    uploadHandler: uploadToDataUrl,
+    fontCatalog: [{ label: 'Open Sans（演示字体）', ref: '/fonts/open-sans.ttf' }],
+})
+
+/** data URL 兜底上传：本机字节 → 内联引用（物化管线可装载，无需网络） */
+async function uploadToDataUrl(file: UploadFile): Promise<string> {
+    let binary = ''
+    const chunkSize = 0x8000
+    for (let i = 0; i < file.bytes.length; i += chunkSize) {
+        binary += String.fromCharCode(...file.bytes.subarray(i, i + chunkSize))
+    }
+    const base64 = btoa(binary)
+    const mime = file.mime || 'application/octet-stream'
+    return `data:${mime};base64,${base64}`
+}
+
+// 字体清单 → FontField 控件的注入缝：entries 随 catalog 订阅联动（上传追加实时
+// 进下拉），退订随组件卸载
+const fontCatalogEntries = ref<readonly FontCatalogEntry[]>(editor.fontCatalog.entries)
+const unsubscribeCatalog = editor.fontCatalog.subscribe((entries) => {
+    fontCatalogEntries.value = entries
+})
+provide(FONT_PICKER_KEY, {
+    entries: fontCatalogEntries,
+    canUpload: editor.canUpload,
+    uploadFont: (file) => editor.uploadFont(file),
+} satisfies FontPickerContext)
+
+// 隐藏文件入口的触发 refs（打开 graph JSON / 本机选图）
+const openInput = ref<HTMLInputElement | null>(null)
+const imageInput = ref<HTMLInputElement | null>(null)
+function onOpenClick(): void {
+    openInput.value?.click()
+}
+function onUploadImageClick(): void {
+    imageInput.value?.click()
+}
 
 const viewport = useViewport(editor)
 const zoomPercent = computed(() => Math.round(viewport.value.zoom * 100))
@@ -39,11 +84,15 @@ const { canUndo, canRedo } = useHistory(editor)
 
 const assetsNote = ref('资源物化中…')
 const selectionNote = ref('未选中图层（左键点选，Esc 逐级升级）')
+/** 文档操作读数（保存/打开/导出/上传的状态与预览语义标注） */
+const docNote = ref('')
 
 let materializer: Materializer | null = null
+let contentBackend: Canvas2DBackend | null = null
 let overlayCtx: CanvasRenderingContext2D | null = null
 let unsubscribeAssets: (() => void) | null = null
 let unsubscribeSelection: (() => void) | null = null
+let unsubscribeDoc: (() => void) | null = null
 
 /** 覆盖层画笔：资源状态标识（工单 04）+ 选区 gizmo（工单 06）。与内容层同一
  *  呈现变换（场景坐标，经共享的 applyViewportTransform 施加），但重绘入口独立
@@ -64,6 +113,111 @@ function assetsStatus(state: ResourceState, pendingCount: number): string {
     if (pendingCount > 0) return `资源物化中（在途 ${pendingCount}）…`
     if (failed.length > 0) return `部分资源物化失败（占位 + 红叉标识）：${failed.length} 项`
     return '资源就绪，已渲染'
+}
+
+// ---- 保存 / 打开（工单 13）：保存时机归宿主，core 只经 doc 订阅给变更信号 ----
+
+/** 打开/保存的基线快照（canonical encode JSON）；文档 JSON 与它不同即「未保存」 */
+const savedSnapshot = ref<string | null>(null)
+const isDirty = ref(false)
+const graphFileName = ref('canvas.graph.json')
+
+function syncDirty(): void {
+    const current = editor.store.doc ? JSON.stringify(encodeGraph(editor.store.doc)) : null
+    isDirty.value = current !== null && current !== savedSnapshot.value
+}
+
+function downloadBlob(blob: Blob, filename: string): void {
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = filename
+    anchor.click()
+    URL.revokeObjectURL(url)
+}
+
+function saveGraph(): void {
+    const doc = editor.store.doc
+    if (!doc) return
+    // 保存产物 = canonical graph JSON（文件美化缩进便于人读；基线比较用紧凑串）
+    const json = JSON.stringify(encodeGraph(doc), null, 2)
+    downloadBlob(new Blob([json], { type: 'application/json' }), graphFileName.value)
+    savedSnapshot.value = JSON.stringify(encodeGraph(doc))
+    syncDirty()
+    docNote.value = `已保存 graph JSON（${graphFileName.value}）· 再次打开无损复原`
+}
+
+async function onOpenGraphFile(event: Event): Promise<void> {
+    const inputEl = event.target as HTMLInputElement
+    const file = inputEl.files?.[0]
+    inputEl.value = ''
+    if (!file) return
+    try {
+        const doc = decodeGraph(JSON.parse(await file.text()))
+        editor.openDocument(doc)
+        // 打开即 clean 基线：与保存同源（canonical encode），刚打开不算未保存
+        savedSnapshot.value = JSON.stringify(encodeGraph(doc))
+        graphFileName.value = file.name
+        syncDirty()
+        materializer?.materialize(doc)
+        editor.fitToSurface()
+        docNote.value = `已打开 ${file.name}（graph JSON 解码，未保存标记复位）`
+    } catch (error) {
+        docNote.value = `打开失败：${error instanceof Error ? error.message : String(error)}`
+    }
+}
+
+/** 关闭前提醒：有未保存变更时弹浏览器通用确认（文案由浏览器定） */
+function onBeforeUnload(event: BeforeUnloadEvent): void {
+    if (!isDirty.value) return
+    event.preventDefault()
+    event.returnValue = ''
+}
+window.addEventListener('beforeunload', onBeforeUnload)
+
+// ---- 导出（工单 13，ADR 0004）：浏览器 PNG 是预览图，非终图 ----
+
+const exporting = ref(false)
+
+async function exportPreview(): Promise<void> {
+    const doc = editor.store.doc
+    if (!doc || !contentBackend || !materializer || exporting.value) return
+    exporting.value = true
+    docNote.value = '导出预览：等待全部资源物化…'
+    try {
+        materializer.materialize(doc) // 兜底补调度（面板改 URL 后的增量引用）
+        const state = await materializer.whenSettled()
+        const failed = Object.values(state).filter((e) => e.status === 'failed').length
+        // 文本布局策略与编辑会话同一注入值：导出与画布的断行/盒高不分叉
+        const result = await exportPreviewPng(doc, contentBackend, { textPolicies: editor.textPolicies })
+        const base = graphFileName.value.replace(/\.json$/i, '')
+        downloadBlob(result.blob, `${base}-preview.png`)
+        docNote.value =
+            failed > 0
+                ? `已导出预览 PNG（预览图，非终图；${failed} 项资源失败以占位出图）· ${result.width}×${result.height}`
+                : `已导出预览 PNG（预览图，非终图）· ${result.width}×${result.height}`
+    } catch (error) {
+        docNote.value = `导出失败：${error instanceof Error ? error.message : String(error)}`
+    } finally {
+        exporting.value = false
+    }
+}
+
+// ---- 上传（工单 13）：本机选图 → data URL 内联 → 新建图片图层 ----
+
+async function onImageFile(event: Event): Promise<void> {
+    const inputEl = event.target as HTMLInputElement
+    const file = inputEl.files?.[0]
+    inputEl.value = ''
+    if (!file) return
+    try {
+        const path = await editor.uploadImageAsLayer(await uploadFileFromDom(file))
+        docNote.value = path
+            ? `已上传并新建图片图层：${describePath(path)} · ${file.name}（data URL 兜底，内联进保存产物）`
+            : '上传完成但文档未打开（先打开一份 graph）'
+    } catch (error) {
+        docNote.value = `上传失败：${error instanceof Error ? error.message : String(error)}`
+    }
 }
 
 /** 路径的领域读法：['layers', 1, 'rows', 0, …] → 图层 1 · 行0 · … */
@@ -100,6 +254,7 @@ function onReady({ contentCanvas, overlayCanvas }: CanvasSurfaceReady) {
     if (!contentCtx || !overlayCtx) return
 
     const backend = new Canvas2DBackend(contentCtx)
+    contentBackend = backend
     // 跨域资源可经 new Materializer(backend, { imageProxy }) 注入代理改写；
     // 本页资源全部同源，无需代理。
     materializer = new Materializer(backend)
@@ -112,6 +267,15 @@ function onReady({ contentCanvas, overlayCanvas }: CanvasSurfaceReady) {
         editor.invalidate('content') // 物化状态只脏内容层（覆盖层标识另经 overlay 分支）
     })
 
+    // 文档变更 = 内核对宿主暴露的「文档已变更」信号：驱动物化补调度 + 未保存标记。
+    // 编辑动作、撤销/重做、打开文档都以 doc 通知收口，这里统一消费。
+    unsubscribeDoc = editor.subscribe((change) => {
+        if (change.scope !== 'doc') return
+        const doc = editor.store.doc
+        if (doc) materializer?.materialize(doc)
+        syncDirty()
+    })
+
     unsubscribeSelection = editor.subscribe((change) => {
         // 选择变更与拖动中的文档事务都刷新选中读数
         if (change.scope === 'doc' || (change.scope === 'ui' && change.branch === 'selection')) {
@@ -121,6 +285,8 @@ function onReady({ contentCanvas, overlayCanvas }: CanvasSurfaceReady) {
 
     const doc = decodeGraph(JSON.parse(DEMO_GRAPH_JSON))
     editor.openDocument(doc)
+    savedSnapshot.value = JSON.stringify(encodeGraph(doc))
+    isDirty.value = false
     materializer.materialize(doc)
     editor.fitToSurface() // 初始进入：整页 fit-min 语义
     syncSelectionNote()
@@ -132,13 +298,21 @@ function zoomBy(factor: number): void {
     editor.zoomAt(width / 2, height / 2, viewport.value.zoom * factor)
 }
 
-/** 撤销/重做快捷键：意图分类在内核纯函数（可测），这里只做事件解码。
- *  文本编辑中（工单 11）键盘事件路由进 textarea：Ctrl+Z 撤「输入」而非文档。 */
+/** 键盘：Ctrl/Cmd+S 保存；撤销/重做快捷键。文本编辑中（工单 11）键盘事件路由
+ *  进 textarea：Ctrl+Z 撤「输入」而非文档（保存同理不抢）。 */
 function onKeydown(event: KeyboardEvent): void {
     if (editor.store.ui.editing !== null) return
+    const mod = event.ctrlKey || event.metaKey
+    if (mod && !event.shiftKey && event.key.toLowerCase() === 's') {
+        // 输入法合成中不触发文档级快捷键
+        if (event.isComposing || event.keyCode === 229) return
+        event.preventDefault()
+        saveGraph()
+        return
+    }
     const shortcut = classifyHistoryShortcut({
         key: event.key,
-        mod: event.ctrlKey || event.metaKey,
+        mod,
         shift: event.shiftKey,
         // 输入法合成中（含 keyCode 229 兼容位）不触发文档撤销/重做
         composing: event.isComposing || event.keyCode === 229,
@@ -163,8 +337,11 @@ function fitToSelection(): void {
 
 onBeforeUnmount(() => {
     window.removeEventListener('keydown', onKeydown)
+    window.removeEventListener('beforeunload', onBeforeUnload)
     unsubscribeAssets?.()
     unsubscribeSelection?.()
+    unsubscribeDoc?.()
+    unsubscribeCatalog()
     editor.dispose()
 })
 </script>
@@ -173,12 +350,25 @@ onBeforeUnmount(() => {
     <main class="stage">
         <header class="header">
             <h1>canvas-web playground</h1>
-            <p>文本编辑（工单 11）：双击文本层就地编辑（中文输入法原生可用），Esc / Ctrl+Enter / 点画布其他处 / 失焦退出并一步入历史，清空文本提交即删层</p>
+            <p>保存/导出/上传/字体清单（工单 13）：手动保存 graph JSON（Ctrl/Cmd+S）可再次打开无损复原；导出为浏览器预览 PNG（预览图，非终图）；本机图片经上传进画布（data URL 兜底）；字体清单可选 + 自定义字体上传</p>
             <p class="assets-note">{{ assetsNote }}</p>
             <p class="selection-note" data-selection>{{ selectionNote }}</p>
+            <p class="doc-note" data-doc-note>
+                <span class="dirty-dot" data-dirty-mark>{{ isDirty ? '● 未保存' : '○ 已保存' }}</span>
+                <span v-if="docNote">{{ docNote }}</span>
+            </p>
         </header>
 
-        <section class="toolbar" aria-label="视图工具栏">
+        <section class="toolbar" aria-label="文档与视图工具栏">
+            <button type="button" data-open title="打开 graph JSON（解码回编辑器）" @click="onOpenClick">打开</button>
+            <!-- editor.store.doc 是非响应式读数，按钮可用态不做文档门（处理器自守卫），
+                 导出中状态走响应式 exporting -->
+            <button type="button" data-save title="保存 graph JSON（Ctrl/Cmd+S）" @click="saveGraph">保存</button>
+            <button type="button" data-export title="导出浏览器预览 PNG（预览图，非终图；先等待全量物化）" :disabled="exporting" @click="exportPreview">
+                {{ exporting ? '导出中…' : '导出 PNG' }}
+            </button>
+            <button type="button" data-upload-image title="本机选图 → 上传（data URL 兜底）→ 新建图片图层（宿主未注入上传实现时禁用）" :disabled="!editor.canUpload" @click="onUploadImageClick">上传图片</button>
+            <span class="toolbar-divider" aria-hidden="true"></span>
             <button
                 type="button"
                 data-undo
@@ -204,6 +394,9 @@ onBeforeUnmount(() => {
             <button type="button" @click="zoomTo100">100%</button>
             <button type="button" class="fit" @click="fitToCanvas">适应画布</button>
             <button type="button" class="fit" title="视口适配当前选中的图层盒" @click="fitToSelection">适应选区</button>
+            <!-- 隐藏文件入口：打开 graph JSON / 本机选图 -->
+            <input ref="openInput" type="file" accept=".json,application/json" class="hidden" @change="onOpenGraphFile" />
+            <input ref="imageInput" type="file" accept="image/*" class="hidden" @change="onImageFile" />
         </section>
 
         <section class="workbench" aria-label="画布与面板">
@@ -214,6 +407,10 @@ onBeforeUnmount(() => {
 
         <section class="legend">
             <ul>
+                <li><b>保存 / 打开（工单 13）</b>：<b>保存</b>（Ctrl/Cmd+S 或顶栏按钮）= 导出 canonical graph JSON 文件；<b>打开</b> = 解码回编辑器，再次打开无损复原（编辑→保存→打开→再保存字节级恒等）；保存时机归宿主，内核只经 store 订阅暴露「文档已变更」信号——顶部 <b>● 未保存</b> 标记随文档变更点亮、保存/打开后复位（撤销回已保存状态同样复位）；关闭页面前有未保存变更会弹确认</li>
+                <li><b>导出 PNG（预览图，非终图）</b>：顶栏「导出 PNG」先<b>等待全部资源物化</b>（慢资源在途时按钮显示「导出中…」、读数提示进行中），再全幅渲染下载；出图写入 PNG 元数据标注（tEXt: CanvasNext = preview render, not the final image）+ 文件名 <code>-preview.png</code> 后缀——<b>终图由服务端渲染端依据 graph JSON 权威产出</b>（ADR 0004），物化失败的资源以占位出图并在读数中注明</li>
+                <li><b>上传（本机资源 → 可物化引用）</b>：顶栏「上传图片」选本机图片 → 内核 uploadHandler 注入点转成引用 → 自动新建图片图层并选中（上传+建层 = 一步历史可撤销）；playground 以 <b>data URL 兜底</b>实现（内联进保存产物，可离线演示；生产宿主接自己的存储返回 URL）；<b>core 不内置任何上传实现</b>——未注入时上传入口禁用、动作抛明确错误（降级提示）</li>
+                <li><b>字体清单</b>：选中文本层 → 属性面板「字体」下拉 = 内置默认字体 + 清单条目（本页内置 Open Sans 演示项，URL 列表由宿主配置）；「上传」选本机字体文件（ttf/otf/woff）→ 加入清单（自定义条目，会话内可选）并落到当前文本层；清单 ≠ 物化，字体加载仍走渲染端物化管线；清单外引用原样保留在下拉（不静默改写）</li>
                 <li><b>文本编辑</b>：<b>双击文本层</b>就地编辑（textarea overlay 精确对位图层盒，CSS transform 缩放——缩放中字号视觉恒定、光标不丢）；中文输入法原生可用（候选窗里的 Esc/Enter 只操作候选不误提交）；<b>Esc / Ctrl+Enter / 点画布其他处 / 失焦</b>退出并一次性入一步历史（进入编辑不进历史）；清空文本提交 = 删除该图层，可撤销；编辑中该层文字由 textarea 呈现（内容层跳绘防重影），退出后恢复预览断行（断行允许与编辑态不同，决策 A）</li>
                 <li><b>点属性面板不误提交</b>：编辑中点面板/工具栏（画布外指针交互）的失焦被豁免，编辑会话保持——调完字号点回文本层继续写，文本仍是一步历史；编辑期间 Ctrl/Cmd+Z 撤「输入」而非文档（快捷键路由进 textarea）</li>
                 <li><b>图层面板</b>：左侧树形大纲<b>顶部 = 视觉最上层</b>（图层数组尾，priority 越大越垫底不反直觉）；表格展开三层嵌套（表 → 行 → 格/格内容）；点选行 = 画布选中、行悬停 = 画布高亮（双向联动，画布点选后行也高亮）</li>
@@ -274,6 +471,25 @@ onBeforeUnmount(() => {
     font-size: 12px;
     font-variant-numeric: tabular-nums;
     color: #2563eb;
+}
+
+.doc-note {
+    margin-top: 2px;
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    font-size: 12px;
+    color: #64748b;
+}
+
+.dirty-dot {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    color: #d97706;
+}
+
+.hidden {
+    display: none;
 }
 
 .toolbar {
