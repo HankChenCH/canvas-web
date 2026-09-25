@@ -330,6 +330,59 @@ describe('Materializer：并发上限与代理注入点', () => {
     })
 })
 
+describe('Materializer：文档切换的快照剪除（工单 15）', () => {
+    it('materialize 剪除当前文档不引用的键；保留键不因剪除重发（无重载循环）', async () => {
+        const { backend } = fakeBackend()
+        const { loaders, calls } = stubLoaders(async () => ({ width: 4, height: 4 }))
+        const m = new Materializer(backend, { loaders })
+
+        m.materialize(imageDoc(['https://cdn.example.com/a.png', 'https://cdn.example.com/dead.png']))
+        await flush()
+        expect(calls).toHaveLength(2)
+
+        // 切换文档：dead 键剪除，done 的 a 保留
+        m.materialize(imageDoc(['https://cdn.example.com/a.png']))
+        expect(m.state).toEqual({ [imageResourceKey('https://cdn.example.com/a.png')]: { status: 'done' } })
+
+        // 同文档再物化：a 已 done 不重发（剪除不引发重载循环）
+        m.materialize(imageDoc(['https://cdn.example.com/a.png']))
+        await flush()
+        expect(calls).toHaveLength(2)
+    })
+
+    it('装载在途时文档切走（键被剪除）：完成后死键不回写复活', async () => {
+        const { backend } = fakeBackend()
+        const gates = new Map<string, (image: DrawableImage) => void>()
+        const loaders: ResourceLoaders = {
+            loadImage: (url) =>
+                new Promise<DrawableImage>((resolve) => {
+                    gates.set(url, resolve)
+                }),
+            loadFont: () => Promise.resolve('family'),
+            loadQr: () => Promise.resolve({ width: 4, height: 4 }),
+        }
+        const m = new Materializer(backend, { loaders })
+        m.materialize(imageDoc(['https://cdn.example.com/a.png']))
+        expect(m.pendingCount).toBe(1)
+
+        // 切换文档：a 在途中被剪除，新文档 b 调度
+        m.materialize(imageDoc(['https://cdn.example.com/b.png']))
+        expect(m.state[imageResourceKey('https://cdn.example.com/a.png')]).toBeUndefined()
+        expect(m.pendingCount).toBe(1)
+
+        gates.get('https://cdn.example.com/a.png')!({ width: 4, height: 4 })
+        await flush()
+        // 死键不回写：状态里只有 b
+        expect(m.state[imageResourceKey('https://cdn.example.com/a.png')]).toBeUndefined()
+        expect(m.pendingCount).toBe(1)
+
+        gates.get('https://cdn.example.com/b.png')!({ width: 4, height: 4 })
+        await flush()
+        expect(m.pendingCount).toBe(0)
+        expect(Object.keys(m.state)).toEqual([imageResourceKey('https://cdn.example.com/b.png')])
+    })
+})
+
 describe('Materializer.whenSettled：全量物化排空闸（工单 13 导出前置）', () => {
     it('无在途装载时立即 resolve（携带当前状态快照）', async () => {
         const { backend } = fakeBackend()

@@ -2,11 +2,12 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { decodeGraph, renderCanvas } from '@hankchen/canvas-next'
+import { decodeGraph, qrImageSrc, renderCanvas } from '@hankchen/canvas-next'
 import type { TextDrawOptions } from '@hankchen/canvas-next'
 
 import { builtinFontShorthand, canvasFontCssFamily, isBuiltinFontRef } from '../src/fonts'
 import { Canvas2DBackend } from '../src/index'
+import { qrModuleMatrix } from '../src/qr'
 
 interface CtxOp {
     call: string
@@ -475,6 +476,108 @@ describe('点位取样断言（背景色、cover 中缝）', () => {
             expect(getPixel(x, 20)).toEqual([0, 0, 255])
         }
         expect(getPixel(5, 20)).toEqual([255, 0, 0])
+    })
+
+    /** 一次渲染一个独立取样面（缓冲不清屏，避免跨渲染残影污染取样） */
+    function renderStack(layers: readonly unknown[]) {
+        const surface = makeSurfaceCtx()
+        renderCanvas(decodeGraph({ canvas: { width: 60, height: 40 }, layers }), new Canvas2DBackend(surface.ctx))
+        return surface.getPixel
+    }
+
+    it('priority 叠加：数组头（priority 大）先画垫底，小号后画压住叠加区', () => {
+        const layers = (redPriority: number, bluePriority: number) => [
+            { type: 'ImageLayer', priority: redPriority, spec: { shape: { width: 60, height: 40, backgroundColor: '#ff0000' } } },
+            { type: 'ImageLayer', priority: bluePriority, spec: { shape: { width: 30, height: 40, backgroundColor: '#0000ff' } } },
+        ]
+        const getPixel = renderStack(layers(10, 1))
+
+        // 叠加区：视觉上层（priority 小的蓝盒）赢；无叠加区：垫底红露出
+        expect(getPixel(10, 20)).toEqual([0, 0, 255])
+        expect(getPixel(29, 20)).toEqual([0, 0, 255])
+        expect(getPixel(50, 20)).toEqual([255, 0, 0])
+
+        // priority 互换（红改小号）：同样的几何，叠加区变色
+        const getPixelFlipped = renderStack(layers(1, 10))
+        expect(getPixelFlipped(10, 20)).toEqual([255, 0, 0])
+        expect(getPixelFlipped(50, 20)).toEqual([255, 0, 0])
+    })
+
+    it('priority 叠加：顶层背景 null 时不遮挡（透明语义，露出垫底层）', () => {
+        const getPixel = renderStack([
+            { type: 'ImageLayer', priority: 10, spec: { shape: { width: 60, height: 40, backgroundColor: '#ff0000' } } },
+            { type: 'ImageLayer', priority: 1, spec: { shape: { width: 30, height: 40, backgroundColor: null } } },
+        ])
+
+        expect(getPixel(10, 20)).toEqual([255, 0, 0])
+        expect(getPixel(50, 20)).toEqual([255, 0, 0])
+    })
+
+    /** QR 符号位图：模块矩阵 → 黑白 RGBA（与 Materializer 产物同形的最小替身） */
+    function qrBitmap(size: number, isDark: (row: number, col: number) => boolean) {
+        const data = new Uint8ClampedArray(size * size * 4)
+        for (let row = 0; row < size; row++) {
+            for (let col = 0; col < size; col++) {
+                const v = isDark(row, col) ? 0 : 255
+                const i = (row * size + col) * 4
+                data[i] = v
+                data[i + 1] = v
+                data[i + 2] = v
+                data[i + 3] = 255
+            }
+        }
+        return { width: size, height: size, data }
+    }
+
+    it('QR 角点：符号按宽正方形铺放于图层盒原点，角部定位图形取样命中（渲染管线级）', () => {
+        const { ctx, getPixel } = makeSurfaceCtx()
+        const backend = new Canvas2DBackend(ctx)
+        // "A" @ ECC H → version 1：21×21 模块，目标盒 21×21 → 1:1 采样无插值歧义
+        const { size, isDark } = qrModuleMatrix('A')
+        backend.setImage(qrImageSrc('A'), qrBitmap(size, isDark))
+
+        const canvas = decodeGraph({
+            canvas: { width: 60, height: 40 },
+            layers: [{
+                type: 'QrCodeLayer',
+                priority: 1,
+                spec: { shape: { width: 21, height: 21, backgroundColor: '#ff0000' } },
+                data: { value: 'A' },
+            }],
+        })
+        renderCanvas(canvas, backend)
+
+        // 三个定位图形的外角与中心（与 qr.test.ts 模块级取样同点位，走完整渲染管线）
+        expect(getPixel(0, 0)).toEqual([0, 0, 0]) // 左上外角
+        expect(getPixel(20, 0)).toEqual([0, 0, 0]) // 右上外角
+        expect(getPixel(0, 20)).toEqual([0, 0, 0]) // 左下外角
+        expect(getPixel(3, 3)).toEqual([0, 0, 0]) // 左上中心
+        expect(getPixel(1, 1)).toEqual([255, 255, 255]) // 浅环
+        expect(getPixel(0, 7)).toEqual([255, 255, 255]) // 分隔区留白（margin 0）
+    })
+
+    it('QR 按宽铺放：声明高 ≠ 宽时图像仍宽×宽，盒内剩余部分露背景色', () => {
+        const { ctx, getPixel } = makeSurfaceCtx()
+        const backend = new Canvas2DBackend(ctx)
+        const { size, isDark } = qrModuleMatrix('A')
+        backend.setImage(qrImageSrc('A'), qrBitmap(size, isDark))
+
+        const canvas = decodeGraph({
+            canvas: { width: 60, height: 40 },
+            layers: [{
+                type: 'QrCodeLayer',
+                priority: 1,
+                // 声明高 30 ≠ 宽 21：图像仍 21×21 从盒原点铺放（镜像 PHP paintQrCode）
+                spec: { shape: { width: 21, height: 30, backgroundColor: '#ff0000' } },
+                data: { value: 'A' },
+            }],
+        })
+        renderCanvas(canvas, backend)
+
+        // 符号区底行（y=20）仍是模块内容：左下定位图形外角深色
+        expect(getPixel(0, 20)).toEqual([0, 0, 0])
+        // 符号外（y=25 > 21，仍在 21×30 盒内）：露图层背景，符号未被拉伸
+        expect(getPixel(10, 25)).toEqual([255, 0, 0])
     })
 
     /** 三段源图：左右各 1/4 为绿，中段 1/2 为蓝 */

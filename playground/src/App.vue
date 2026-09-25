@@ -37,6 +37,7 @@ import {
 import { decodeGraph, encodeGraph } from '@hankchen/canvas-next'
 
 import { DEMO_GRAPH_JSON } from './demoGraph'
+import { buildVisualCheckGraph } from './visualCheckGraph'
 
 // 缩放范围可配置（缺省即 5%–800%）；适应画布留 48px 呼吸边。
 // 上传注入点：playground 以 data URL 兜底（文件内联进 graph，可离线演示；生产
@@ -153,9 +154,15 @@ function saveGraph(): void {
     // 保存产物 = canonical graph JSON（文件美化缩进便于人读；基线比较用紧凑串）
     const json = JSON.stringify(encodeGraph(doc), null, 2)
     downloadBlob(new Blob([json], { type: 'application/json' }), graphFileName.value)
-    savedSnapshot.value = JSON.stringify(encodeGraph(doc))
-    syncDirty()
+    markCleanBaseline(doc, graphFileName.value)
     docNote.value = `已保存 graph JSON（${graphFileName.value}）· 再次打开无损复原`
+}
+
+/** 打开/载入后的 clean 基线：canonical encode 快照（刚打开不算未保存）+ 文件名 + 标记复位 */
+function markCleanBaseline(doc: ReturnType<typeof decodeGraph>, name: string): void {
+    savedSnapshot.value = JSON.stringify(encodeGraph(doc))
+    graphFileName.value = name
+    syncDirty()
 }
 
 async function onOpenGraphFile(event: Event): Promise<void> {
@@ -166,10 +173,8 @@ async function onOpenGraphFile(event: Event): Promise<void> {
     try {
         const doc = decodeGraph(JSON.parse(await file.text()))
         editor.openDocument(doc)
-        // 打开即 clean 基线：与保存同源（canonical encode），刚打开不算未保存
-        savedSnapshot.value = JSON.stringify(encodeGraph(doc))
-        graphFileName.value = file.name
-        syncDirty()
+        // 打开即 clean 基线：与保存同源（canonical encode）
+        markCleanBaseline(doc, file.name)
         materializer?.materialize(doc)
         editor.fitToSurface()
         docNote.value = `已打开 ${file.name}（graph JSON 解码，未保存标记复位）`
@@ -185,6 +190,18 @@ function onBeforeUnload(event: BeforeUnloadEvent): void {
     event.returnValue = ''
 }
 window.addEventListener('beforeunload', onBeforeUnload)
+
+// ---- 目验样图（工单 15）：php-canvas-image-renderer visual-check 同场景一键载入 ----
+
+/** 一键打开目验样图：中文禁则断行/表格/QR/priority 叠放，人工核对预览观感 */
+function loadVisualCheckGraph(): void {
+    const doc = buildVisualCheckGraph()
+    editor.openDocument(doc)
+    markCleanBaseline(doc, 'visual-check.graph.json')
+    materializer?.materialize(doc)
+    editor.fitToSurface()
+    docNote.value = '已载入目验样图（php visual-check 同场景：中文禁则/表格/QR/priority 叠放）'
+}
 
 // ---- 导出（工单 13，ADR 0004）：浏览器 PNG 是预览图，非终图 ----
 
@@ -267,7 +284,9 @@ function onReady({ contentCanvas, overlayCanvas }: CanvasSurfaceReady) {
     unsubscribeAssets = materializer.subscribe(() => {
         assetsNote.value = assetsStatus(materializer!.state, materializer!.pendingCount)
         pendingCount.value = materializer!.pendingCount
-        editor.invalidate('content') // 物化状态只脏内容层（覆盖层标识另经 overlay 分支）
+        // 双层都脏：内容层补绘新就绪资源，覆盖层的占位/失败标识随之消失或变色——
+        // 标识画在覆盖层，只脏内容层会留灰叉残影（工单 15 修正）
+        editor.invalidate('both')
     })
 
     // 文档变更 = 内核对宿主暴露的「文档已变更」信号：驱动物化补调度 + 未保存标记。
@@ -288,8 +307,7 @@ function onReady({ contentCanvas, overlayCanvas }: CanvasSurfaceReady) {
 
     const doc = decodeGraph(JSON.parse(DEMO_GRAPH_JSON))
     editor.openDocument(doc)
-    savedSnapshot.value = JSON.stringify(encodeGraph(doc))
-    isDirty.value = false
+    markCleanBaseline(doc, graphFileName.value)
     materializer.materialize(doc)
     editor.fitToSurface() // 初始进入：整页 fit-min 语义
     syncSelectionNote()
@@ -345,7 +363,7 @@ onBeforeUnmount(() => {
     <main class="stage">
         <header class="header">
             <h1>canvas-web playground</h1>
-            <p>工单 14：复制/粘贴/创建副本（Ctrl/Cmd+C/V/D，子树深拷贝+偏移不重叠+置顶）、右键菜单（删除/副本/置顶/置底）、快捷键注册表（文本编辑态/输入框让路）、状态栏（缩放/选中路径/物化进行数）；工单 13 的保存/导出/上传/字体清单与更早目验保留</p>
+            <p>工单 15：加固与契约——contextlost 可恢复重绘、DPR 变更即时适配、布局快照 fixture 三端契约钉死（v1 + 预期差异白名单 + 同步校验）、点位取样补全（priority 叠加/QR 角点）；工具栏「目验样图」一键载入 php visual-check 同场景。工单 14/13 与更早目验保留</p>
             <p class="assets-note">{{ assetsNote }}</p>
             <p class="selection-note" data-selection>{{ selectionNote }}</p>
             <p class="doc-note" data-doc-note>
@@ -389,6 +407,14 @@ onBeforeUnmount(() => {
             <button type="button" @click="zoomTo100">100%</button>
             <button type="button" class="fit" @click="fitToCanvas">适应画布</button>
             <button type="button" class="fit" title="视口适配当前选中的图层盒" @click="fitToSelection">适应选区</button>
+            <button
+                type="button"
+                data-visual-check
+                title="载入目验样图（php visual-check 同场景：中文禁则断行/表格/QR/priority 叠放）"
+                @click="loadVisualCheckGraph"
+            >
+                目验样图
+            </button>
             <!-- 隐藏文件入口：打开 graph JSON / 本机选图 -->
             <input ref="openInput" type="file" accept=".json,application/json" class="hidden" @change="onOpenGraphFile" />
             <input ref="imageInput" type="file" accept="image/*" class="hidden" @change="onImageFile" />
@@ -427,6 +453,7 @@ onBeforeUnmount(() => {
                 <li>平移：空格（或中键）拖拽、plain 滚轮上下左右、<b>shift + 滚轮横向</b>；缩放 <b>ctrl/cmd + 滚轮</b>以指针为中心，范围 5%–800%</li>
                 <li>顶部读数显示选中路径与 x/y/锚点（拖动时数值联动，与属性面板读同一文档数据）</li>
                 <li>工单 02–04 目验样例保留：priority 叠放 / cover / 中文禁则断行 / 表格 / 失败资源（右上红框）/ QR 固定选项（右下，贴角负边距）</li>
+                <li><b>目验样图（工单 15）</b>：工具栏「目验样图」一键载入 <b>php-canvas-image-renderer visual-check 同场景</b>（400×400）——头图色块 + 居中标题、长中文段落（<b>禁则</b>：行首不出现句号/逗号等收尾标点、英文词边界断行）、三行两列<b>表格</b>（表头底色 + 全边框）、<b>QR</b>（纠错 High/无静区/黑白）、双色图片条与页脚；<b>priority 叠放</b>（白底 11 → 头图 10 → 标题 5 → 内容层 4）。人工核对预览观感：预览断行允许与终图不同（决策 A），位置与盒尺寸应一致</li>
             </ul>
         </section>
     </main>

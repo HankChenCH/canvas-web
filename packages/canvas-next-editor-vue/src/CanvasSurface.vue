@@ -268,7 +268,10 @@ onMounted(() => {
     host.addEventListener('contextmenu', onContextMenu)
     teardown.push(() => host.removeEventListener('contextmenu', onContextMenu))
 
-    // 2D context 同样存在 contextlost；默认自动恢复，恢复后强制全量重绘（MDN）
+    // 2D context 丢失（GPU 进程崩溃等）：preventDefault() 声明可恢复（MDN——不拦即
+    // 永久丢失，contextrestored 不会来）；恢复后绘图缓冲被清空，强制全量重绘补视口。
+    // 缓冲尺寸（width/height 属性）在丢恢复间保持，无需重设；期间的 dpr 变更由
+    // 上方媒体查询监听自行补齐。
     const onContextRestored = () => editor.invalidate('both')
     const onContextLost = (e: Event) => e.preventDefault()
     content.addEventListener('contextlost', onContextLost)

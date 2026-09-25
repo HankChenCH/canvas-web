@@ -142,20 +142,36 @@ export class Materializer {
     /**
      * 扫描文档收集资源引用（含表格下钻，复用渲染模板的同一遍历），调度未决资源。
      * 幂等：pending/done 的键跳过（同 URL 跨图层只物化一次），failed 重新调度。
+     * 快照语义（工单 15）：文档不再引用的键当场剪除——打开新文档/删层后旧资源
+     * 条目不残留（覆盖层标识与宿主"失败 N 项"读数只对当前文档有意义）。
      */
     materialize(doc: CanvasDoc): void {
-        const collected = new Map<string, ResourceRef>()
+        const referenced = new Map<string, ResourceRef>()
         forEachLayerBox(doc, (layer) => {
             const ref = resourceRefOf(layer)
-            // 本轮去重 + 已决跳过（failed 可重试）
-            if (ref === null || collected.has(ref.key)) return
-            const existing = this.entries.get(ref.key)
-            if (!existing || existing.status === 'failed') {
-                collected.set(ref.key, ref)
-            }
+            if (ref === null || referenced.has(ref.key)) return
+            referenced.set(ref.key, ref)
         })
 
-        if (collected.size === 0) return
+        let pruned = false
+        for (const key of [...this.entries.keys()]) {
+            if (!referenced.has(key)) {
+                this.entries.delete(key)
+                pruned = true
+            }
+        }
+
+        // 已决跳过（failed 可重试）
+        const collected = new Map<string, ResourceRef>()
+        for (const ref of referenced.values()) {
+            const existing = this.entries.get(ref.key)
+            if (!existing || existing.status === 'failed') collected.set(ref.key, ref)
+        }
+
+        if (collected.size === 0) {
+            if (pruned) this.notify()
+            return
+        }
 
         for (const ref of collected.values()) {
             this.entries.set(ref.key, { status: 'pending' })
@@ -205,6 +221,7 @@ export class Materializer {
     }
 
     private async load(ref: ResourceRef): Promise<void> {
+        let entry: ResourceEntry
         try {
             if (ref.kind === 'font') {
                 this.backend.setFontFamily(ref.ref, await this.loaders.loadFont(ref.ref))
@@ -213,14 +230,19 @@ export class Materializer {
             } else {
                 this.backend.setImage(ref.ref, await this.loaders.loadImage(ref.ref))
             }
-            this.entries.set(ref.key, { status: 'done' })
+            entry = { status: 'done' }
         } catch (error) {
-            this.entries.set(ref.key, {
+            entry = {
                 status: 'failed',
                 error: error instanceof Error ? error.message : String(error),
-            })
+            }
         }
-        this.notify()
+        // 装载在途时文档可能已切走（键被剪除）：死键不回写（不复活僵尸条目、
+        // 不推空通知）；回写面已就绪，重开同一文档时重装载依赖浏览器 HTTP 缓存
+        if (this.entries.has(ref.key)) {
+            this.entries.set(ref.key, entry)
+            this.notify()
+        }
     }
 }
 
