@@ -12,6 +12,7 @@
  */
 import { renderCanvas, type Canvas, type RenderBackend, type TextLayoutPolicies } from '@hankchen/canvas-next'
 import type { PreviewViewportTransform, ViewportAwareBackend } from '@hankchen/canvas-next-browser-renderer'
+import type { Draft } from 'immer'
 
 import {
     DEFAULT_ZOOM_BOUNDS,
@@ -27,10 +28,21 @@ import {
     type Viewport,
     type ZoomBounds,
 } from './camera'
-import type { LayerBox } from '@hankchen/canvas-next'
+import type { LayerBox, Layer } from '@hankchen/canvas-next'
 import { hitTest as hitTestAt } from './hitTest'
 import { layerBoxByPath, resolveLayer, selectionParentPath, type LayerPath } from './layerPath'
-import { EditorStore, type EditorChange } from './store'
+import { EditorStore, type EditorChange, type TransactOptions } from './store'
+
+/** 沿字段路径下降写入（中间段悬空即放弃；尾段原位赋值，immer draft 语义下生效） */
+function writeSpecField(target: Record<string, unknown>, key: readonly string[], value: unknown): void {
+    let node = target
+    for (let i = 0; i < key.length - 1; i += 1) {
+        const next: unknown = node[key[i]!]
+        if (next === null || typeof next !== 'object') return
+        node = next as Record<string, unknown>
+    }
+    node[key[key.length - 1]!] = value
+}
 
 /** 帧调度器：返回取消函数（绑定层注入 requestAnimationFrame 的包装） */
 export type FrameScheduler = (callback: () => void) => () => void
@@ -254,6 +266,56 @@ export class EditorSession {
         if (!this.store.ui.drag) return
         this.store.setDrag(null)
         this.store.closeMerge(DRAG_MERGE_KEY)
+    }
+
+    // ---- 属性写入（工单 09）：面板零直改，一切文档字段编辑经这三个 action ----
+
+    /**
+     * 更新图层 spec 子树字段（属性面板的权威写入口）：key 为图层内字段路径
+     * （领域形态，如 ['shape','backgroundColor']、['position','x']、单段 ['fontSize']），
+     * 拼上图层路径即 patch path。数值收整/钳位等取值策略由注册表层负责，内核透传。
+     * 路径无法解析或字段悬空时静默空转；连续输入经 mergeKey 合并为一步历史。
+     */
+    updateSpec(path: LayerPath, key: readonly string[], value: unknown, options: TransactOptions = {}): void {
+        this.store.transact((draft) => {
+            const layer = resolveLayer(draft, path)
+            if (!layer) return
+            // draft 语义解除 readonly；字段形态由注册表与领域类型把关，内核透传
+            writeSpecField(layer as unknown as Record<string, unknown>, key, value)
+        }, options)
+    }
+
+    /**
+     * 更新图层数据字段（wire data.value 的领域展开，按 type 分派）：
+     * TextLayer → text、ImageLayer → src、QrCodeLayer → value；
+     * 空串/null 归空语义与解码逐条对齐（Image null、Text/Qr 空串）。
+     * 表/行/格无数据字段，空转。
+     */
+    updateData(path: LayerPath, value: string | null, options: TransactOptions = {}): void {
+        this.store.transact((draft) => {
+            const layer = resolveLayer(draft, path) as Draft<Layer> | null
+            if (!layer) return
+            switch (layer.type) {
+                case 'TextLayer':
+                    layer.text = value == null ? '' : String(value)
+                    break
+                case 'ImageLayer':
+                    layer.src = value == null || value === '' ? null : String(value)
+                    break
+                case 'QrCodeLayer':
+                    layer.value = value == null ? '' : String(value)
+                    break
+                default:
+                    break
+            }
+        }, options)
+    }
+
+    /** 更新画布级字段（未选中图层时面板的宽/高写入口）；键由类型收窄为 width/height */
+    updateCanvasProp(key: 'width' | 'height', value: number, options: TransactOptions = {}): void {
+        this.store.transact((draft) => {
+            draft[key] = value
+        }, options)
     }
 
     // ---- 撤销/重做（工单 08）：双栈语义全在 store，会话只透传查询与动作 ----

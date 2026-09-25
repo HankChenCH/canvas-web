@@ -11,7 +11,7 @@
  *   （红线 3 的编辑器延伸：派生状态只住这里，不写文档）。
  * - 通知携带变更位置（scope/branch）与 patch 组，绑定层与渲染调度据此细分脏区。
  */
-import { applyPatches, enablePatches, produceWithPatches, type Draft, type Patch } from 'immer'
+import { applyPatches, enablePatches, produceWithPatches, setAutoFreeze, type Draft, type Patch } from 'immer'
 
 import type { Canvas } from '@hankchen/canvas-next'
 
@@ -19,6 +19,12 @@ import type { Point, Viewport } from './camera'
 import { pathsEqual, type LayerPath } from './layerPath'
 
 enablePatches()
+// 关闭 immer 自动冻结：文档树以「不可变 + 结构共享」语义流转（引用相等即未变），
+// 该语义不依赖冻结；而绑定层（Vue）的响应式系统会把宿主对象封进 Proxy，冻结树
+// 一旦被代理封装，immer 后续 draft/freeze 读取子属性即触发 V8 Proxy 不变量报错
+// （工单 09 属性面板实测：autoFreeze 开启时面板提交必现 "get on proxy" 崩溃）。
+// 防误改由唯一写入口 transact 的纪律保证。
+setAutoFreeze(false)
 
 /** 拖动会话（ui 分支）：目标路径 + 起点场景坐标 + 起始 position 偏移 */
 export interface DragGesture {

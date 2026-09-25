@@ -20,6 +20,7 @@ import {
     CanvasSurface,
     createRafScheduler,
     drawSelectionGizmo,
+    PropertyPanel,
     useHistory,
     useViewport,
     type CanvasSurfaceReady,
@@ -169,7 +170,7 @@ onBeforeUnmount(() => {
     <main class="stage">
         <header class="header">
             <h1>canvas-web playground</h1>
-            <p>撤销与重做（工单 08）：顶栏按钮/快捷键撤销一切文档变更 · 拖动合步 · 100 步上限（工单 02–06 目验保留）</p>
+            <p>属性面板（工单 09）：右侧面板按选中图层的字段注册表自动生成表单，改动实时生效并可撤销（工单 02–08 目验保留）</p>
             <p class="assets-note">{{ assetsNote }}</p>
             <p class="selection-note" data-selection>{{ selectionNote }}</p>
         </header>
@@ -202,19 +203,21 @@ onBeforeUnmount(() => {
             <button type="button" class="fit" title="视口适配当前选中的图层盒" @click="fitToSelection">适应选区</button>
         </section>
 
-        <section class="canvas-frame" aria-label="画布目验区">
+        <section class="workbench" aria-label="画布与属性面板">
             <CanvasSurface class="surface" :editor="editor" @ready="onReady" />
+            <PropertyPanel class="props" :editor="editor" />
         </section>
 
         <section class="legend">
             <ul>
-                <li><b>撤销/重做</b>：顶栏按钮随历史栈自动可用/禁用；快捷键 <b>Ctrl/Cmd+Z</b> 撤销、<b>Ctrl/Cmd+Shift+Z</b>（或 Ctrl+Y）重做；上限 100 步、不跨会话，撤销后的新变更弃用重做分支（对齐 Figma）；输入法候选窗里的快捷键不触发</li>
+                <li><b>属性面板</b>：点选图层后右侧按字段注册表自动生成表单——数值（X/Y/宽高/字号）逐键实时生效、change/blur 收口为一步历史；改背景色（取色器拖动实时）、文本内容（逐键实时，输入法合成中不误提交）、九宫锚点（点击即一步历史）；四键内边距、四边边框（宽度 0 = 关闭该边）；未选中时显示画布宽/高；行宽/格内容宽高等被解码强同步的字段不出现（权威字段过滤）</li>
+                <li><b>撤销/重做</b>：顶栏按钮随历史栈自动可用/禁用；快捷键 <b>Ctrl/Cmd+Z</b> 撤销、<b>Ctrl/Cmd+Shift+Z</b>（或 Ctrl+Y）重做；上限 100 步、不跨会话，撤销后的新变更弃用重做分支（对齐 Figma）；面板连续输入合并为一步，blur 收口</li>
                 <li><b>点选</b>：左键点击图层（视觉最上层优先，负溢出画布外也可命中）；点表格选中格，<b>Esc 逐级升级 格→行→表</b>，再按清空；点空白处取消选择</li>
                 <li><b>拖动</b>：左键按住拖动，位置实时跟随（九锚点一视同仁，只改 x/y 增量）；<b>一次拖动 = 一步历史</b>（mergeKey 事务合并，撤销一次回到拖动前）</li>
                 <li><b>hover</b>：指针扫过的图层有淡蓝高亮，选中层蓝框常显（都画在 gizmo 覆盖层，不触发内容层重绘）</li>
                 <li><b>适应选区</b>：视口适配选中图层盒（表格可适配到行/格）；无选中时同「适应画布」</li>
                 <li>平移：空格（或中键）拖拽、plain 滚轮上下左右、<b>shift + 滚轮横向</b>；缩放 <b>ctrl/cmd + 滚轮</b>以指针为中心，范围 5%–800%</li>
-                <li>顶部读数显示选中路径与 x/y/锚点（拖动时数值联动；正式属性面板在工单 09）</li>
+                <li>顶部读数显示选中路径与 x/y/锚点（拖动时数值联动，与属性面板读同一文档数据）</li>
                 <li>工单 02–04 目验样例保留：priority 叠放 / cover / 中文禁则断行 / 表格 / 失败资源（右上红框）/ QR 固定选项（右下，贴角负边距）</li>
             </ul>
         </section>
@@ -317,6 +320,24 @@ onBeforeUnmount(() => {
     width: min(1240px, calc(100vw - 32px));
     height: max(420px, calc(100vh - 320px));
     padding: 0;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    background: #cbd5e1; /* 画布外的「桌面」底色：平移出界时清晰可辨 */
+    overflow: hidden;
+}
+
+/* 工单 09：画布 + 属性面板并排的工作台布局 */
+.workbench {
+    display: flex;
+    align-items: stretch;
+    gap: 12px;
+    width: min(1240px, calc(100vw - 32px));
+    height: max(420px, calc(100vh - 320px));
+}
+
+.workbench .surface {
+    flex: 1;
+    min-width: 0;
     border: 1px solid #e5e7eb;
     border-radius: 12px;
     background: #cbd5e1; /* 画布外的「桌面」底色：平移出界时清晰可辨 */

@@ -63,4 +63,19 @@ export {
     MAX_HISTORY_STEPS,
 } from './store'
 export { classifyWheel, type WheelIntent, type WheelInput } from './wheel'
+// 领域常量与类型的公共再出口：绑定层（editor-vue）按红线不得直连 canvas-next，
+// 字段描述注册表等消费面从这里取（工单 09 起）
+export {
+    ANCHORS,
+    HORIZONTAL_ALIGNS,
+    LAYER_TYPES,
+    VERTICAL_ALIGNS,
+    type Anchor,
+    type Border,
+    type BorderSide,
+    type HorizontalAlign,
+    type LayerType,
+    type Padding,
+    type VerticalAlign,
+} from '@hankchen/canvas-next'
 export type { Canvas, Layer, LayerBox } from '@hankchen/canvas-next'
