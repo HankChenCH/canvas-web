@@ -4,6 +4,7 @@
  * 实时提交 + change 收口，输入法合成中不实时提交（中文录入预编辑串不进文档）。
  */
 import type { FieldDef } from './fieldSchema'
+import { textareaField } from './controlStyles'
 
 defineProps<{ field: FieldDef; modelValue: string }>()
 
@@ -34,7 +35,8 @@ function onChange(event: Event): void {
 
 <template>
     <textarea
-        class="cn-field cn-field--area"
+        class="cn-field"
+        :class="textareaField"
         rows="3"
         :value="modelValue"
         @input="onInput"

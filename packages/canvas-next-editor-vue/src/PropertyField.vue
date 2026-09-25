@@ -21,8 +21,11 @@ const control = computed(() => controlRegistry[props.field.control])
 </script>
 
 <template>
-    <label class="cn-prop-field">
-        <span class="cn-prop-field__label">{{ field.label }}</span>
+    <label class="cn-prop-field flex items-center justify-between gap-2">
+        <span class="cn-prop-field__label shrink-0 select-none truncate text-[11px] leading-none text-cn-muted">
+            {{ field.label }}
+        </span>
+        <!-- 宽度由各控件自持：输入类自带 flex-1 撑满，定宽类（锚点九宫/开关）保持固有尺寸 -->
         <component
             :is="control"
             class="cn-prop-field__control"
@@ -33,27 +36,3 @@ const control = computed(() => controlRegistry[props.field.control])
         />
     </label>
 </template>
-
-<style scoped>
-.cn-prop-field {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-}
-
-.cn-prop-field__label {
-    flex: none;
-    width: 62px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 12px;
-    color: #374151;
-}
-
-.cn-prop-field__control {
-    flex: 1;
-    min-width: 0;
-}
-</style>

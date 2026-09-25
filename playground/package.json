@@ -18,9 +18,11 @@
         "vue": "^3.5.43"
     },
     "devDependencies": {
+        "@tailwindcss/vite": "^4.3.3",
         "@vitejs/plugin-vue": "^6.0.9",
         "browserslist": "^4.26.0",
         "browserslist-to-esbuild": "^2.1.1",
+        "tailwindcss": "^4.3.3",
         "vite": "^8.3.1",
         "vue-tsc": "^3.3.11"
     }

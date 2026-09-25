@@ -1,5 +1,8 @@
 import { createApp } from 'vue'
 
+// 面板设计令牌（shadcn 语义变量，纯 CSS）先于 tailwind 工具类载入
+import '@hankchen/canvas-next-editor-vue/panel-theme.css'
+import './style.css'
 import App from './App.vue'
 
 createApp(App).mount('#app')

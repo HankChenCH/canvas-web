@@ -10,6 +10,7 @@
 import { ref, watch } from 'vue'
 
 import type { FieldDef } from './fieldSchema'
+import { numberField } from './controlStyles'
 
 const props = defineProps<{ field: FieldDef; modelValue: number }>()
 
@@ -65,6 +66,7 @@ function onFinish(event: Event): void {
     <input
         v-model="draft"
         class="cn-field cn-field--number"
+        :class="numberField"
         type="number"
         :min="field.min"
         :max="field.max"

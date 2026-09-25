@@ -1,0 +1,61 @@
+/**
+ * 属性面板设计令牌（shadcn/ui 语义令牌的面板命名空间版）。
+ *
+ * 纯 CSS、零构建：令牌全部作用域在面板根 .cn-props 上——面板自带主题、
+ * 不向宿主页面渗漏（宿主无需全局变量）。Tailwind 工具类（组件模板内）由
+ * 宿主的 tailwind 编译器经 @source 扫描本包源码生成，@theme inline 把下面的
+ * --cn-* 映射成 --color-cn-* 颜色族（见 playground/src/style.css 的接线样例）。
+ *
+ * 宿主接入三步：
+ *   1. devDeps 加 tailwindcss + @tailwindcss/vite，vite 插件启用；
+ *   2. 应用 css：@import "tailwindcss"; @source "<本包 src 路径>";
+ *   3. import '@hankchen/canvas-next-editor-vue/panel-theme.css'
+ *
+ * 主题方向：暗色检视面板（precision-instrument）——深蓝灰底、发丝线分隔、
+ * 天蓝 accent、表格数字。宿主可覆盖 .cn-props 上的 --cn-* 变量换肤。
+ */
+.cn-props {
+    /* 表面与文字 */
+    --cn-bg: #0b1220;
+    --cn-bg-elevated: #101a2e;
+    --cn-fg: #e6edf7;
+    --cn-muted: #7c8ca5;
+
+    /* 边界：容器发丝线 / 输入框描边 */
+    --cn-line: #1e2a40;
+    --cn-field-line: #2a3a57;
+
+    /* 输入底（半透明石板，叠在面板底色上） */
+    --cn-field: rgba(148, 163, 184, 0.07);
+
+    /* accent（天蓝）与其上的可读前景 */
+    --cn-accent: #38bdf8;
+    --cn-accent-soft: rgba(56, 189, 248, 0.12);
+    --cn-on-accent: #06283d;
+
+    /* 危险/告警（预留） */
+    --cn-danger: #f87171;
+
+    /* 数字/代码用等宽字族（面板的「仪器刻度」字形） */
+    --cn-font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas,
+        monospace;
+
+    /* 原生控件（number 步进器、color、checkbox）走暗色渲染 */
+    color-scheme: dark;
+
+    background-color: var(--cn-bg);
+    color: var(--cn-fg);
+}
+
+/* SelectField 的自绘箭头（appearance-none 后由背景 svg 补上指示） */
+.cn-props .cn-select {
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237c8ca5' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 6px center;
+    background-size: 10px;
+}
+
+.cn-props .cn-select option {
+    background-color: var(--cn-bg-elevated);
+    color: var(--cn-fg);
+}

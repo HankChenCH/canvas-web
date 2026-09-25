@@ -30,10 +30,11 @@ function patch(side: keyof Padding, value: number, final: boolean): void {
 </script>
 
 <template>
-    <span class="cn-padding">
-        <label v-for="entry in SIDES" :key="entry.side" class="cn-padding__side">
-            <span class="cn-padding__label">{{ entry.label }}</span>
+    <span class="cn-padding grid w-full grid-cols-2 gap-1">
+        <label v-for="entry in SIDES" :key="entry.side" class="cn-padding__side flex min-w-0 items-center gap-1">
+            <span class="cn-padding__label shrink-0 select-none text-[10px] text-cn-muted">{{ entry.label }}</span>
             <NumberField
+                class="min-w-0 flex-1"
                 :field="entry.field"
                 :model-value="modelValue[entry.side]"
                 @input="patch(entry.side, $event, false)"
@@ -42,24 +43,3 @@ function patch(side: keyof Padding, value: number, final: boolean): void {
         </label>
     </span>
 </template>
-
-<style scoped>
-.cn-padding {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 4px;
-}
-
-.cn-padding__side {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    min-width: 0;
-}
-
-.cn-padding__label {
-    flex: none;
-    font-size: 11px;
-    color: #6b7280;
-}
-</style>

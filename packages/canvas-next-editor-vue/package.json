@@ -9,7 +9,8 @@
         ".": {
             "types": "./src/index.ts",
             "default": "./src/index.ts"
-        }
+        },
+        "./panel-theme.css": "./src/panel-theme.css"
     },
     "scripts": {
         "test": "vitest run",

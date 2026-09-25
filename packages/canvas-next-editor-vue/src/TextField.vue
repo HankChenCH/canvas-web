@@ -5,6 +5,7 @@
  * 合成结束/收口时整段提交——与内核文本编辑的 IME 守卫同款语义。
  */
 import type { FieldDef } from './fieldSchema'
+import { textField } from './controlStyles'
 
 defineProps<{ field: FieldDef; modelValue: string }>()
 
@@ -37,6 +38,7 @@ function onChange(event: Event): void {
 <template>
     <input
         class="cn-field"
+        :class="textField"
         type="text"
         :value="modelValue"
         @input="onInput"

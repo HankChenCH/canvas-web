@@ -8,6 +8,7 @@
 import { ref, watch } from 'vue'
 
 import type { FieldDef } from './fieldSchema'
+import { colorSwatch, fieldBase } from './controlStyles'
 
 const props = defineProps<{ field: FieldDef; modelValue: string | null }>()
 
@@ -70,10 +71,10 @@ function onTextChange(event: Event): void {
 </script>
 
 <template>
-    <span class="cn-color">
+    <span class="cn-color flex min-w-0 flex-1 items-center gap-1.5">
         <input
             v-if="field.nullable"
-            class="cn-color__toggle"
+            class="cn-color__toggle size-3.5 shrink-0 cursor-pointer accent-cn-accent"
             type="checkbox"
             title="启用颜色"
             :checked="enabled"
@@ -81,6 +82,7 @@ function onTextChange(event: Event): void {
         />
         <input
             class="cn-color__swatch"
+            :class="colorSwatch"
             type="color"
             :value="swatchHex"
             :disabled="!enabled"
@@ -88,7 +90,8 @@ function onTextChange(event: Event): void {
             @change="onSwatchChange"
         />
         <input
-            class="cn-field cn-color__text"
+            class="cn-color__text min-w-0 flex-1"
+            :class="fieldBase"
             type="text"
             :value="modelValue ?? ''"
             :disabled="!enabled"

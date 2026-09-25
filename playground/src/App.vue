@@ -205,7 +205,7 @@ onBeforeUnmount(() => {
 
         <section class="workbench" aria-label="画布与属性面板">
             <CanvasSurface class="surface" :editor="editor" @ready="onReady" />
-            <PropertyPanel class="props" :editor="editor" />
+            <PropertyPanel :editor="editor" />
         </section>
 
         <section class="legend">

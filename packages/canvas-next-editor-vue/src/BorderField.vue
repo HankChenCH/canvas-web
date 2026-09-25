@@ -74,18 +74,18 @@ function onColor(side: SideKey, event: Event, final: boolean): void {
 </script>
 
 <template>
-    <span class="cn-border">
-        <label v-for="entry in SIDES" :key="entry.side" class="cn-border__side">
+    <span class="cn-border grid w-full gap-1">
+        <label v-for="entry in SIDES" :key="entry.side" class="cn-border__side flex items-center gap-1.5">
             <input
-                class="cn-border__toggle"
+                class="cn-border__toggle size-3 shrink-0 cursor-pointer accent-cn-accent"
                 type="checkbox"
                 title="启用该边"
                 :checked="modelValue[entry.side] !== null"
                 @change="onToggle(entry.side, $event)"
             />
-            <span class="cn-border__label">{{ entry.label }}</span>
+            <span class="cn-border__label w-3 shrink-0 select-none text-[10px] text-cn-muted">{{ entry.label }}</span>
             <NumberField
-                class="cn-border__width"
+                class="cn-border__width min-w-0 flex-1"
                 :field="entry.widthField"
                 :model-value="sideWidth(modelValue[entry.side])"
                 :disabled="modelValue[entry.side] === null"
@@ -93,7 +93,7 @@ function onColor(side: SideKey, event: Event, final: boolean): void {
                 @change="onWidth(entry.side, $event, true)"
             />
             <input
-                class="cn-border__color"
+                class="cn-border__color size-6 shrink-0 cursor-pointer self-center rounded-md border border-cn-field-line bg-cn-field p-0.5 transition-colors hover:border-cn-muted/40 disabled:cursor-not-allowed disabled:opacity-40"
                 type="color"
                 title="边框颜色"
                 :value="sideColor(modelValue[entry.side])"
@@ -104,37 +104,3 @@ function onColor(side: SideKey, event: Event, final: boolean): void {
         </label>
     </span>
 </template>
-
-<style scoped>
-.cn-border {
-    display: grid;
-    gap: 4px;
-}
-
-.cn-border__side {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-}
-
-.cn-border__label {
-    flex: none;
-    width: 14px;
-    font-size: 11px;
-    color: #6b7280;
-}
-
-.cn-border__width {
-    flex: 1;
-    min-width: 0;
-}
-
-.cn-border__color {
-    flex: none;
-    width: 26px;
-    height: 22px;
-    padding: 0;
-    border: none;
-    background: none;
-}
-</style>
