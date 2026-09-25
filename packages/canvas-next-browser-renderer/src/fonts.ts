@@ -5,8 +5,9 @@
  * 语义镜像 PHP ImageRenderer::drawText（`$fontFile !== '' && !is_numeric($fontFile)`
  * 才走字体文件，否则 v4 内置默认字体）与 go-canvas typography.IsBuiltinFont——
  * 空串/纯数字字体 id 是旧库 GD 内置字体的血统，浏览器端对应内置默认字体 =
- * 系统无衬线族。本文件是渲染包内唯一触 DOM 的地方（FontFace/document.fonts），
- * 包 tsconfig 仍无 DOM lib（红线 2）。
+ * 系统无衬线族。本文件是渲染包内唯一触 DOM 运行时 API 的地方（FontFace /
+ * document.fonts；Canvas2D 类型在 canvas2d-backend.ts 局部引入），包 tsconfig
+ * 仍无 DOM lib（红线 2）。
  */
 
 /** 内置默认字体判定：空串/纯数字字体引用（PHP is_numeric 同门：旧库 GD 内置字体 id） */
@@ -45,7 +46,9 @@ export function loadCanvasFont(font: string): Promise<string> {
 
     const family = fontFamilyFor(font)
     const loading = (async () => {
-        const face = new FontFace(family, `url("${font}")`)
+        // CSS 字符串内的引号转义（graph 引用来自宿主数据，不假设 URL 干净）
+        const source = `url("${font.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}")`
+        const face = new FontFace(family, source)
         await face.load()
         // lib.dom 的 FontFaceSet 声明缺 add（运行时存在），按 Set 结构收窄
         ;(document.fonts as unknown as Set<FontFace>).add(face)

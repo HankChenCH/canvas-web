@@ -1,10 +1,8 @@
-/// <reference lib="dom" />
-
 /**
  * cover 缩放裁切几何：等比缩放至铺满目标盒，溢出居中裁掉（PHP intervention cover /
  * go-canvas image-renderer cover 同款）。明确放弃逐像素复刻 GD/浏览器 rasterizer
  * （spec Out of Scope：布局级一致、像素不求等）——本模块只算"源图上裁哪个窗"，
- * 缩放插值交给 drawImage 的原生光栅化。
+ * 缩放插值交给 drawImage 的原生光栅化。纯几何，无 DOM 类型（红线 2）。
  */
 
 export interface CropWindow {

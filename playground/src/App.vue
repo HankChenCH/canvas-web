@@ -40,16 +40,18 @@ onMounted(async () => {
     if (!ctx) return
     const backend = new Canvas2DBackend(ctx)
 
-    await preloadAssets(doc, backend)
+    const failures = await preloadAssets(doc, backend)
     renderCanvas(doc, backend)
-    assetsNote.value = '资源就绪，已渲染'
+    assetsNote.value = failures.length === 0
+        ? '资源就绪，已渲染'
+        : `部分资源加载失败（已回落占位/默认字体）：${failures.join('、')}`
 
     const guideCtx = guideEl.getContext('2d')
     if (guideCtx) drawContentGuides(guideCtx, doc)
 })
 
-/** 渲染前资源预载：图片经 Image 解码回写 backend；URL 字体经 FontFace 注册 */
-async function preloadAssets(doc: CanvasDoc, backend: Canvas2DBackend): Promise<void> {
+/** 渲染前资源预载：图片经 Image 解码回写 backend；URL 字体经 FontFace 注册。返回失败清单 */
+async function preloadAssets(doc: CanvasDoc, backend: Canvas2DBackend): Promise<string[]> {
     const srcs = new Set<string>()
     const fonts = new Set<string>()
     forEachLayerBox(doc, (layer) => {
@@ -78,7 +80,7 @@ async function preloadAssets(doc: CanvasDoc, backend: Canvas2DBackend): Promise<
             }
         }),
     ])
-    if (failures.length > 0) assetsNote.value = `部分资源加载失败：${failures.join('、')}`
+    return failures
 }
 
 /** 目验辅助：复用渲染模板的同一遍历与几何，给每层的 padding 内容盒画虚线框 */
