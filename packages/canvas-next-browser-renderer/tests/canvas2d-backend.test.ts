@@ -20,12 +20,16 @@ function fakeCtx(metrics: {
     fontDescent?: number
     actualAscent?: number
     actualDescent?: number
+    /** 物理缓冲尺寸（ctx.canvas.width/height，工单 05 起与场景整数像素分离） */
+    bufferWidth?: number
+    bufferHeight?: number
 } = { width: 40, fontAscent: 30, fontDescent: 10 }) {
     const ops: CtxOp[] = []
     const state = { fillStyle: '', strokeStyle: '', lineWidth: 0, font: '' }
     const record = (call: string, ...args: unknown[]) => ops.push({ call, args })
 
     const ctx = {
+        canvas: { width: metrics.bufferWidth ?? 320, height: metrics.bufferHeight ?? 200 },
         get fillStyle() {
             return state.fillStyle
         },
@@ -101,6 +105,36 @@ describe('Canvas2D 后端（begin/end/drawRect，工单 02 平移）', () => {
 
         expect(ops[0]).toEqual({ call: 'setTransform', args: [1, 0, 0, 1, 0, 0] })
         expect(ops[1]).toEqual({ call: 'clearRect', args: [0, 0, 320, 200] })
+    })
+
+    it('begin 清的是物理缓冲（css × dpr），不是场景整数尺寸（工单 05）', () => {
+        const { ops, ctx } = fakeCtx({ width: 40, bufferWidth: 640, bufferHeight: 400 })
+        const backend = new Canvas2DBackend(ctx)
+
+        backend.begin(320, 200)
+        expect(ops[1]).toEqual({ call: 'clearRect', args: [0, 0, 640, 400] })
+    })
+
+    it('视口变换（工单 05）：begin 清屏后施加 dpr×zoom×相机变换，场景坐标不变', () => {
+        const { ops, ctx } = fakeCtx({ width: 40, bufferWidth: 640, bufferHeight: 400 })
+        const backend = new Canvas2DBackend(ctx)
+
+        backend.setViewportTransform({ dpr: 2, zoom: 1.5, x: 100, y: 50 })
+        backend.begin(320, 200)
+
+        expect(ops[0]).toEqual({ call: 'setTransform', args: [1, 0, 0, 1, 0, 0] })
+        expect(ops[1]).toEqual({ call: 'clearRect', args: [0, 0, 640, 400] })
+        // scale = 2×1.5 = 3；平移 = -x×scale = -300（x/y 由会话侧对齐物理像素）
+        expect(ops[2]).toEqual({ call: 'setTransform', args: [3, 0, 0, 3, -300, -150] })
+
+        // 置 null 恢复恒等（导出全幅语义），不再施加视口变换
+        ops.length = 0
+        backend.setViewportTransform(null)
+        backend.begin(320, 200)
+        expect(ops).toEqual([
+            { call: 'setTransform', args: [1, 0, 0, 1, 0, 0] },
+            { call: 'clearRect', args: [0, 0, 640, 400] },
+        ])
     })
 
     it('drawRect：背景填充盒（null/空串跳过）', () => {
@@ -319,6 +353,7 @@ describe('点位取样断言（背景色、cover 中缝）', () => {
 
         const state = { fillStyle: '#000000' }
         const ctx = {
+            canvas: { width: W, height: H },
             set fillStyle(v: string) { state.fillStyle = v },
             setTransform: () => {},
             clearRect: () => {},

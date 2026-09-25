@@ -21,7 +21,37 @@ export interface DrawableImage {
     readonly height: number
 }
 
-export class Canvas2DBackend implements RenderBackend {
+/**
+ * 预览视口变换（工单 05）：begin 清屏后施加到 ctx 的 dpr×zoom×相机变换。
+ * x/y 由编辑器会话给出（已对齐物理像素），本端只做与 dpr 的乘法合成。
+ */
+export interface PreviewViewportTransform {
+    dpr: number
+    zoom: number
+    x: number
+    y: number
+}
+
+/** 视口感知后端能力：编辑器会话在内容重绘前经此同步预览视口（可选能力口） */
+export interface ViewportAwareBackend {
+    setViewportTransform(transform: PreviewViewportTransform | null): void
+}
+
+/**
+ * 把预览视口变换施加到 2D 上下文（内容层 begin 与宿主覆盖层共用同一几何，
+ * 保证两层在缩放/平移下不错位）。调用方需先自行复位变换并清屏。
+ */
+export function applyViewportTransform(
+    ctx: CanvasRenderingContext2D,
+    transform: PreviewViewportTransform,
+): void {
+    const scale = transform.dpr * transform.zoom
+    // 场景整数坐标经 transform 承担缩放与相机（绘制代码零改动）；平移已由
+    // 会话侧对齐物理像素，此处直接乘 dpr×zoom 落到设备像素网格。
+    ctx.setTransform(scale, 0, 0, scale, -transform.x * scale, -transform.y * scale)
+}
+
+export class Canvas2DBackend implements RenderBackend, ViewportAwareBackend {
     private readonly ctx: CanvasRenderingContext2D
 
     /** 物化回写面：src → 已加载的图片源（工单 04 的物化器落点，渲染前由宿主/物化器填充） */
@@ -29,6 +59,9 @@ export class Canvas2DBackend implements RenderBackend {
 
     /** 字体引用 → 已注册族名（loadCanvasFont 的回写面；未注册 URL 回落内置默认） */
     private readonly fontFamilies = new Map<string, string>()
+
+    /** 预览视口（工单 05）：null = 恒等变换（如导出走 begin(w,h) 全幅语义） */
+    private viewportTransform: PreviewViewportTransform | null = null
 
     constructor(ctx: CanvasRenderingContext2D) {
         this.ctx = ctx
@@ -44,10 +77,17 @@ export class Canvas2DBackend implements RenderBackend {
         this.fontFamilies.set(font, family)
     }
 
-    begin(width: number, height: number): void {
-        // 新建渲染面语义：复用同一面时清残留变换与上帧像素（DPR/视口变换在工单 05 接管）
+    setViewportTransform(transform: PreviewViewportTransform | null): void {
+        this.viewportTransform = transform
+    }
+
+    begin(_width: number, _height: number): void {
+        // 新建渲染面语义：复用同一面时清残留变换与上帧像素。物理缓冲 =
+        // css × dpr（工单 05 起与画布整数像素语义分离），按缓冲实尺寸清。
         this.ctx.setTransform(1, 0, 0, 1, 0, 0)
-        this.ctx.clearRect(0, 0, width, height)
+        this.ctx.clearRect(0, 0, this.ctx.canvas.width, this.ctx.canvas.height)
+
+        if (this.viewportTransform) applyViewportTransform(this.ctx, this.viewportTransform)
     }
 
     end(): void {

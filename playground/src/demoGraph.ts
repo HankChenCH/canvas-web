@@ -1,23 +1,23 @@
 /**
- * 工单 04 目验样例：QR 与物化状态机。
+ * 工单 05 目验样例：相机与视口——2400×1500 数千像素画布，导航才有意义。
  * 仍是宿主交接的 graph JSON 手写体（部分层缺键、带字符串数字，演练宽松解码）。
  *
- * 目验要点：
- * - QR：固定选项（UTF-8、纠错 High、无静区、黑白）生成 PNG 后按盒宽缩放铺放；
- *   未声明 height 按宽兜底正方形（对齐 QrCodeLayer 语义）
- * - 物化状态机：图片/字体/QR 经 Materializer 异步物化，pending 灰叉占位、
- *   done 绘制真实内容、failed 红叉红框（/demo-missing.png 演示失败态）
- * - 中文长段 autowrap + 禁则；家庭 emoji 字素簇；图片 cover；URL 字体（工单 03）
- * - priority 叠放：100 背景 → 40 图片 → 30 文字 → 25 段落 → 15 表格 → 12 失败演示 → 10 QR 最上
+ * 布局分左右两区，平移/缩放才能看全：
+ * - 左区（x≈96–760）：背景、cover 图片、URL 字体标题、autowrap 中文长段（禁则 +
+ *   emoji 字素簇）、表格、失败演示资源
+ * - 右区（x≈1200–2200）：大字展示文本、第二段落、第二张 cover 图
+ * - QR 挂画布 bottom-right（-32,-32 负溢出不钳位）
+ * - priority 叠放（数组头先画垫底）：100 背景 → 40 → 38 → 35 → 30 → 25 → 20 → 15 → 12 → 10 QR 最上
+ * - 工单 04 的物化三态保留可目验：/demo-missing.png 失败红叉、URL 字体、QR 固定选项
  */
 export const DEMO_GRAPH_JSON = `{
-  "canvas": { "width": 560, "height": 420 },
+  "canvas": { "width": 2400, "height": 1500 },
   "layers": [
     {
       "type": "ImageLayer",
       "priority": 100,
       "spec": {
-        "shape": { "width": 560, "height": 420, "backgroundColor": "#0f172a" },
+        "shape": { "width": 2400, "height": 1500, "backgroundColor": "#0f172a" },
         "position": { "x": 0, "y": 0, "position": "top-left" }
       }
     },
@@ -26,43 +26,85 @@ export const DEMO_GRAPH_JSON = `{
       "priority": 40,
       "spec": {
         "shape": {
-          "width": 200, "height": 150, "backgroundColor": "#1e293b",
-          "padding": { "top": 8, "bottom": 8, "left": 8, "right": 8 },
+          "width": 480, "height": 360, "backgroundColor": "#1e293b",
+          "padding": { "top": 10, "bottom": 10, "left": 10, "right": 10 },
           "border": { "top": { "width": 1, "color": "#334155" }, "bottom": { "width": 1, "color": "#334155" }, "left": { "width": 1, "color": "#334155" }, "right": { "width": 1, "color": "#334155" } }
         },
-        "position": { "x": 24, "y": 24, "position": "top-left" }
+        "position": { "x": 96, "y": 96, "position": "top-left" }
+      },
+      "data": { "valueType": "StaticValue", "value": "/demo-cover.svg" }
+    },
+    {
+      "type": "ImageLayer",
+      "priority": 38,
+      "spec": {
+        "shape": {
+          "width": 400, "height": 300, "backgroundColor": "#1e293b",
+          "padding": { "top": 8, "bottom": 8, "left": 8, "right": 8 }
+        },
+        "position": { "x": 1640, "y": 980, "position": "top-left" }
       },
       "data": { "valueType": "StaticValue", "value": "/demo-cover.svg" }
     },
     {
       "type": "TextLayer",
+      "priority": 35,
+      "spec": {
+        "shape": { "width": 900, "height": 140, "backgroundColor": "rgba(56, 189, 248, 0.12)" },
+        "align": { "horizontal": "center", "vertical": "center" },
+        "position": { "x": 1240, "y": 260, "position": "top-left" },
+        "fontFamily": { "fontSize": "72", "fontColor": "#38bdf8" }
+      },
+      "data": { "valueType": "StaticValue", "expression": "", "value": "大画布导航目验" }
+    },
+    {
+      "type": "TextLayer",
       "priority": 30,
       "spec": {
-        "shape": { "width": 220, "height": 48, "backgroundColor": "#0c4a6e" },
+        "shape": { "width": 560, "height": 72, "backgroundColor": "#0c4a6e" },
         "align": { "horizontal": "left", "vertical": "center" },
-        "position": { "x": 24, "y": 204, "position": "top-left" },
-        "fontFamily": { "font": "/fonts/open-sans.ttf", "fontSize": 20, "fontColor": "#38bdf8" }
+        "position": { "x": 96, "y": 520, "position": "top-left" },
+        "fontFamily": { "font": "/fonts/open-sans.ttf", "fontSize": 40, "fontColor": "#38bdf8" }
       },
-      "data": { "valueType": "StaticValue", "expression": "", "value": "Open Sans 0123" }
+      "data": { "valueType": "StaticValue", "expression": "", "value": "Open Sans 0123 海报" }
     },
     {
       "type": "TextLayer",
       "priority": 25,
       "spec": {
         "shape": {
-          "width": 200, "height": "auto", "autoHeight": true, "lineHeight": 1.5,
+          "width": 480, "height": "auto", "autoHeight": true, "lineHeight": 1.6,
           "backgroundColor": "rgba(15, 23, 42, 0.72)",
-          "padding": { "top": 12, "bottom": 12, "left": 12, "right": 12 },
-          "border": { "left": { "width": 4, "color": "#0ea5e9" } }
+          "padding": { "top": 16, "bottom": 16, "left": 16, "right": 16 },
+          "border": { "left": { "width": 6, "color": "#0ea5e9" } }
         },
         "align": { "horizontal": "left", "vertical": "bottom" },
-        "position": { "x": 340, "y": 24, "position": "top-left" },
-        "fontFamily": { "fontSize": 16, "fontColor": "#e2e8f0", "autowrap": true }
+        "position": { "x": 96, "y": 640, "position": "top-left" },
+        "fontFamily": { "fontSize": 18, "fontColor": "#e2e8f0", "autowrap": true }
       },
       "data": {
         "valueType": "StaticValue",
         "expression": "",
-        "value": "画布渲染库的中文长段按贪心策略逐簇断行，行首不见句读、行末不见起始标点。\\n\\n家庭 emoji 👨‍👩‍👧‍👦 是一个字素簇，断行不拆碎👍"
+        "value": "画布渲染库的中文长段按贪心策略逐簇断行，行首不见句读、行末不见起始标点。\\n\\n家庭 emoji 👨‍👩‍👧‍👦 是一个字素簇，断行不拆碎👍 放大到 800% 看物理像素是否清晰。"
+      }
+    },
+    {
+      "type": "TextLayer",
+      "priority": 20,
+      "spec": {
+        "shape": {
+          "width": 700, "height": "auto", "autoHeight": true, "lineHeight": 1.5,
+          "backgroundColor": "rgba(15, 23, 42, 0.6)",
+          "padding": { "top": 14, "bottom": 14, "left": 14, "right": 14 }
+        },
+        "align": { "horizontal": "left", "vertical": "bottom" },
+        "position": { "x": 1240, "y": 470, "position": "top-left" },
+        "fontFamily": { "fontSize": "22", "fontColor": "#cbd5e1", "autowrap": true }
+      },
+      "data": {
+        "valueType": "StaticValue",
+        "expression": "",
+        "value": "视口 {x, y, zoom} 住 store 的 ui 分支，永不进历史；重绘经 rAF 合帧，每屏帧至多一次。\\n\\n滚轮语义三态：plain 平移、shift 横移、ctrl/双指捏合以指针为中心缩放（5%–800%）。"
       }
     },
     {
@@ -70,37 +112,37 @@ export const DEMO_GRAPH_JSON = `{
       "priority": 15,
       "spec": {
         "shape": {
-          "width": 300, "height": 100, "backgroundColor": "#0ea5e9",
+          "width": 600, "height": 200, "backgroundColor": "#0ea5e9",
           "border": { "top": { "width": 2, "color": "#e2e8f0" }, "bottom": { "width": 2, "color": "#e2e8f0" } }
         },
-        "position": { "x": 24, "y": 280, "position": "top-left" }
+        "position": { "x": 96, "y": 1120, "position": "top-left" }
       },
       "rows": [
         {
           "type": "TableRowLayer",
-          "spec": { "shape": { "width": "300", "height": 45 } },
+          "spec": { "shape": { "width": "600", "height": 90 } },
           "cells": [
-            { "type": "TableCellLayer", "spec": { "shape": { "width": 150, "height": 45, "backgroundColor": "#fbbf24" } } },
-            { "type": "TableCellLayer", "spec": { "shape": { "width": 150, "height": 45, "backgroundColor": "#f97316" } } }
+            { "type": "TableCellLayer", "spec": { "shape": { "width": 300, "height": 90, "backgroundColor": "#fbbf24" } } },
+            { "type": "TableCellLayer", "spec": { "shape": { "width": 300, "height": 90, "backgroundColor": "#f97316" } } }
           ]
         },
         {
           "type": "TableRowLayer",
-          "spec": { "shape": { "width": "300", "height": 55 } },
+          "spec": { "shape": { "width": "600", "height": 110 } },
           "cells": [
             {
               "type": "TableCellLayer",
-              "spec": { "shape": { "width": 150, "height": 55, "backgroundColor": "#a78bfa" } },
+              "spec": { "shape": { "width": 300, "height": 110, "backgroundColor": "#a78bfa" } },
               "content": {
                 "type": "TextLayer",
                 "spec": {
-                  "shape": { "width": 150, "height": 55, "padding": { "top": 0, "bottom": 8, "left": 10, "right": 10 } },
-                  "fontFamily": { "fontSize": 12, "fontColor": "#ffffff" }
+                  "shape": { "width": 300, "height": 110, "padding": { "top": 0, "bottom": 16, "left": 20, "right": 20 } },
+                  "fontFamily": { "fontSize": 24, "fontColor": "#ffffff" }
                 },
                 "data": { "valueType": "StaticValue", "value": "单元格文本" }
               }
             },
-            { "type": "TableCellLayer", "spec": { "shape": { "width": 150, "height": 55, "backgroundColor": "#fb7185" } } }
+            { "type": "TableCellLayer", "spec": { "shape": { "width": 300, "height": 110, "backgroundColor": "#fb7185" } } }
           ]
         }
       ]
@@ -110,10 +152,10 @@ export const DEMO_GRAPH_JSON = `{
       "priority": 12,
       "spec": {
         "shape": {
-          "width": 70, "height": 70, "backgroundColor": "#1e293b",
-          "border": { "top": { "width": 1, "color": "#f87171" }, "bottom": { "width": 1, "color": "#f87171" }, "left": { "width": 1, "color": "#f87171" }, "right": { "width": 1, "color": "#f87171" } }
+          "width": 140, "height": 140, "backgroundColor": "#1e293b",
+          "border": { "top": { "width": 2, "color": "#f87171" }, "bottom": { "width": 2, "color": "#f87171" }, "left": { "width": 2, "color": "#f87171" }, "right": { "width": 2, "color": "#f87171" } }
         },
-        "position": { "x": 260, "y": 200, "position": "top-left" }
+        "position": { "x": 660, "y": 96, "position": "top-left" }
       },
       "data": { "valueType": "StaticValue", "value": "/demo-missing.png" }
     },
@@ -122,10 +164,10 @@ export const DEMO_GRAPH_JSON = `{
       "priority": 10,
       "spec": {
         "shape": {
-          "width": 72, "backgroundColor": "#38bdf8",
-          "border": { "top": { "width": 3, "color": "#f8fafc" }, "bottom": { "width": 3, "color": "#f8fafc" }, "left": { "width": 3, "color": "#f8fafc" }, "right": { "width": 3, "color": "#f8fafc" } }
+          "width": 144, "backgroundColor": "#38bdf8",
+          "border": { "top": { "width": 6, "color": "#f8fafc" }, "bottom": { "width": 6, "color": "#f8fafc" }, "left": { "width": 6, "color": "#f8fafc" }, "right": { "width": 6, "color": "#f8fafc" } }
         },
-        "position": { "x": -16, "y": -16, "position": "bottom-right" }
+        "position": { "x": -32, "y": -32, "position": "bottom-right" }
       },
       "data": { "valueType": "StaticValue", "value": "https://example.com" }
     }

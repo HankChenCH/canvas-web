@@ -7,7 +7,13 @@
  */
 export const PACKAGE_NAME = '@hankchen/canvas-next-browser-renderer' as const
 
-export { Canvas2DBackend, type DrawableImage } from './canvas2d-backend'
+export {
+    Canvas2DBackend,
+    applyViewportTransform,
+    type DrawableImage,
+    type PreviewViewportTransform,
+    type ViewportAwareBackend,
+} from './canvas2d-backend'
 export { coverCrop, type CropWindow } from './cover'
 export {
     builtinFontShorthand,
