@@ -42,6 +42,7 @@ import type { LayerBox, Layer, LayerType, ImageLayer } from '@hankchen/canvas-ne
 import { hitTest as hitTestAt } from './hitTest'
 import {
     layerBoxByPath,
+    isRootLayerPath,
     pathStartsWith,
     pathsEqual,
     remapPathAfterSplice,
@@ -50,8 +51,15 @@ import {
     type LayerPath,
 } from './layerPath'
 import {
+    PASTE_OFFSET_PX,
+    canCopyLayerAt,
+    cloneLayerSubtree,
+    prepareRootPaste,
+} from './clipboard'
+import {
     addRootLayerInDraft,
     deleteLayerInDraft,
+    insertRootLayerInDraft,
     moveRootLayerInDraft,
     moveTableRowInDraft,
     type DeletedLayerRef,
@@ -67,6 +75,7 @@ import {
     type MovedSubtreeRef,
 } from './tableEditing'
 import { EditorStore, type EditorChange, type TransactOptions } from './store'
+import type { EditorShortcutAction } from './shortcuts'
 import { FontCatalog, type FontCatalogEntry } from './fontCatalog'
 import { UploadHandlerMissingError, uploadDisplayName, type UploadFile, type UploadHandler } from './upload'
 
@@ -172,6 +181,13 @@ export class EditorSession {
     private frameQueued = false
     private cancelFrame: (() => void) | null = null
     private readonly unsubscribeStore: () => void
+    /**
+     * 会话级剪贴板（工单 14）：复制源的子树深拷贝快照 + 复制时点绝对盒（粘贴落位
+     * 基准，格内容的格内相对 position 据此换算画布绝对落位）+ 连续粘贴计数。
+     * 不跨会话、不碰 OS 剪贴板；openDocument 不清空——粘贴进另一份文档是合法用法
+     * （条目是与源树断开引用的普通对象）。
+     */
+    private clipboardEntry: { layer: Layer; sourceBox: LayerBox; pasteCount: number } | null = null
 
     constructor(options: EditorSessionOptions) {
         this.scheduleFrame = options.scheduleFrame
@@ -607,6 +623,149 @@ export class EditorSession {
         // 格内容删除：无下标平移，命中该路径的选择/悬停清空
         if (pathsEqual(this.store.ui.selection, removed.v.path)) this.store.setSelection(null)
         if (pathsEqual(this.store.ui.hovered, removed.v.path)) this.store.setHovered(null)
+    }
+
+    // ---- 剪贴板与置顶/置底（工单 14）：子树深拷贝语义见 clipboard.ts ----
+
+    /**
+     * 复制当前选中层：子树深拷贝快照进会话剪贴板（重置连续粘贴计数），并捕获
+     * 复制时点的绝对盒（粘贴落位基准）。源须为可落根层的类型（行/格是容器内
+     * 结构，v1 不可复制）；无选择/不可复制为 false。
+     */
+    copySelection(): boolean {
+        if (!this.canCopySelection) return false
+        const path = this.store.ui.selection!
+        const doc = this.store.doc!
+        const box = layerBoxByPath(doc, path, this.textPolicies)
+        if (!box) return false
+        this.clipboardEntry = {
+            layer: cloneLayerSubtree(resolveLayer(doc, path)!),
+            sourceBox: box,
+            pasteCount: 0,
+        }
+        return true
+    }
+
+    /** 复制可用态（右键菜单「副本」的可用判定与 copySelection 同一语义） */
+    get canCopySelection(): boolean {
+        const path = this.store.ui.selection
+        const doc = this.store.doc
+        return path !== null && doc !== null && canCopyLayerAt(doc, path)
+    }
+
+    /**
+     * 粘贴剪贴板：子树深拷贝插入根层——置顶（priority = min−1）、落位 = 复制时点
+     * 绝对盒 + 按粘贴次数递增的偏移（+20、+40…，多份粘贴互不重叠）、自动选中
+     * 新层；一次调用 = 一步历史。空剪贴板为 null。每次粘贴从剪贴板快照重新克隆：
+     * 粘贴产物之间以及与源文档都不共享引用。
+     */
+    pasteFromClipboard(): LayerPath | null {
+        const entry = this.clipboardEntry
+        if (!entry || !this.store.doc) return null
+        const pasteIndex = entry.pasteCount + 1
+        const offset = PASTE_OFFSET_PX * pasteIndex
+        const prepared = prepareRootPaste(
+            entry.layer,
+            entry.sourceBox,
+            this.store.doc.width,
+            this.store.doc.height,
+            offset,
+            offset,
+        )
+        const path = this.insertRootCopy(prepared)
+        if (path !== null) entry.pasteCount = pasteIndex
+        return path
+    }
+
+    /**
+     * 创建副本 = 复制当前选中层 + 固定一格偏移（+20）+ 置顶 + 自动选中，一步历史。
+     * 落位以当前绝对盒为基准（连续副本基于选中的副本链式偏移，天然不重叠）。
+     * **不覆盖剪贴板**（先复制 A 再副本 B，粘贴仍出 A）。无选择/不可复制为 null。
+     */
+    duplicateSelection(): LayerPath | null {
+        const path = this.store.ui.selection
+        const doc = this.store.doc
+        if (!path || !doc || !canCopyLayerAt(doc, path)) return null
+        const box = layerBoxByPath(doc, path, this.textPolicies)
+        if (!box) return null
+        const prepared = prepareRootPaste(
+            resolveLayer(doc, path)!,
+            box,
+            doc.width,
+            doc.height,
+            PASTE_OFFSET_PX,
+            PASTE_OFFSET_PX,
+        )
+        return this.insertRootCopy(prepared)
+    }
+
+    /** 粘贴/副本的公共落库尾：根层置顶插入 + 自动选中新层；一次调用 = 一步历史 */
+    private insertRootCopy(prepared: Layer): LayerPath | null {
+        const index: TxOut<number> = { v: -1 }
+        this.store.transact((draft) => {
+            index.v = insertRootLayerInDraft(draft, prepared as Draft<Layer>)
+        })
+        if (index.v < 0) return null
+        const path: LayerPath = ['layers', index.v]
+        this.store.setSelection(path)
+        return path
+    }
+
+    /**
+     * 置顶/置底（右键菜单语义）：根层重排到面板两端（priority 中点插值同款——
+     * 置顶 = min−1、置底 = max+1，数组序保持 priority 降序不变量），v1 只作用
+     * 根层（行/格是数组序语义）。复用 moveRootLayer（含选择路径重映射）；已在
+     * 端点为无操作（不产生历史步）。
+     */
+    bringToFront(): void {
+        const panel = this.selectedRootPanelIndex()
+        if (panel === null || panel === 0) return
+        this.moveRootLayer(panel, 0)
+    }
+
+    sendToBack(): void {
+        const panel = this.selectedRootPanelIndex()
+        const count = this.store.doc?.layers.length ?? 0
+        if (panel === null || panel === count - 1) return
+        this.moveRootLayer(panel, count)
+    }
+
+    /** 选中根层的面板序号（0 = 视觉最上层）；非根层选择/无文档为 null */
+    private selectedRootPanelIndex(): number | null {
+        const path = this.store.ui.selection
+        const doc = this.store.doc
+        if (!path || !doc || !isRootLayerPath(path)) return null
+        return doc.layers.length - 1 - (path[1] as number)
+    }
+
+    // ---- 快捷键分派（工单 14）：注册表分类（shortcuts.ts）→ 这里执行 ----
+
+    /**
+     * 执行快捷键动作（注册表分类的出口）：undo/redo/delete/copy/paste/duplicate
+     * 的统一分派面。让路规则在分类器（classifyEditorShortcut）裁决，到达这里的
+     * 动作不再重复判态；动作为空转（无选择/空剪贴板）返回 false，其余 true。
+     */
+    executeShortcut(action: EditorShortcutAction): boolean {
+        switch (action) {
+            case 'undo':
+                this.undo()
+                return true
+            case 'redo':
+                this.redo()
+                return true
+            case 'copy':
+                return this.copySelection()
+            case 'paste':
+                return this.pasteFromClipboard() !== null
+            case 'duplicate':
+                return this.duplicateSelection() !== null
+            case 'delete': {
+                const path = this.store.ui.selection
+                if (!path) return false
+                this.deleteLayer(path)
+                return true
+            }
+        }
     }
 
     // ---- 表格容器结构编辑（工单 12）：重建路径与 graph 解码同一套 add 同步语义 ----

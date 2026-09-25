@@ -5,8 +5,10 @@
  * （doc/ui 双分支）与渲染调度面（EditorSession：注入式帧调度合帧、分层脏标）。
  * 工单 06：选择与拖动——图层路径身份（layerPath）、命中测试（hitTest）、
  * 点选/级联/hover、九锚点拖动、mergeKey 事务最小管线。
- * 工单 08：双栈 undo/redo（store，上限 100 步、Figma 改写语义）、撤销/重做
- * 快捷键意图分类（historyShortcut，IME 守卫由绑定层折算）。
+ * 工单 08：双栈 undo/redo（store，上限 100 步、Figma 改写语义）。
+ * 工单 14：剪贴板（clipboard：子树深拷贝复制/粘贴/副本、置顶/置底）与快捷键
+ * 注册表（shortcuts：键位→action 集中声明、编辑态/输入态/输入法让路、
+ * executeShortcut 分派面）——historyShortcut 自此并入注册表。
  * 红线：内核不依赖任何 UI 绑定层（Vue/React），无 DOM lib，测试全部在
  * Node 无 DOM 环境运行。
  */
@@ -41,6 +43,7 @@ export {
 } from './editor'
 export {
     isLayerPath,
+    isRootLayerPath,
     layerBoxByPath,
     pathStartsWith,
     pathsEqual,
@@ -55,6 +58,7 @@ export {
     buildLayerOutline,
     createDefaultLayer,
     deleteLayerInDraft,
+    insertRootLayerInDraft,
     moveGuard,
     moveRootLayerInDraft,
     moveTableRowInDraft,
@@ -62,6 +66,22 @@ export {
     type LayerOutlineNode,
     type LayerOutlineRole,
 } from './layerPanel'
+export {
+    PASTE_OFFSET_PX,
+    canCopyLayerAt,
+    cloneLayerSubtree,
+    isRootPasteableType,
+    pastePosition,
+    prepareRootPaste,
+} from './clipboard'
+export {
+    classifyEditorShortcut,
+    DEFAULT_EDITOR_SHORTCUTS,
+    type EditorShortcutAction,
+    type EditorShortcutBinding,
+    type EditorShortcutInput,
+    type ShortcutCombo,
+} from './shortcuts'
 export {
     addTableCellInDraft,
     addTableRowInDraft,
@@ -75,11 +95,6 @@ export {
     syncRowWidthInDraft,
     type MovedSubtreeRef,
 } from './tableEditing'
-export {
-    classifyHistoryShortcut,
-    type HistoryShortcut,
-    type HistoryShortcutInput,
-} from './historyShortcut'
 export { FontCatalog, type FontCatalogEntry } from './fontCatalog'
 export {
     UploadHandlerMissingError,

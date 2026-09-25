@@ -39,6 +39,14 @@ export function isLayerPath(value: unknown): value is LayerPath {
     return true
 }
 
+/**
+ * 根层路径判定（工单 14）：置顶/置底等 priority 语义只作用于根层（容器内行/格
+ * 是数组序语义，priority 不参与排序）——右键菜单与快捷键入口据此裁剪动作可用态。
+ */
+export function isRootLayerPath(path: LayerPath): boolean {
+    return isLayerPath(path) && path.length === 2
+}
+
 /** 路径值相等（选择态变更短路依赖它；引用比较对每次新造的数组无效） */
 export function pathsEqual(a: LayerPath | null, b: LayerPath | null): boolean {
     if (a === b) return true

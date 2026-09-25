@@ -229,9 +229,18 @@ export function moveTableRowInDraft(
  * push 到数组尾（视觉最上层）。返回新层的数组下标。
  */
 export function addRootLayerInDraft(draft: Draft<Canvas>, type: LayerType): number {
+    return insertRootLayerInDraft(draft, createDefaultLayer(type) as Draft<Layer>)
+}
+
+/**
+ * 根层插入（draft 原位变换，工单 14 剪贴板粘贴共用）：priority = min − 1（空画布
+ * 取 0）+ push 到数组尾（视觉最上层）。数组序保持 priority 降序的解码不变量
+ * （min−1 严格小于现最小值）。调用方负责传入的图层形态（如粘贴子树的深拷贝 +
+ * 位置偏移）。返回新层的数组下标。
+ */
+export function insertRootLayerInDraft(draft: Draft<Canvas>, layer: Draft<Layer>): number {
     let min = Number.POSITIVE_INFINITY
     for (const existing of draft.layers) min = Math.min(min, existing.priority)
-    const layer = createDefaultLayer(type) as Draft<Layer>
     layer.priority = Number.isFinite(min) ? min - 1 : 0
     draft.layers.push(layer)
     return draft.layers.length - 1

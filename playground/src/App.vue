@@ -1,10 +1,8 @@
 <script setup lang="ts">
-// 工单 13 目验：保存/导出/上传/字体清单——保存 = 导出 graph JSON 文件并可再次
-// 打开无损复原（保存时机归宿主，内核只经 store 订阅暴露「文档已变更」信号）；
-// 导出 = 浏览器预览 PNG（先等全量物化，出图带预览语义标注，ADR 0004：预览图
-// 非终图）；上传 = 内核 uploadHandler 注入点 + data URL 兜底（本机选图→图层）；
-// 字体清单 = 内置清单可配置 + 自定义字体上传后可选。
-// 工单 11/08/05 的目验保留：文本编辑 overlay、撤销重做快捷键、相机导航。
+// 工单 14 目验：剪贴板（Ctrl/Cmd+C/V/D 与右键「创建副本」）、快捷键注册表
+// （useShortcuts 统一接键盘：让路规则见内核 classifyEditorShortcut）、右键菜单
+// （删除/副本/置顶/置底）、状态栏（缩放/选中路径/物化进行数）。
+// 工单 13 目验保留：保存/导出/上传/字体清单。工单 11/08/05 保留：文本编辑、相机导航。
 import { computed, onBeforeUnmount, provide, ref } from 'vue'
 
 import {
@@ -15,10 +13,17 @@ import {
     exportPreviewPng,
 } from '@hankchen/canvas-next-browser-renderer'
 import type { ResourceState } from '@hankchen/canvas-next-browser-renderer'
-import { EditorSession, classifyHistoryShortcut } from '@hankchen/canvas-next-editor'
+import { EditorSession } from '@hankchen/canvas-next-editor'
 import type { FontCatalogEntry, UploadFile } from '@hankchen/canvas-next-editor'
-import { FONT_PICKER_KEY, uploadFileFromDom, type FontPickerContext } from '@hankchen/canvas-next-editor-vue'
-import { resolveLayer, type LayerPath, type OverlayPainter } from '@hankchen/canvas-next-editor'
+import {
+    FONT_PICKER_KEY,
+    StatusBar,
+    formatLayerPath,
+    uploadFileFromDom,
+    useShortcuts,
+    type FontPickerContext,
+} from '@hankchen/canvas-next-editor-vue'
+import { resolveLayer, type OverlayPainter } from '@hankchen/canvas-next-editor'
 import {
     CanvasSurface,
     createRafScheduler,
@@ -81,11 +86,17 @@ function onUploadImageClick(): void {
 const viewport = useViewport(editor)
 const zoomPercent = computed(() => Math.round(viewport.value.zoom * 100))
 const { canUndo, canRedo } = useHistory(editor)
+// 快捷键注册表的绑定桥（工单 14）：撤销/重做/复制/粘贴/副本/删除走集中注册表；
+// Ctrl/Cmd+S 保存是宿主职责，仍在下方 onKeydown 自理。让路规则（文本编辑态/
+// 输入框/输入法）由内核分类器裁决，textarea 与属性面板输入框原生编辑优先。
+useShortcuts(editor)
 
 const assetsNote = ref('资源物化中…')
 const selectionNote = ref('未选中图层（左键点选，Esc 逐级升级）')
 /** 文档操作读数（保存/打开/导出/上传的状态与预览语义标注） */
 const docNote = ref('')
+/** 物化在途计数（状态栏「物化中」段）：Materializer 住渲染端包，订阅后注入 StatusBar */
+const pendingCount = ref(0)
 
 let materializer: Materializer | null = null
 let contentBackend: Canvas2DBackend | null = null
@@ -220,17 +231,8 @@ async function onImageFile(event: Event): Promise<void> {
     }
 }
 
-/** 路径的领域读法：['layers', 1, 'rows', 0, …] → 图层 1 · 行0 · … */
-function describePath(path: LayerPath): string {
-    let label = `图层 ${String(path[1])}`
-    for (let i = 2; i < path.length; i += 2) {
-        const key = String(path[i])
-        if (key === 'content') label += ' · 格内容'
-        else if (key === 'rows') label += ` · 行${String(path[i + 1])}`
-        else if (key === 'cells') label += ` · 格${String(path[i + 1])}`
-    }
-    return label
-}
+/** 路径读数直接用绑定层的 formatLayerPath（与状态栏同一格式） */
+const describePath = formatLayerPath
 
 /** 选中读数（拖动中随文档事务实时联动——属性面板将来读同一数据） */
 function syncSelectionNote(): void {
@@ -264,6 +266,7 @@ function onReady({ contentCanvas, overlayCanvas }: CanvasSurfaceReady) {
 
     unsubscribeAssets = materializer.subscribe(() => {
         assetsNote.value = assetsStatus(materializer!.state, materializer!.pendingCount)
+        pendingCount.value = materializer!.pendingCount
         editor.invalidate('content') // 物化状态只脏内容层（覆盖层标识另经 overlay 分支）
     })
 
@@ -298,8 +301,10 @@ function zoomBy(factor: number): void {
     editor.zoomAt(width / 2, height / 2, viewport.value.zoom * factor)
 }
 
-/** 键盘：Ctrl/Cmd+S 保存；撤销/重做快捷键。文本编辑中（工单 11）键盘事件路由
- *  进 textarea：Ctrl+Z 撤「输入」而非文档（保存同理不抢）。 */
+/** 键盘：仅 Ctrl/Cmd+S（保存是宿主职责，不入内核注册表）。文本编辑中键盘路由
+ *  进 textarea：Ctrl+Z 撤「输入」而非文档（useShortcuts 的让路规则同源裁决），
+ *  保存同理不抢。其余快捷键（撤销/重做/复制/粘贴/副本/删除）已由 useShortcuts
+ *  统一接注册表处理。 */
 function onKeydown(event: KeyboardEvent): void {
     if (editor.store.ui.editing !== null) return
     const mod = event.ctrlKey || event.metaKey
@@ -308,17 +313,7 @@ function onKeydown(event: KeyboardEvent): void {
         if (event.isComposing || event.keyCode === 229) return
         event.preventDefault()
         saveGraph()
-        return
     }
-    const shortcut = classifyHistoryShortcut({
-        key: event.key,
-        mod,
-        shift: event.shiftKey,
-        // 输入法合成中（含 keyCode 229 兼容位）不触发文档撤销/重做
-        composing: event.isComposing || event.keyCode === 229,
-    })
-    if (shortcut === 'undo') editor.undo()
-    else if (shortcut === 'redo') editor.redo()
 }
 window.addEventListener('keydown', onKeydown)
 
@@ -350,7 +345,7 @@ onBeforeUnmount(() => {
     <main class="stage">
         <header class="header">
             <h1>canvas-web playground</h1>
-            <p>保存/导出/上传/字体清单（工单 13）：手动保存 graph JSON（Ctrl/Cmd+S）可再次打开无损复原；导出为浏览器预览 PNG（预览图，非终图）；本机图片经上传进画布（data URL 兜底）；字体清单可选 + 自定义字体上传</p>
+            <p>工单 14：复制/粘贴/创建副本（Ctrl/Cmd+C/V/D，子树深拷贝+偏移不重叠+置顶）、右键菜单（删除/副本/置顶/置底）、快捷键注册表（文本编辑态/输入框让路）、状态栏（缩放/选中路径/物化进行数）；工单 13 的保存/导出/上传/字体清单与更早目验保留</p>
             <p class="assets-note">{{ assetsNote }}</p>
             <p class="selection-note" data-selection>{{ selectionNote }}</p>
             <p class="doc-note" data-doc-note>
@@ -405,8 +400,14 @@ onBeforeUnmount(() => {
             <PropertyPanel :editor="editor" />
         </section>
 
+        <StatusBar class="statusbar" :editor="editor" :pending-count="pendingCount" />
+
         <section class="legend">
             <ul>
+                <li><b>剪贴板（工单 14）</b>：选中图层后 <b>Ctrl/Cmd+C</b> 复制、<b>Ctrl/Cmd+V</b> 粘贴、<b>Ctrl/Cmd+D</b> 创建副本（右键菜单「创建副本」同款）；复制的是<b>整棵子树深拷贝</b>（表格连行/格/内容一起复制，复制后改原件不影响粘贴产物）；粘贴<b>置顶</b>（priority = min−1）且位置偏移 +20 不与原件重叠，连续粘贴偏移递增（+20、+40…）互不压叠；一次粘贴/副本 = 一步历史，Ctrl/Cmd+Z 可撤销；副本不覆盖剪贴板（复制 A → 副本 B → 粘贴仍出 A）；行/格不可复制（容器内结构），格内容可复制出表</li>
+                <li><b>右键菜单（工单 14）</b>：画布上<b>右键点图层</b> = 选中并弹出最小菜单（创建副本/置顶/置底/删除）——按视口坐标定位（pan/zoom 不跟随、画布边缘自动钳位）；可用态随选择裁剪：置顶/置底只对根层生效（表格行/格是数组序语义），菜单上右键/点菜单外/Esc/执行动作即关；textarea 内右键仍是浏览器原生菜单</li>
+                <li><b>快捷键（工单 14 注册表）</b>：Ctrl/Cmd+Z 撤销、Ctrl/Cmd+Shift+Z（或 Ctrl+Y）重做、Delete/Backspace 删除选中图层、Ctrl/Cmd+C/V/D 剪贴板三件套；<b>文本编辑态与输入框焦点自动让路</b>——编辑文本时 Delete/Backspace 只改文字不删图层、Ctrl/Cmd+Z 撤「输入」、属性面板输入框内原生编辑优先；输入法候选窗里的按键不误触发（isComposing/229 守卫）</li>
+                <li><b>状态栏（工单 14）</b>：画布下方的暗色读数条 = <b>缩放百分比</b>（随 ctrl/cmd+滚轮实时更新）· <b>选中图层路径</b>（图层 N · 行 N · 格 N · 格内容，未选中回落文案）· <b>物化进行数</b>（在途资源装载 &gt; 0 时显示「物化中 N」，归零隐藏）</li>
                 <li><b>保存 / 打开（工单 13）</b>：<b>保存</b>（Ctrl/Cmd+S 或顶栏按钮）= 导出 canonical graph JSON 文件；<b>打开</b> = 解码回编辑器，再次打开无损复原（编辑→保存→打开→再保存字节级恒等）；保存时机归宿主，内核只经 store 订阅暴露「文档已变更」信号——顶部 <b>● 未保存</b> 标记随文档变更点亮、保存/打开后复位（撤销回已保存状态同样复位）；关闭页面前有未保存变更会弹确认</li>
                 <li><b>导出 PNG（预览图，非终图）</b>：顶栏「导出 PNG」先<b>等待全部资源物化</b>（慢资源在途时按钮显示「导出中…」、读数提示进行中），再全幅渲染下载；出图写入 PNG 元数据标注（tEXt: CanvasNext = preview render, not the final image）+ 文件名 <code>-preview.png</code> 后缀——<b>终图由服务端渲染端依据 graph JSON 权威产出</b>（ADR 0004），物化失败的资源以占位出图并在读数中注明</li>
                 <li><b>上传（本机资源 → 可物化引用）</b>：顶栏「上传图片」选本机图片 → 内核 uploadHandler 注入点转成引用 → 自动新建图片图层并选中（上传+建层 = 一步历史可撤销）；playground 以 <b>data URL 兜底</b>实现（内联进保存产物，可离线演示；生产宿主接自己的存储返回 URL）；<b>core 不内置任何上传实现</b>——未注入时上传入口禁用、动作抛明确错误（降级提示）</li>
@@ -559,6 +560,12 @@ onBeforeUnmount(() => {
     gap: 12px;
     width: min(1240px, calc(100vw - 32px));
     height: max(420px, calc(100vh - 320px));
+}
+
+/* 工单 14：状态栏（缩放/选中路径/物化进行数），与工作台同宽、圆角暗条 */
+.statusbar {
+    width: min(1240px, calc(100vw - 32px));
+    border-radius: 8px;
 }
 
 .workbench .surface {

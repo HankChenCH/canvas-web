@@ -9,6 +9,8 @@
  *   选择归属链——全部经内核意图级 API，组件只做坐标与指针状态翻译。
  * - 文本编辑（工单 11）：宿主内挂 TextEditingOverlay，双击进入（命中 TextLayer）、
  *   编辑中点 textarea 外先提交再点选、textarea 内指针归编辑光标。
+ * - 右键菜单（工单 14）：contextmenu → 场景命中即右键选中 → 视口坐标开菜单
+ *   （ContextMenu 内挂组件）；Escape/画布点按/动作执行即关。
  * - 呈现环境：ResizeObserver 重设视口尺寸、matchMedia 监听 dpr 变更并重设物理
  *   缓冲（缩放物理像素清晰）；contextlost/restored 强制全量重绘。
  * - DOM 装配完成后 emit ready（带两层 canvas），宿主在其回调里构建渲染后端、
@@ -18,6 +20,8 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import { classifyWheel, type EditorSession } from '@hankchen/canvas-next-editor'
 
+import ContextMenu from './ContextMenu.vue'
+import { isEditableEventTarget } from './editableTarget'
 import TextEditingOverlay from './TextEditingOverlay.vue'
 import { watchDprChanges } from './useDpr'
 
@@ -34,6 +38,7 @@ const hostRef = ref<HTMLDivElement | null>(null)
 const contentRef = ref<HTMLCanvasElement | null>(null)
 const overlayRef = ref<HTMLCanvasElement | null>(null)
 const textEditRef = ref<InstanceType<typeof TextEditingOverlay> | null>(null)
+const contextMenuRef = ref<InstanceType<typeof ContextMenu> | null>(null)
 
 const spaceHeld = ref(false)
 const panning = ref(false)
@@ -124,6 +129,7 @@ onMounted(() => {
     }
 
     const onPointerDown = (e: PointerEvent) => {
+        contextMenuRef.value?.close() // 菜单内点按被 stop 拦下，到这里的都是菜单外
         if (active !== null) return
         const wantPan = e.button === 1 || (e.button === 0 && spaceHeld.value)
         if (wantPan) {
@@ -192,6 +198,24 @@ onMounted(() => {
         textEditRef.value?.beginAt(scene.x, scene.y)
     }
 
+    // 右键菜单（工单 14）：命中即右键选中（excalidraw 同款）并按视口坐标开菜单；
+    // 未命中关菜单。编辑中与左键同流：textarea 外右键先提交编辑再点选（防菜单在
+    // 编辑态删层）；textarea 内右键交浏览器原生菜单（文本编辑的原生操作面）。
+    const onContextMenu = (e: MouseEvent) => {
+        if (textEditRef.value?.isEditing()) {
+            if (textEditRef.value.ownsEventTarget(e.target)) return
+            textEditRef.value.commitEditing()
+        }
+        e.preventDefault()
+        const point = hostPoint(e)
+        const scene = editor.toScenePoint(point.x, point.y)
+        if (editor.selectAt(scene.x, scene.y) === null) {
+            contextMenuRef.value?.close()
+            return
+        }
+        void contextMenuRef.value?.openAt(point.x, point.y)
+    }
+
     // 指针离场清 hover（拖动/平移中由抓取接管，无需处理）
     const onPointerLeave = () => {
         if (active === null) editor.setHovered(null)
@@ -215,12 +239,8 @@ onMounted(() => {
     })
 
     // 空格按住跟踪（窗口级：焦点可能在页面任意处）；可编辑元素/按钮不拦
-    const isEditableTarget = (target: EventTarget | null): boolean => {
-        if (!(target instanceof HTMLElement)) return false
-        if (target.isContentEditable) return true
-        const tag = target.tagName
-        return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON'
-    }
+    // （判定与快捷键让路同一口径：editableTarget.isEditableEventTarget）
+    const isEditableTarget = isEditableEventTarget
 
     const onKeyDown = (e: KeyboardEvent) => {
         if (e.code !== 'Space' || e.repeat || isEditableTarget(e.target)) return
@@ -230,9 +250,10 @@ onMounted(() => {
     const onKeyUp = (e: KeyboardEvent) => {
         if (e.code === 'Space') spaceHeld.value = false
     }
-    // Escape 升级选择归属链（格→行→表→清空）；输入法/输入框内不拦
+    // Escape 升级选择归属链（格→行→表→清空）；输入法/输入框内不拦；顺带关右键菜单
     const onEscape = (e: KeyboardEvent) => {
         if (e.key !== 'Escape' || isEditableTarget(e.target)) return
+        contextMenuRef.value?.close()
         editor.escapeSelection()
     }
     window.addEventListener('keydown', onKeyDown)
@@ -243,6 +264,9 @@ onMounted(() => {
         window.removeEventListener('keyup', onKeyUp)
         window.removeEventListener('keydown', onEscape)
     })
+
+    host.addEventListener('contextmenu', onContextMenu)
+    teardown.push(() => host.removeEventListener('contextmenu', onContextMenu))
 
     // 2D context 同样存在 contextlost；默认自动恢复，恢复后强制全量重绘（MDN）
     const onContextRestored = () => editor.invalidate('both')
@@ -273,6 +297,7 @@ onBeforeUnmount(() => {
         <canvas ref="contentRef" class="cn-surface__canvas"></canvas>
         <canvas ref="overlayRef" class="cn-surface__canvas cn-surface__canvas--overlay"></canvas>
         <TextEditingOverlay ref="textEditRef" :editor="editor" />
+        <ContextMenu ref="contextMenuRef" :editor="editor" />
     </div>
 </template>
 
