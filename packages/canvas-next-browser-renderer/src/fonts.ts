@@ -22,6 +22,17 @@ export function builtinFontShorthand(fontSize: number): string {
     return `${fontSize}px sans-serif`
 }
 
+/**
+ * font-family 的 CSS 值（工单 11 textarea overlay 用）：内置默认字体 = 系统无衬线
+ * 族；URL = 注册族名（与 loadCanvasFont 同一 fnv-1a 派生，注册后即命中）尾部附
+ * sans-serif 兜底——未注册/未加载时回落系统无衬线，与 canvas 侧未注册 URL 落内置
+ * 默认简写的行为同门。纯字符串函数，无 DOM。
+ */
+export function canvasFontCssFamily(font: string): string {
+    if (isBuiltinFontRef(font)) return 'sans-serif'
+    return `${fontFamilyFor(font)}, sans-serif`
+}
+
 /** ctx.font 可用的注册族名：由字体 URL 确定性派生（fnv-1a 32 位），CSS 安全 */
 function fontFamilyFor(font: string): string {
     let hash = 0x811c9dc5

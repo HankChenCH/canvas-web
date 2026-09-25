@@ -37,6 +37,7 @@ export {
     type InvalidateTarget,
     type OverlayPaintArgs,
     type OverlayPainter,
+    type TextEditLayout,
 } from './editor'
 export {
     isLayerPath,
@@ -71,6 +72,7 @@ export {
     type EditorChange,
     type EditorUi,
     type HistoryStep,
+    type TextEditingSession,
     type TransactOptions,
     MAX_HISTORY_STEPS,
 } from './store'
@@ -97,4 +99,8 @@ export type {
     TableLayer,
     TableCellLayer,
     TableRowLayer,
+    TextLayer,
 } from '@hankchen/canvas-next'
+// 纯函数的公共再出口：文本编辑 overlay 的字体族解析（工单 11）——与 loadCanvasFont
+// 同一派生，编辑中 textarea 与内容层 canvas 呈现同一字体；绑定层经内核取用
+export { canvasFontCssFamily } from '@hankchen/canvas-next-browser-renderer'

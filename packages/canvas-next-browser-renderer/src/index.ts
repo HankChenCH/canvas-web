@@ -17,6 +17,7 @@ export {
 export { coverCrop, type CropWindow } from './cover'
 export {
     builtinFontShorthand,
+    canvasFontCssFamily,
     isBuiltinFontRef,
     loadCanvasFont,
 } from './fonts'

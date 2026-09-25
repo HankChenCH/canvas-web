@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { decodeGraph, renderCanvas } from '@hankchen/canvas-next'
 import type { TextDrawOptions } from '@hankchen/canvas-next'
 
-import { builtinFontShorthand, isBuiltinFontRef } from '../src/fonts'
+import { builtinFontShorthand, canvasFontCssFamily, isBuiltinFontRef } from '../src/fonts'
 import { Canvas2DBackend } from '../src/index'
 
 interface CtxOp {
@@ -221,6 +221,16 @@ describe('内置默认字体语义（空串/纯数字 = 渲染端内置默认）
 
     it('builtinFontShorthand：系统无衬线族按字号', () => {
         expect(builtinFontShorthand(14)).toBe('14px sans-serif')
+    })
+
+    it('canvasFontCssFamily：内置默认字体 = 系统无衬线族；URL = 注册族名 + 无衬线兜底（textarea overlay 用）', () => {
+        expect(canvasFontCssFamily('')).toBe('sans-serif')
+        expect(canvasFontCssFamily('3')).toBe('sans-serif')
+        // URL：与 loadCanvasFont 注册的族名同派生（fnv-1a），未注册/未加载时浏览器
+        // 回到族清单尾部的 sans-serif——与 canvas 未注册 URL 落内置默认的行为同门
+        expect(canvasFontCssFamily('/fonts/demo.ttf')).toMatch(/^canvas-next-font-[0-9a-z]+, sans-serif$/)
+        // 同一引用派生稳定（与 loadCanvasFont 缓存键同源）
+        expect(canvasFontCssFamily('/fonts/demo.ttf')).toBe(canvasFontCssFamily('/fonts/demo.ttf'))
     })
 
     it('drawText：空串/纯数字/未注册 URL 均落内置默认简写', () => {

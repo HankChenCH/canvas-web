@@ -132,8 +132,10 @@ function zoomBy(factor: number): void {
     editor.zoomAt(width / 2, height / 2, viewport.value.zoom * factor)
 }
 
-/** 撤销/重做快捷键：意图分类在内核纯函数（可测），这里只做事件解码 */
+/** 撤销/重做快捷键：意图分类在内核纯函数（可测），这里只做事件解码。
+ *  文本编辑中（工单 11）键盘事件路由进 textarea：Ctrl+Z 撤「输入」而非文档。 */
 function onKeydown(event: KeyboardEvent): void {
+    if (editor.store.ui.editing !== null) return
     const shortcut = classifyHistoryShortcut({
         key: event.key,
         mod: event.ctrlKey || event.metaKey,
@@ -171,7 +173,7 @@ onBeforeUnmount(() => {
     <main class="stage">
         <header class="header">
             <h1>canvas-web playground</h1>
-            <p>图层面板（工单 10）：左侧树形大纲按视觉层级逆序展示，拖动重排画布叠放即时变化，可撤销（工单 02–09 目验保留）</p>
+            <p>文本编辑（工单 11）：双击文本层就地编辑（中文输入法原生可用），Esc / Ctrl+Enter / 点画布其他处 / 失焦退出并一步入历史，清空文本提交即删层</p>
             <p class="assets-note">{{ assetsNote }}</p>
             <p class="selection-note" data-selection>{{ selectionNote }}</p>
         </header>
@@ -212,6 +214,8 @@ onBeforeUnmount(() => {
 
         <section class="legend">
             <ul>
+                <li><b>文本编辑</b>：<b>双击文本层</b>就地编辑（textarea overlay 精确对位图层盒，CSS transform 缩放——缩放中字号视觉恒定、光标不丢）；中文输入法原生可用（候选窗里的 Esc/Enter 只操作候选不误提交）；<b>Esc / Ctrl+Enter / 点画布其他处 / 失焦</b>退出并一次性入一步历史（进入编辑不进历史）；清空文本提交 = 删除该图层，可撤销；编辑中该层文字由 textarea 呈现（内容层跳绘防重影），退出后恢复预览断行（断行允许与编辑态不同，决策 A）</li>
+                <li><b>点属性面板不误提交</b>：编辑中点面板/工具栏（画布外指针交互）的失焦被豁免，编辑会话保持——调完字号点回文本层继续写，文本仍是一步历史；编辑期间 Ctrl/Cmd+Z 撤「输入」而非文档（快捷键路由进 textarea）</li>
                 <li><b>图层面板</b>：左侧树形大纲<b>顶部 = 视觉最上层</b>（图层数组尾，priority 越大越垫底不反直觉）；表格展开三层嵌套（表 → 行 → 格/格内容）；点选行 = 画布选中、行悬停 = 画布高亮（双向联动，画布点选后行也高亮）</li>
                 <li><b>拖动重排</b>：根层拖行上半/下半落位，画布叠放<b>即时变化</b>，priority 走中点插值（保存再打开顺序不变）；表格行拖动直接改数组序（行 0 恒在视觉顶部，行 priority 不参与）；两套语义分立</li>
                 <li><b>增删</b>：面板头「文/图/码/表」新增图层（置顶 priority = min−1 并自动选中）；行尾 ✕ 删除（根层含整棵子树，行/格/格内容分别 splice/置空）；重排与删除均为一步历史，Ctrl/Cmd+Z 可撤销</li>

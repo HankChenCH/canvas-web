@@ -33,6 +33,15 @@ export interface DragGesture {
     startPosition: { x: number; y: number }
 }
 
+/**
+ * 文本编辑会话（ui 分支，工单 11）：编辑中的文本层路径。live 文本住在绑定层的
+ * textarea（非受控），提交经 commitTextEdit 一次性落文档——「每个拼音音节一个
+ * undo」被会话缓冲天然避免（impl 研究 §2.4）。
+ */
+export interface TextEditingSession {
+    path: LayerPath
+}
+
 export interface EditorUi {
     viewport: Viewport
     /** 当前选中图层路径（数组路径，patch path 前缀）；null = 无选择 */
@@ -41,6 +50,8 @@ export interface EditorUi {
     hovered: LayerPath | null
     /** 进行中的拖动会话；null = 无拖动 */
     drag: DragGesture | null
+    /** 进行中的文本编辑会话；null = 非编辑态 */
+    editing: TextEditingSession | null
 }
 
 /** 一步历史：一次（或同键合并的多次）文档事务的正向/逆向 patch 组 */
@@ -70,7 +81,13 @@ export interface TransactOptions {
 
 export class EditorStore {
     private docValue: Canvas | null = null
-    private uiValue: EditorUi = { viewport: { x: 0, y: 0, zoom: 1 }, selection: null, hovered: null, drag: null }
+    private uiValue: EditorUi = {
+        viewport: { x: 0, y: 0, zoom: 1 },
+        selection: null,
+        hovered: null,
+        drag: null,
+        editing: null,
+    }
     /** undo 栈：已提交步，栈尾最新 */
     private undoSteps: HistoryStep[] = []
     /** redo 栈：被撤销步，栈尾最近一次撤销；transact 落新事务时整体改写 */
@@ -98,12 +115,12 @@ export class EditorStore {
         return this.redoSteps.length > 0
     }
 
-    /** 打开/替换文档：ui 选择态与双向历史一并重置（新文档不继承旧路径/旧事务） */
+    /** 打开/替换文档：ui 选择/编辑会话与双向历史一并重置（新文档不继承旧路径/旧事务） */
     openDocument(canvas: Canvas): void {
         this.docValue = canvas
         this.undoSteps = []
         this.redoSteps = []
-        this.uiValue = { ...this.uiValue, selection: null, hovered: null, drag: null }
+        this.uiValue = { ...this.uiValue, selection: null, hovered: null, drag: null, editing: null }
         this.notify({ scope: 'doc', patches: [], inversePatches: [] })
     }
 
@@ -199,6 +216,12 @@ export class EditorStore {
     setDrag(gesture: DragGesture | null): void {
         this.uiValue = { ...this.uiValue, drag: gesture }
         this.notify({ scope: 'ui', branch: 'drag' })
+    }
+
+    /** 文本编辑会话开始/结束（null）；会话住 ui 分支，文本经 commitTextEdit 一次性落文档 */
+    setEditing(session: TextEditingSession | null): void {
+        this.uiValue = { ...this.uiValue, editing: session }
+        this.notify({ scope: 'ui', branch: 'editing' })
     }
 
     subscribe(listener: Listener): () => void {

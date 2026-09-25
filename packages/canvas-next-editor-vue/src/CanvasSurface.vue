@@ -7,6 +7,8 @@
  * - 事件桥：wheel 三态语义（classifyWheel）→ 会话相机动作；中键/空格+左键拖拽平移；
  *   左键点选与拖动（selectAt/beginDrag/dragTo/endDrag）、hover 跟随、Escape 升级
  *   选择归属链——全部经内核意图级 API，组件只做坐标与指针状态翻译。
+ * - 文本编辑（工单 11）：宿主内挂 TextEditingOverlay，双击进入（命中 TextLayer）、
+ *   编辑中点 textarea 外先提交再点选、textarea 内指针归编辑光标。
  * - 呈现环境：ResizeObserver 重设视口尺寸、matchMedia 监听 dpr 变更并重设物理
  *   缓冲（缩放物理像素清晰）；contextlost/restored 强制全量重绘。
  * - DOM 装配完成后 emit ready（带两层 canvas），宿主在其回调里构建渲染后端、
@@ -15,6 +17,9 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import { classifyWheel, type EditorSession } from '@hankchen/canvas-next-editor'
+
+import TextEditingOverlay from './TextEditingOverlay.vue'
+import { watchDprChanges } from './useDpr'
 
 export interface CanvasSurfaceReady {
     contentCanvas: HTMLCanvasElement
@@ -28,6 +33,7 @@ const emit = defineEmits<{ ready: [surface: CanvasSurfaceReady] }>()
 const hostRef = ref<HTMLDivElement | null>(null)
 const contentRef = ref<HTMLCanvasElement | null>(null)
 const overlayRef = ref<HTMLCanvasElement | null>(null)
+const textEditRef = ref<InstanceType<typeof TextEditingOverlay> | null>(null)
 
 const spaceHeld = ref(false)
 const panning = ref(false)
@@ -68,20 +74,15 @@ onMounted(() => {
     observer.observe(host)
     teardown.push(() => observer.disconnect())
 
-    // dpr 变更（跨屏拖动 / 页面缩放）经分辨率媒体查询自再注册（MDN 标准手法）
-    let dprMedia: MediaQueryList | null = null
-    const watchDpr = () => {
-        dprMedia?.removeEventListener('change', watchDpr)
+    // dpr 变更（跨屏拖动 / 页面缩放）经分辨率媒体查询自再注册（useDpr 共用口径）
+    const stopDpr = watchDprChanges(() => {
         editor.setDevicePixelRatio(window.devicePixelRatio)
         resizeBuffers()
-        dprMedia = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`)
-        dprMedia.addEventListener('change', watchDpr)
-    }
-    watchDpr()
-    teardown.push(() => dprMedia?.removeEventListener('change', watchDpr))
+    })
+    teardown.push(stopDpr)
 
     // ---- 事件桥 ----
-    const hostPoint = (e: WheelEvent | PointerEvent): { x: number; y: number } => {
+    const hostPoint = (e: WheelEvent | PointerEvent | MouseEvent): { x: number; y: number } => {
         const rect = host.getBoundingClientRect()
         return { x: e.clientX - rect.left, y: e.clientY - rect.top }
     }
@@ -134,6 +135,12 @@ onMounted(() => {
             return
         }
         if (e.button !== 0) return
+        // 文本编辑中（工单 11）：textarea 内的指针交给编辑光标（不点选/拖动）；
+        // 画布其他处先提交编辑（「点画布其他处」退出路径），同一次点按继续点选
+        if (textEditRef.value?.isEditing()) {
+            if (textEditRef.value.ownsEventTarget(e.target)) return
+            textEditRef.value.commitEditing()
+        }
         e.preventDefault()
         // 点选：命中即选中（画布与后续面板同源），命中层同时进入拖动会话
         const scene = sceneAt(e)
@@ -178,6 +185,13 @@ onMounted(() => {
         if (e.button === 1) e.preventDefault()
     }
 
+    // 双击进入文本编辑（工单 11）：场景点命中 TextLayer 才生效（内核校验类型）
+    const onDblClick = (e: MouseEvent) => {
+        const point = hostPoint(e)
+        const scene = editor.toScenePoint(point.x, point.y)
+        textEditRef.value?.beginAt(scene.x, scene.y)
+    }
+
     // 指针离场清 hover（拖动/平移中由抓取接管，无需处理）
     const onPointerLeave = () => {
         if (active === null) editor.setHovered(null)
@@ -189,6 +203,7 @@ onMounted(() => {
     host.addEventListener('pointercancel', onPointerUp)
     host.addEventListener('pointerleave', onPointerLeave)
     host.addEventListener('mousedown', onMouseDown)
+    host.addEventListener('dblclick', onDblClick)
     teardown.push(() => {
         host.removeEventListener('pointerdown', onPointerDown)
         host.removeEventListener('pointermove', onPointerMove)
@@ -196,6 +211,7 @@ onMounted(() => {
         host.removeEventListener('pointercancel', onPointerUp)
         host.removeEventListener('pointerleave', onPointerLeave)
         host.removeEventListener('mousedown', onMouseDown)
+        host.removeEventListener('dblclick', onDblClick)
     })
 
     // 空格按住跟踪（窗口级：焦点可能在页面任意处）；可编辑元素/按钮不拦
@@ -256,6 +272,7 @@ onBeforeUnmount(() => {
     <div ref="hostRef" class="cn-surface" :class="cursorClass">
         <canvas ref="contentRef" class="cn-surface__canvas"></canvas>
         <canvas ref="overlayRef" class="cn-surface__canvas cn-surface__canvas--overlay"></canvas>
+        <TextEditingOverlay ref="textEditRef" :editor="editor" />
     </div>
 </template>
 

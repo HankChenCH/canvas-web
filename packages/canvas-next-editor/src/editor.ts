@@ -10,10 +10,20 @@
  *   「覆盖层脏不触发内容层」与两侧视口的一致性。
  * - 相机动作全部经 camera.ts 纯函数落到 store.ui.viewport（不进历史）。
  */
-import { renderCanvas, type Canvas, type RenderBackend, type TextLayoutPolicies } from '@hankchen/canvas-next'
+import {
+    lineHeightPx,
+    renderCanvas,
+    textOrigin,
+    type Canvas,
+    type HorizontalAlign,
+    type Padding,
+    type RenderBackend,
+    type TextLayoutPolicies,
+    type TextLayer,
+    type VerticalAlign,
+} from '@hankchen/canvas-next'
 import type { PreviewViewportTransform, ViewportAwareBackend } from '@hankchen/canvas-next-browser-renderer'
 import type { Draft } from 'immer'
-
 import {
     DEFAULT_ZOOM_BOUNDS,
     fitRect,
@@ -74,6 +84,37 @@ export interface OverlayPaintArgs {
 export type OverlayPainter = (args: OverlayPaintArgs) => void
 
 export type InvalidateTarget = 'content' | 'overlay' | 'both'
+
+/**
+ * 文本编辑 overlay 的布局描述（textEditLayout 的产物）：场景坐标系的盒几何与
+ * 排版字段。CSS 换算（transform 缩放/字体族解析/行盒模型）归绑定层，内核保持
+ * 无 CSS 语义。
+ */
+export interface TextEditLayout {
+    /** 编辑中图层的绝对盒（场景坐标；textarea 覆盖整盒，文字按 padding 内缩） */
+    box: LayerBox
+    /** 进入编辑时的文档文本（textarea 初值） */
+    text: string
+    /** 原始字体引用（空串/纯数字 = 内置默认字体；URL 由绑定层解析注册族名） */
+    font: string
+    fontColor: string
+    /** 场景字号（textarea 字号固定取它，缩放交给 CSS transform——字号视觉恒定） */
+    fontSize: number
+    /** 行高像素 = ceil(fontSize × lineHeight)，与布局层同式 */
+    lineHeightPx: number
+    padding: Padding
+    horizontalAlign: HorizontalAlign
+    verticalAlign: VerticalAlign
+    /**
+     * 首行绘制锚点相对内容盒顶部的偏移（textOrigin.y，与 canvas 绘制同一数值）。
+     * 锚点语义随 verticalAlign：top = 字形盒顶、center = 字形盒心、bottom = 字形盒底
+     * （渲染端以字体 metrics 消化基线差，绑定层的 CSS 行盒换算须按同一语义折算，
+     * 不能直接当 padding-top 用——否则 center/bottom 会差半行/一行）。
+     */
+    verticalAnchorY: number
+    /** autowrap = textarea  pre-wrap 软换行，否则 pre 单行（断行允许与预览不同，决策 A） */
+    autowrap: boolean
+}
 
 /** 拖动事务的合并键：一次拖动的全部 pointermove 并成一步历史 */
 const DRAG_MERGE_KEY = 'drag'
@@ -285,6 +326,79 @@ export class EditorSession {
         this.store.closeMerge(DRAG_MERGE_KEY)
     }
 
+    // ---- 文本编辑会话（工单 11）：会话住 ui 分支，提交经漏斗一次性落文档 ----
+
+    /**
+     * 进入文本编辑：路径必须解析到 TextLayer。会话只进 ui 分支（不进历史），
+     * live 文本住在绑定层的 textarea，内容层随即跳绘该层文本（防重影）。
+     */
+    beginTextEdit(path: LayerPath): boolean {
+        if (this.textLayerAt(path) === null) return false
+        const current = this.store.ui.editing
+        if (current && pathsEqual(current.path, path)) return true
+        this.store.setEditing({ path })
+        return true
+    }
+
+    /**
+     * 提交漏斗的统一出口：Esc / Ctrl+Enter / blur / 点画布他处四条退出路径都收拢
+     * 到这里。先清会话再落文档——退出路径可能级联触发（画布点按的 pointerdown
+     * 提交与随后 blur 竞态），会话清空后后续调用幂等，保证一次退出恰一步历史。
+     *
+     * - 文本与文档一致：不进历史（进出编辑零噪声），返回 false；
+     * - 空文本：删除该图层（复用 deleteLayer 的 splice/重映射语义），一步历史可撤销；
+     * - 其余：一次无 mergeKey 事务写入 text（独立步，不并入开启中的拖动/滑杆合并）。
+     */
+    commitTextEdit(text: string): boolean {
+        const editing = this.store.ui.editing
+        if (!editing) return false
+        this.store.setEditing(null)
+
+        const layer = this.textLayerAt(editing.path)
+        if (!layer) return false
+        if (text === layer.text) return false
+        if (text === '') {
+            this.deleteLayer(editing.path)
+            return true
+        }
+        this.updateData(editing.path, text)
+        return true
+    }
+
+    /**
+     * 编辑 overlay 的布局描述：与绘制/命中同一套布局策略求出的盒几何与排版字段
+     * （textarea 以盒左上对位、盒尺寸占位，字号/行高/内边距按场景像素交给 CSS
+     * transform 缩放）。verticalAnchorY 按进入编辑时的文档文本计算，编辑中保持
+     * 稳定不随键入跳动。非文本层/路径失效返回 null。
+     */
+    textEditLayout(path: LayerPath): TextEditLayout | null {
+        const layer = this.textLayerAt(path)
+        const doc = this.store.doc
+        if (!layer || !doc) return null
+        const box = layerBoxByPath(doc, path, this.textPolicies)
+        if (!box) return null
+        return {
+            box,
+            text: layer.text,
+            font: layer.font,
+            fontColor: layer.fontColor,
+            fontSize: layer.fontSize,
+            lineHeightPx: lineHeightPx(layer),
+            padding: layer.shape.padding,
+            horizontalAlign: layer.align.horizontal,
+            verticalAlign: layer.align.vertical,
+            verticalAnchorY: textOrigin(layer, this.textPolicies).y,
+            autowrap: layer.autowrap,
+        }
+    }
+
+    /** 编辑会话的目标图层查询：路径须解析到 TextLayer，其余（含无文档）返回 null */
+    private textLayerAt(path: LayerPath): TextLayer | null {
+        const doc = this.store.doc
+        const layer = doc ? resolveLayer(doc, path) : null
+        return layer && layer.type === 'TextLayer' ? layer : null
+    }
+
     // ---- 属性写入（工单 09）：面板零直改，一切文档字段编辑经这三个 action ----
 
     /**
@@ -470,6 +584,8 @@ export class EditorSession {
     private onStoreChange(change: EditorChange): void {
         if (change.scope === 'doc') this.invalidate('both')
         else if (change.branch === 'viewport') this.invalidate('both')
+        // 编辑会话开始/结束切换内容层的文本跳绘（textarea 接管该层呈现），双层都要重绘
+        else if (change.branch === 'editing') this.invalidate('both')
         // 选择/悬停/拖动会话只影响 gizmo（拖动中的图层位移走 doc 分支另触发双层）
         else this.invalidate('overlay')
     }
@@ -505,7 +621,14 @@ export class EditorSession {
         }
         // 视口变换是 Canvas2D 后端的可选能力；后端契约本身保持五原语不变
         ;(this.backend as Partial<ViewportAwareBackend>).setViewportTransform?.(transform)
-        renderCanvas(doc, this.backend, this.textPolicies)
+        // 编辑中的文本层跳绘内容（textarea 接管该层文字呈现，防两侧断行叠加重影）；
+        // 盒（背景/边框）照常绘制，进出编辑视觉连续。图层引用来自同一棵不可变
+        // 文档树，引用比较即精确判定，无需逐层比对路径。
+        const editing = this.store.ui.editing
+        const editingLayer = editing ? resolveLayer(doc, editing.path) : null
+        renderCanvas(doc, this.backend, this.textPolicies, editingLayer
+            ? { skipContent: (layer) => layer === editingLayer }
+            : undefined)
     }
 
     private repaintOverlay(): void {
