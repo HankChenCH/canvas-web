@@ -13,7 +13,7 @@
  * patch path；选择态住 ui 分支（不进历史），文档写入一律经路径导航。
  * 全模块纯函数、无 DOM。
  */
-import { layerHeight, layerWidth, resolveLayerBox, type Canvas, type Layer, type LayerBox, type TextLayoutPolicies } from '@hankchen/canvas-next'
+import { resolveChildAt, resolveLayerBox, type Canvas, type Layer, type LayerBox, type TextLayoutPolicies } from '@hankchen/canvas-next'
 
 /** 图层路径：patch path 前缀形态的只读数组（语法由 isLayerPath 校验） */
 export type LayerPath = readonly (string | number)[]
@@ -90,8 +90,9 @@ export function selectionParentPath(path: LayerPath): LayerPath | null {
 }
 
 /**
- * 路径处图层的绝对盒（镜像 render.walkLayer 的下钻几何：行纵向累加、格横向累加、
- * 格内容与格同原点）。gizmo 选择框、命中测试、适应选区共用，保证与绘制不漂移。
+ * 路径处图层的绝对盒（下钻几何经 canvas-next 的 resolveChildAt，与渲染模板
+ * walkLayer 同一套推进公式：行纵向累加、格横向累加、格内容与格同原点）。
+ * gizmo 选择框、命中测试、适应选区共用，保证与绘制不漂移。
  */
 export function layerBoxByPath(
     doc: Canvas,
@@ -103,42 +104,17 @@ export function layerBoxByPath(
     const rootIndex = path[1] as number
     const root = doc.layers[rootIndex]
     if (root === undefined) return null
-    let box = resolveLayerBox(root, 0, 0, doc.width, doc.height, policies)
     let layer: Layer = root
+    let box = resolveLayerBox(root, 0, 0, doc.width, doc.height, policies)
 
-    // 逐段下钻：每段先按容器布局推进到目标孩子，再解孩子的盒
+    // 逐段下钻：每段经共享几何解析目标孩子（越界/形态不符返回 null）
     for (let i = 2; i < path.length; i += 2) {
-        const key = path[i]
+        const key = path[i] as 'rows' | 'cells' | 'content'
         const index = path[i + 1] as number
-        if (key === 'content') {
-            if (layer.type !== 'TableCellLayer' || layer.content === null) return null
-            layer = layer.content
-            box = resolveLayerBox(layer, box.x, box.y, box.width, box.height, policies)
-            break
-        }
-
-        const children: readonly Layer[] = key === 'rows' && layer.type === 'TableLayer'
-            ? layer.rows
-            : key === 'cells' && layer.type === 'TableRowLayer'
-                ? layer.cells
-                : []
-        if (index >= children.length) return null
-
-        // 与 walkLayer 同款推进：行按高累加 y，格按宽累加 x
-        let originX = box.x
-        let originY = box.y
-        for (let c = 0; c <= index; c += 1) {
-            const child = children[c]
-            if (child === undefined) return null
-            if (c === index) {
-                layer = child
-                box = resolveLayerBox(child, originX, originY, box.width, box.height, policies)
-            } else if (key === 'rows') {
-                originY += layerHeight(child, policies)
-            } else {
-                originX += layerWidth(child)
-            }
-        }
+        const child = resolveChildAt(layer, box, key, index, policies)
+        if (!child) return null
+        layer = child.layer
+        box = child.box
     }
     return box
 }

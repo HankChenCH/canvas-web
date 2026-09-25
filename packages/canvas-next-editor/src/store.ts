@@ -130,16 +130,19 @@ export class EditorStore {
 
     /** 选中：值等短路（重复点选同一层不重绘） */
     setSelection(path: LayerPath | null): void {
-        if (pathsEqual(this.uiValue.selection, path)) return
-        this.uiValue = { ...this.uiValue, selection: path }
-        this.notify({ scope: 'ui', branch: 'selection' })
+        this.setUiPath('selection', path)
     }
 
     /** 悬停：值等短路（指针在同一层内移动不重绘覆盖层） */
     setHovered(path: LayerPath | null): void {
-        if (pathsEqual(this.uiValue.hovered, path)) return
-        this.uiValue = { ...this.uiValue, hovered: path }
-        this.notify({ scope: 'ui', branch: 'hovered' })
+        this.setUiPath('hovered', path)
+    }
+
+    /** 路径类 ui 切片的共同形状：值等短路 → 整体替换 → 分支通知 */
+    private setUiPath(branch: 'selection' | 'hovered', path: LayerPath | null): void {
+        if (pathsEqual(this.uiValue[branch], path)) return
+        this.uiValue = { ...this.uiValue, [branch]: path }
+        this.notify({ scope: 'ui', branch })
     }
 
     /** 拖动会话开始/结束（null）；会话对象住 ui 分支，文档只收位置事务 */
