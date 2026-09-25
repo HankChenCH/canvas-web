@@ -1,6 +1,8 @@
 <script setup lang="ts">
 // 工单 06 目验：选择与拖动——左键点选（视觉最上层优先）/拖动（九锚点一视同仁）、
 // hover 高亮、表格 cell→row→table 的 Escape 级联、一次拖动一步历史、适应选区。
+// 工单 08 目验：撤销/重做——顶栏按钮（可用态随历史栈联动）与 Ctrl/Cmd+Z、
+// Ctrl/Cmd+Shift+Z（或 Ctrl+Y）快捷键；输入法合成中不触发（isComposing/229 守卫）。
 // 工单 05 的相机目验（平移/滚轮三态/缩放至指针/适应画布）全部保留；
 // 重绘由会话内 rAF 合帧驱动，覆盖层 = 资源物化标识 + 选区 gizmo（分层结构演示）。
 import { computed, onBeforeUnmount, ref } from 'vue'
@@ -12,12 +14,13 @@ import {
     drawResourceMarkers,
 } from '@hankchen/canvas-next-browser-renderer'
 import type { ResourceState } from '@hankchen/canvas-next-browser-renderer'
-import { EditorSession } from '@hankchen/canvas-next-editor'
+import { EditorSession, classifyHistoryShortcut } from '@hankchen/canvas-next-editor'
 import { resolveLayer, type LayerPath, type OverlayPainter } from '@hankchen/canvas-next-editor'
 import {
     CanvasSurface,
     createRafScheduler,
     drawSelectionGizmo,
+    useHistory,
     useViewport,
     type CanvasSurfaceReady,
 } from '@hankchen/canvas-next-editor-vue'
@@ -30,6 +33,7 @@ const editor = new EditorSession({ scheduleFrame: createRafScheduler(), fitMargi
 
 const viewport = useViewport(editor)
 const zoomPercent = computed(() => Math.round(viewport.value.zoom * 100))
+const { canUndo, canRedo } = useHistory(editor)
 
 const assetsNote = ref('资源物化中…')
 const selectionNote = ref('未选中图层（左键点选，Esc 逐级升级）')
@@ -126,6 +130,20 @@ function zoomBy(factor: number): void {
     editor.zoomAt(width / 2, height / 2, viewport.value.zoom * factor)
 }
 
+/** 撤销/重做快捷键：意图分类在内核纯函数（可测），这里只做事件解码 */
+function onKeydown(event: KeyboardEvent): void {
+    const shortcut = classifyHistoryShortcut({
+        key: event.key,
+        mod: event.ctrlKey || event.metaKey,
+        shift: event.shiftKey,
+        // 输入法合成中（含 keyCode 229 兼容位）不触发文档撤销/重做
+        composing: event.isComposing || event.keyCode === 229,
+    })
+    if (shortcut === 'undo') editor.undo()
+    else if (shortcut === 'redo') editor.redo()
+}
+window.addEventListener('keydown', onKeydown)
+
 function zoomTo100(): void {
     const { width, height } = editor.getSurfaceSize()
     editor.zoomAt(width / 2, height / 2, 1)
@@ -140,6 +158,7 @@ function fitToSelection(): void {
 }
 
 onBeforeUnmount(() => {
+    window.removeEventListener('keydown', onKeydown)
     unsubscribeAssets?.()
     unsubscribeSelection?.()
     editor.dispose()
@@ -150,12 +169,31 @@ onBeforeUnmount(() => {
     <main class="stage">
         <header class="header">
             <h1>canvas-web playground</h1>
-            <p>选择与拖动（工单 06）：点选/拖动图层 · hover 高亮 · 表格级联选中 · 九锚点拖动 · 适应选区（工单 02–05 目验保留）</p>
+            <p>撤销与重做（工单 08）：顶栏按钮/快捷键撤销一切文档变更 · 拖动合步 · 100 步上限（工单 02–06 目验保留）</p>
             <p class="assets-note">{{ assetsNote }}</p>
             <p class="selection-note" data-selection>{{ selectionNote }}</p>
         </header>
 
         <section class="toolbar" aria-label="视图工具栏">
+            <button
+                type="button"
+                data-undo
+                title="撤销（Ctrl/Cmd+Z）"
+                :disabled="!canUndo"
+                @click="editor.undo()"
+            >
+                撤销
+            </button>
+            <button
+                type="button"
+                data-redo
+                title="重做（Ctrl/Cmd+Shift+Z 或 Ctrl+Y）"
+                :disabled="!canRedo"
+                @click="editor.redo()"
+            >
+                重做
+            </button>
+            <span class="toolbar-divider" aria-hidden="true"></span>
             <button type="button" title="缩小（以视口中心为锚）" @click="zoomBy(1 / 1.25)">−</button>
             <span class="zoom-value" data-zoom>{{ zoomPercent }}%</span>
             <button type="button" title="放大（以视口中心为锚）" @click="zoomBy(1.25)">＋</button>
@@ -170,8 +208,9 @@ onBeforeUnmount(() => {
 
         <section class="legend">
             <ul>
+                <li><b>撤销/重做</b>：顶栏按钮随历史栈自动可用/禁用；快捷键 <b>Ctrl/Cmd+Z</b> 撤销、<b>Ctrl/Cmd+Shift+Z</b>（或 Ctrl+Y）重做；上限 100 步、不跨会话，撤销后的新变更弃用重做分支（对齐 Figma）；输入法候选窗里的快捷键不触发</li>
                 <li><b>点选</b>：左键点击图层（视觉最上层优先，负溢出画布外也可命中）；点表格选中格，<b>Esc 逐级升级 格→行→表</b>，再按清空；点空白处取消选择</li>
-                <li><b>拖动</b>：左键按住拖动，位置实时跟随（九锚点一视同仁，只改 x/y 增量）；<b>一次拖动 = 一步历史</b>（mergeKey 事务合并，撤销/重做界面在工单 08）</li>
+                <li><b>拖动</b>：左键按住拖动，位置实时跟随（九锚点一视同仁，只改 x/y 增量）；<b>一次拖动 = 一步历史</b>（mergeKey 事务合并，撤销一次回到拖动前）</li>
                 <li><b>hover</b>：指针扫过的图层有淡蓝高亮，选中层蓝框常显（都画在 gizmo 覆盖层，不触发内容层重绘）</li>
                 <li><b>适应选区</b>：视口适配选中图层盒（表格可适配到行/格）；无选中时同「适应画布」</li>
                 <li>平移：空格（或中键）拖拽、plain 滚轮上下左右、<b>shift + 滚轮横向</b>；缩放 <b>ctrl/cmd + 滚轮</b>以指针为中心，范围 5%–800%</li>
@@ -243,6 +282,23 @@ onBeforeUnmount(() => {
 
 .toolbar button:hover {
     border-color: #94a3b8;
+}
+
+.toolbar button:disabled {
+    color: #cbd5e1;
+    cursor: not-allowed;
+    border-color: #f1f5f9;
+}
+
+.toolbar button:disabled:hover {
+    border-color: #f1f5f9;
+}
+
+.toolbar-divider {
+    width: 1px;
+    height: 18px;
+    margin: 0 2px;
+    background: #e5e7eb;
 }
 
 .toolbar .fit {

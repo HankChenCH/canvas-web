@@ -256,6 +256,24 @@ export class EditorSession {
         this.store.closeMerge(DRAG_MERGE_KEY)
     }
 
+    // ---- 撤销/重做（工单 08）：双栈语义全在 store，会话只透传查询与动作 ----
+
+    get canUndo(): boolean {
+        return this.store.canUndo
+    }
+
+    get canRedo(): boolean {
+        return this.store.canRedo
+    }
+
+    undo(): void {
+        this.store.undo()
+    }
+
+    redo(): void {
+        this.store.redo()
+    }
+
     // ---- 订阅与失效 ----
 
     subscribe(listener: (change: EditorChange) => void): () => void {

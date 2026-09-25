@@ -232,6 +232,55 @@ describe('相机动作（经纯函数 + store.setViewport，不进历史）', ()
     })
 })
 
+describe('撤销/重做（工单 08）：会话透传 store，doc 变更驱动双层重绘', () => {
+    it('canUndo/canRedo 随事务与 undo/redo 联动；undo 恢复文档', () => {
+        const { session } = makeSession()
+        session.openDocument(doc())
+        expect(session.canUndo).toBe(false)
+        expect(session.canRedo).toBe(false)
+
+        session.beginDrag(['layers', 0], 0, 0)
+        session.dragTo(50, 0)
+        session.endDrag()
+        expect(session.canUndo).toBe(true)
+
+        session.undo()
+        expect(session.store.doc!.layers[0]!.position).toMatchObject({ x: 10, y: 10 })
+        expect(session.canUndo).toBe(false)
+        expect(session.canRedo).toBe(true)
+
+        session.redo()
+        expect(session.store.doc!.layers[0]!.position).toMatchObject({ x: 60, y: 10 })
+    })
+
+    it('undo/redo 走 doc 分支通知 → 内容层与覆盖层都重绘', () => {
+        const { session, scheduler } = makeSession()
+        const backend = recordingBackend()
+        const painter = vi.fn<OverlayPainter>()
+        session.attachContentBackend(backend)
+        session.setOverlayPainter(painter)
+        session.openDocument(doc())
+        scheduler.flush()
+        backend.resetBeginCount()
+        painter.mockClear()
+
+        session.undo()
+        scheduler.flush()
+        expect(backend.beginCount()).toBe(0) // 空栈 undo 不产生通知与重绘
+
+        session.store.transact((draft) => {
+            draft.layers[0]!.priority = 99
+        })
+        scheduler.flush()
+        const afterTransact = backend.beginCount()
+
+        session.undo()
+        scheduler.flush()
+        expect(backend.beginCount()).toBe(afterTransact + 1)
+        expect(painter).toHaveBeenCalledTimes(2)
+    })
+})
+
 describe('呈现参数与防御', () => {
     it('未打开文档/未挂后端时 flush 不绘制不报错', () => {
         const { session, scheduler } = makeSession()

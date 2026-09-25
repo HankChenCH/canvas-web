@@ -3,14 +3,15 @@
  *
  * - doc 分支：解码后的领域画布（@hankchen/canvas-next 的 Canvas），唯一事实源。
  *   写入口唯一：transact —— immer produceWithPatches 产物浅替换 + patch 广播。
- *   历史（工单 06 最小事务管线）：mergeKey 相同的连续事务合并为一步
- *   （一次拖动 = 一步历史），pointerup 后 closeMerge 闭合；完整双栈 undo/redo
- *   在工单 08 落地，patch 本身可序列化（协作的将来之路）。
+ *   历史（工单 08 双栈）：mergeKey 相同的连续事务合并为一步（一次拖动 = 一步
+ *   历史），pointerup 后 closeMerge 闭合；undo/redo 手写双栈回放 patch，
+ *   undo 后新事务改写 redo 栈（Figma 语义），上限 100 步、不跨会话。
+ *   patch 本身可 JSON 序列化（协作的将来之路，v1 不做协作）。
  * - ui 分支：视口/选择/悬停/拖动会话等易变状态，整体替换、**永不进历史**
  *   （红线 3 的编辑器延伸：派生状态只住这里，不写文档）。
  * - 通知携带变更位置（scope/branch）与 patch 组，绑定层与渲染调度据此细分脏区。
  */
-import { enablePatches, produceWithPatches, type Draft, type Patch } from 'immer'
+import { applyPatches, enablePatches, produceWithPatches, type Draft, type Patch } from 'immer'
 
 import type { Canvas } from '@hankchen/canvas-next'
 
@@ -48,6 +49,9 @@ export type EditorChange =
     | { scope: 'doc'; patches: Patch[]; inversePatches: Patch[] }
     | { scope: 'ui'; branch: keyof EditorUi }
 
+/** undo 栈深度上限：更旧的事务被丢弃（不跨会话，会话内也只回溯有限步） */
+export const MAX_HISTORY_STEPS = 100
+
 type Listener = (change: EditorChange) => void
 
 /** 文档事务：收到 doc 的 immer draft，原位改字段即可 */
@@ -61,7 +65,10 @@ export interface TransactOptions {
 export class EditorStore {
     private docValue: Canvas | null = null
     private uiValue: EditorUi = { viewport: { x: 0, y: 0, zoom: 1 }, selection: null, hovered: null, drag: null }
-    private historySteps: HistoryStep[] = []
+    /** undo 栈：已提交步，栈尾最新 */
+    private undoSteps: HistoryStep[] = []
+    /** redo 栈：被撤销步，栈尾最近一次撤销；transact 落新事务时整体改写 */
+    private redoSteps: HistoryStep[] = []
     private readonly listeners = new Set<Listener>()
 
     get doc(): Canvas | null {
@@ -72,54 +79,91 @@ export class EditorStore {
         return this.uiValue
     }
 
-    /** 历史（已提交步）；工单 08 在此扩双栈与 undo/redo，消费面走本查询 */
+    /** 已提交步（undo 栈，栈尾最新）；可撤销性走 canUndo */
     get history(): readonly HistoryStep[] {
-        return this.historySteps
+        return this.undoSteps
     }
 
-    /** 打开/替换文档：ui 选择态与历史一并重置（新文档不继承旧路径/旧事务） */
+    get canUndo(): boolean {
+        return this.undoSteps.length > 0
+    }
+
+    get canRedo(): boolean {
+        return this.redoSteps.length > 0
+    }
+
+    /** 打开/替换文档：ui 选择态与双向历史一并重置（新文档不继承旧路径/旧事务） */
     openDocument(canvas: Canvas): void {
         this.docValue = canvas
-        this.historySteps = []
+        this.undoSteps = []
+        this.redoSteps = []
         this.uiValue = { ...this.uiValue, selection: null, hovered: null, drag: null }
         this.notify({ scope: 'doc', patches: [], inversePatches: [] })
     }
 
     /**
      * 文档事务唯一入口：produceWithPatches 求新树，无变化即空转（不进历史不通知）；
-     * 有变化则浅替换 doc、按 mergeKey 合并或追加历史步、广播 patch 组。
+     * 有变化则浅替换 doc、按 mergeKey 合并或追加 undo 栈（超限丢最旧步）、
+     * 改写 redo 栈（undo 后的新事务弃用被撤销分支，Figma 语义）、广播 patch 组。
      */
     transact(recipe: DocRecipe, options: TransactOptions = {}): void {
         if (this.docValue === null) return
         const [next, patches, inversePatches] = produceWithPatches(this.docValue, recipe)
         if (patches.length === 0) return
 
+        this.redoSteps = []
         const mergeKey = options.mergeKey ?? null
-        const last = this.historySteps[this.historySteps.length - 1]
+        const last = this.undoSteps[this.undoSteps.length - 1]
         if (mergeKey !== null && last !== undefined && last.mergeKey === mergeKey) {
             // 正向依序拼接；逆向要后事务先撤，故新组插在前
-            this.historySteps[this.historySteps.length - 1] = {
+            this.undoSteps[this.undoSteps.length - 1] = {
                 mergeKey,
                 patches: [...last.patches, ...patches],
                 inversePatches: [...inversePatches, ...last.inversePatches],
             }
         } else {
-            this.historySteps.push({ mergeKey, patches, inversePatches })
+            this.undoSteps.push({ mergeKey, patches, inversePatches })
+            if (this.undoSteps.length > MAX_HISTORY_STEPS) this.undoSteps.shift()
         }
 
         this.docValue = next
         this.notify({ scope: 'doc', patches, inversePatches })
     }
 
+    /** 撤销最近一步：逆向 patch 回放，该步整体移入 redo 栈 */
+    undo(): void {
+        const step = this.undoSteps[this.undoSteps.length - 1]
+        if (step === undefined || this.docValue === null) return
+        this.undoSteps.pop()
+        this.redoSteps.push(step)
+        // 历史导航打断 mergeKey 会话：新顶步闭合，同键后续事务另起一步
+        this.closeMerge()
+        this.docValue = applyPatches(this.docValue, step.inversePatches)
+        // 通知契约与 transact 对齐：patches = 本次生效变更，inversePatches = 再撤本次所需
+        this.notify({ scope: 'doc', patches: step.inversePatches, inversePatches: step.patches })
+    }
+
+    /** 重做最近一次撤销：正向 patch 回放，该步移回 undo 栈 */
+    redo(): void {
+        const step = this.redoSteps[this.redoSteps.length - 1]
+        if (step === undefined || this.docValue === null) return
+        this.redoSteps.pop()
+        this.undoSteps.push(step)
+        this.closeMerge()
+        this.docValue = applyPatches(this.docValue, step.patches)
+        this.notify({ scope: 'doc', patches: step.patches, inversePatches: step.inversePatches })
+    }
+
     /**
-     * 闭合拖动/滑杆事务（pointerup、blur 提交）：最后一步的 mergeKey 清空后，
-     * 同键的后续事务不再并入。给键名时只在键匹配时闭合（防误伤其它键的开放步）。
+     * 闭合拖动/滑杆事务（pointerup、blur 提交，undo/redo 导航同理）：最后一步的
+     * mergeKey 清空后，同键的后续事务不再并入。给键名时只在键匹配时闭合
+     * （防误伤其它键的开放步）。
      */
     closeMerge(mergeKey?: string): void {
-        const last = this.historySteps[this.historySteps.length - 1]
+        const last = this.undoSteps[this.undoSteps.length - 1]
         if (last === undefined || last.mergeKey === null) return
         if (mergeKey !== undefined && last.mergeKey !== mergeKey) return
-        this.historySteps[this.historySteps.length - 1] = { ...last, mergeKey: null }
+        this.undoSteps[this.undoSteps.length - 1] = { ...last, mergeKey: null }
     }
 
     /** 视口更新：ui 分支整体替换，旧切片引用保持原值（computed 引用短路依赖此语义） */
