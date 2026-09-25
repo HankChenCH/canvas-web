@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="160" viewBox="0 0 400 160">
+  <!--
+    工单 03 目验源图：宽幅两色图（400×160），cover 进内容盒时等比缩放、左右溢出
+    居中裁掉——中缝（白线 + 中心圆标）应落在目标盒中线附近，可肉眼核对居中裁切。
+  -->
+  <rect x="0" y="0" width="200" height="160" fill="#f59e0b"/>
+  <rect x="200" y="0" width="200" height="160" fill="#14b8a6"/>
+  <text x="72" y="108" font-family="sans-serif" font-size="72" font-weight="700" fill="#78350f">A</text>
+  <text x="272" y="108" font-family="sans-serif" font-size="72" font-weight="700" fill="#134e4a">B</text>
+  <rect x="199" y="0" width="2" height="160" fill="#f8fafc"/>
+  <circle cx="200" cy="80" r="10" fill="none" stroke="#f8fafc" stroke-width="3"/>
+</svg>
