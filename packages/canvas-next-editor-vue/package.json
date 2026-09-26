@@ -10,6 +10,26 @@
             "types": "./src/index.ts",
             "default": "./src/index.ts"
         },
+        "./canvas": {
+            "types": "./src/canvas/index.ts",
+            "default": "./src/canvas/index.ts"
+        },
+        "./property-panel": {
+            "types": "./src/property-panel/index.ts",
+            "default": "./src/property-panel/index.ts"
+        },
+        "./layer-panel": {
+            "types": "./src/layer-panel/index.ts",
+            "default": "./src/layer-panel/index.ts"
+        },
+        "./status-bar": {
+            "types": "./src/status-bar/index.ts",
+            "default": "./src/status-bar/index.ts"
+        },
+        "./shared": {
+            "types": "./src/shared/index.ts",
+            "default": "./src/shared/index.ts"
+        },
         "./panel-theme.css": "./src/panel-theme.css"
     },
     "scripts": {
