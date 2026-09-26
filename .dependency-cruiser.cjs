@@ -62,6 +62,66 @@ module.exports = {
             from: { path: '^packages/canvas-next-editor-vue/src/' },
             to: { path: '^(packages/(canvas-next$|canvas-next/|canvas-next-browser-renderer/)|playground/)' },
         },
+        // —— editor-vue 包内域纪律（2026-09 分域）：域间禁止横向 import，
+        //    跨域消费收口 shared；shared 是被依赖层不得反向依赖任何域。
+        {
+            name: 'editor-vue-shared-isolation',
+            comment: '域纪律：shared 切片桥是被依赖层，不得反向 import 任何域',
+            severity: 'error',
+            from: { path: '^packages/canvas-next-editor-vue/src/shared/' },
+            to: { path: '^packages/canvas-next-editor-vue/src/(canvas|property-panel|layer-panel|status-bar)/' },
+        },
+        {
+            name: 'editor-vue-canvas-isolation',
+            comment: '域纪律：画布域不得横引属性面板/图层/状态栏域',
+            severity: 'error',
+            from: { path: '^packages/canvas-next-editor-vue/src/canvas/' },
+            to: { path: '^packages/canvas-next-editor-vue/src/(property-panel|layer-panel|status-bar)/' },
+        },
+        {
+            name: 'editor-vue-property-panel-isolation',
+            comment: '域纪律：属性面板域不得横引画布/图层/状态栏域',
+            severity: 'error',
+            from: { path: '^packages/canvas-next-editor-vue/src/property-panel/' },
+            to: { path: '^packages/canvas-next-editor-vue/src/(canvas|layer-panel|status-bar)/' },
+        },
+        {
+            name: 'editor-vue-layer-panel-isolation',
+            comment: '域纪律：图层面板域不得横引画布/属性面板/状态栏域',
+            severity: 'error',
+            from: { path: '^packages/canvas-next-editor-vue/src/layer-panel/' },
+            to: { path: '^packages/canvas-next-editor-vue/src/(canvas|property-panel|status-bar)/' },
+        },
+        {
+            name: 'editor-vue-status-bar-isolation',
+            comment: '域纪律：状态栏域不得横引画布/属性面板/图层面板域',
+            severity: 'error',
+            from: { path: '^packages/canvas-next-editor-vue/src/status-bar/' },
+            to: { path: '^packages/canvas-next-editor-vue/src/(canvas|property-panel|layer-panel)/' },
+        },
+        // —— editor 内核分层纪律（2026-09 分层）：session → {spatial, editing, shared}、
+        //    editing → shared、spatial → shared、shared → ∅，下层禁引上层。
+        {
+            name: 'editor-shared-isolation',
+            comment: '分层纪律：layerPath 寻址原语（shared）不得引用任何上层',
+            severity: 'error',
+            from: { path: '^packages/canvas-next-editor/src/shared/' },
+            to: { path: '^packages/canvas-next-editor/src/(spatial|editing|session)/' },
+        },
+        {
+            name: 'editor-spatial-isolation',
+            comment: '分层纪律：空间层（camera/hitTest/wheel）不得引用 editing/session',
+            severity: 'error',
+            from: { path: '^packages/canvas-next-editor/src/spatial/' },
+            to: { path: '^packages/canvas-next-editor/src/(editing|session)/' },
+        },
+        {
+            name: 'editor-editing-isolation',
+            comment: '分层纪律：编辑特性层不得引用 session 会话门面',
+            severity: 'error',
+            from: { path: '^packages/canvas-next-editor/src/editing/' },
+            to: { path: '^packages/canvas-next-editor/src/session/' },
+        },
         {
             name: 'no-deps-on-playground',
             comment: '红线：playground 是目验壳（依赖图顶端，位于仓库根 playground/），任何包不得依赖它',
