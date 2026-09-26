@@ -188,3 +188,77 @@ describe('PropertyPanel：schema 驱动表单', () => {
         wrapper.unmount()
     })
 })
+
+describe('数据字段取值方式切换（静态值/表达式，工单 02）', () => {
+    it('未选中：画布级字段组无取值方式切换钮', async () => {
+        const editor = makeEditor([textLayer()])
+        const wrapper = mount(PropertyPanel, { props: { editor } })
+        await wrapper.vm.$nextTick()
+        expect(wrapper.find('.cn-props__data-toggle').exists()).toBe(false)
+        wrapper.unmount()
+    })
+
+    it('静态态：切换钮未激活，编辑走 updateData（保持未标记）', async () => {
+        const editor = makeEditor([textLayer({ text: '甲' })])
+        const wrapper = mount(PropertyPanel, { props: { editor } })
+        editor.setSelection(['layers', 0])
+        await wrapper.vm.$nextTick()
+
+        const chip = wrapper.find('.cn-props__data-toggle')
+        expect(chip.exists()).toBe(true)
+        expect(chip.classes()).not.toContain('cn-props__data-toggle--active')
+        expect(wrapper.find('textarea.cn-field--expression').exists()).toBe(false)
+
+        const area = wrapper.find('textarea')
+        area.element.value = '新字面'
+        await area.trigger('input')
+        const layer = editor.store.doc!.layers[0]!
+        expect(layer.type === 'TextLayer' && layer.text).toBe('新字面')
+        expect(layer.type === 'TextLayer' && layer.expression).toBeNull()
+        wrapper.unmount()
+    })
+
+    it('表达式态：切换钮激活 + 输入框标识，编辑保持标记（镜像字面更新）', async () => {
+        const expression = '{{certCode}}'
+        const editor = makeEditor([textLayer({ text: expression, expression })])
+        const wrapper = mount(PropertyPanel, { props: { editor } })
+        editor.setSelection(['layers', 0])
+        await wrapper.vm.$nextTick()
+
+        expect(wrapper.find('.cn-props__data-toggle').classes()).toContain('cn-props__data-toggle--active')
+        expect(wrapper.find('textarea.cn-field--expression').exists()).toBe(true)
+
+        const area = wrapper.find('textarea')
+        area.element.value = '{{personProfile.name}}'
+        await area.trigger('input')
+        const layer = editor.store.doc!.layers[0]!
+        expect(layer.type === 'TextLayer' && layer.text).toBe('{{personProfile.name}}')
+        expect(layer.type === 'TextLayer' && layer.expression).toBe('{{personProfile.name}}')
+        wrapper.unmount()
+    })
+
+    it('点击切换钮双向换态：表达式→静态字面接管，静态→表达式初值取当前字面', async () => {
+        const expression = '{{certCode}}'
+        const editor = makeEditor([textLayer({ text: expression, expression })])
+        const wrapper = mount(PropertyPanel, { props: { editor } })
+        editor.setSelection(['layers', 0])
+        await wrapper.vm.$nextTick()
+
+        // 表达式 → 静态：字面接管
+        await wrapper.find('.cn-props__data-toggle').trigger('click')
+        let layer = editor.store.doc!.layers[0]!
+        expect(layer.type === 'TextLayer' && layer.expression).toBeNull()
+        expect(layer.type === 'TextLayer' && layer.text).toBe(expression)
+        await wrapper.vm.$nextTick()
+        expect(wrapper.find('.cn-props__data-toggle').classes()).not.toContain('cn-props__data-toggle--active')
+
+        // 静态 → 表达式：初值 = 当前字面（不自动包裹）
+        await wrapper.find('.cn-props__data-toggle').trigger('click')
+        layer = editor.store.doc!.layers[0]!
+        expect(layer.type === 'TextLayer' && layer.expression).toBe(expression)
+        expect(layer.type === 'TextLayer' && layer.text).toBe(expression)
+        await wrapper.vm.$nextTick()
+        expect(wrapper.find('.cn-props__data-toggle').classes()).toContain('cn-props__data-toggle--active')
+        wrapper.unmount()
+    })
+})

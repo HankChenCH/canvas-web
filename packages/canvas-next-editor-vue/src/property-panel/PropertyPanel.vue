@@ -10,7 +10,7 @@
  */
 import { computed } from 'vue'
 
-import type { EditorSession } from '@hankchen/canvas-next-editor'
+import type { Canvas, EditorSession, Layer } from '@hankchen/canvas-next-editor'
 
 import { readField, type FieldDef } from './fieldSchema'
 import PropertyField from './PropertyField.vue'
@@ -25,6 +25,8 @@ interface RenderField {
     key: string
     field: FieldDef
     value: unknown
+    /** 数据字段取值方式（静态值/表达式）；undefined = 非 data 字段 */
+    dataMode?: 'static' | 'expression'
 }
 
 interface RenderSection {
@@ -40,6 +42,12 @@ const typeBadge = computed(() => {
     return panel.canvas.value ? 'Canvas' : '—'
 })
 
+/** 数据字段取值方式派生：expression 标记在场即表达式态（画布/无标记 → static） */
+function readDataMode(target: Layer | Canvas): 'static' | 'expression' {
+    const read = readField(target, ['expression'])
+    return read.ok && read.value !== null ? 'expression' : 'static'
+}
+
 const visibleSections = computed<readonly RenderSection[]>(() => {
     // 目标对象：选中层优先；仅当确无选择时回退画布（选中存在但解析失败说明
     // 选择已失效——此时不渲染画布字段，避免展示一份提交不进去的表单）
@@ -53,7 +61,12 @@ const visibleSections = computed<readonly RenderSection[]>(() => {
             const read = readField(target, field.key)
             // 未知字段：不渲染、不告警（权威字段过滤的读侧兜底）
             if (!read.ok) continue
-            fields.push({ key: `${scope}:${field.key.join('.')}`, field, value: read.value })
+            fields.push({
+                key: `${scope}:${field.key.join('.')}`,
+                field,
+                value: read.value,
+                dataMode: field.data ? readDataMode(target) : undefined,
+            })
         }
         if (fields.length > 0) result.push({ title: section.title, fields })
     }
@@ -99,8 +112,10 @@ const visibleSections = computed<readonly RenderSection[]>(() => {
                     :key="item.key"
                     :field="item.field"
                     :value="item.value"
+                    :data-mode="item.dataMode"
                     @input="panel.commit(item.field, $event, false)"
                     @change="panel.commit(item.field, $event, true)"
+                    @toggle-mode="panel.toggleDataMode(item.field)"
                 />
             </div>
         </section>

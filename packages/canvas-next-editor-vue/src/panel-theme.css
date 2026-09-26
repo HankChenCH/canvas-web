@@ -59,3 +59,32 @@
     background-color: var(--cn-bg-elevated);
     color: var(--cn-fg);
 }
+
+/* 数据字段取值方式切换（静态值/表达式，工单 02）：{{ }} 徽章 + 表达式态输入框描边。
+   双类名选择器压过控件上的单类 tailwind border 色，无需 !important */
+.cn-props .cn-props__data-toggle {
+    font-family: var(--cn-font-mono);
+    font-size: 9px;
+    line-height: 1;
+    padding: 3px 4px;
+    border-radius: 4px;
+    border: 1px solid var(--cn-field-line);
+    color: var(--cn-muted);
+    background: transparent;
+    cursor: pointer;
+}
+
+.cn-props .cn-props__data-toggle:hover {
+    color: var(--cn-fg);
+    border-color: var(--cn-muted);
+}
+
+.cn-props .cn-props__data-toggle--active {
+    border-color: var(--cn-accent);
+    color: var(--cn-accent);
+    background: var(--cn-accent-soft);
+}
+
+.cn-props .cn-field--expression {
+    border-color: var(--cn-accent);
+}

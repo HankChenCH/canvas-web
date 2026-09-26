@@ -25,6 +25,7 @@ import {
 import {
     CANVAS_FIELD_SECTIONS,
     fieldSectionsForPath,
+    readField,
     type FieldDef,
     type FieldSection,
 } from './fieldSchema'
@@ -42,6 +43,12 @@ export interface PropertyPanelBinding {
     readonly sections: ComputedRef<readonly FieldSection[]>
     /** 面板唯一提交口：final = 收口提交（change/blur），否则按 mergeKey 合并累积 */
     commit(field: FieldDef, value: unknown, final: boolean): void
+    /**
+     * 数据字段取值方式切换（静态值/表达式，工单 02）：静态 → 表达式初值取当前
+     * 字面原文（不自动包裹/猜变量）；表达式 → 静态字面接管（值保持现镜像）。
+     * 各为独立一步历史；仅 data 字段且有选中目标时生效。
+     */
+    toggleDataMode(field: FieldDef): void
 }
 
 export function usePropertyPanel(editor: EditorSession): PropertyPanelBinding {
@@ -76,6 +83,14 @@ export function usePropertyPanel(editor: EditorSession): PropertyPanelBinding {
         return doc.value ? CANVAS_FIELD_SECTIONS : []
     })
 
+    /** 数据字段取值方式派生：领域 expression 标记在场即表达式态（打标/解标动作
+     *  即时改状态，按现态派生与管线自洽，无需面板侧额外状态） */
+    function isDataMarked(field: FieldDef): boolean {
+        if (!field.data) return false
+        const current = layer.value
+        return current !== null && 'expression' in current && current.expression !== null
+    }
+
     function commit(field: FieldDef, value: unknown, final: boolean): void {
         if (!doc.value) return
         const path = selection.value
@@ -86,9 +101,38 @@ export function usePropertyPanel(editor: EditorSession): PropertyPanelBinding {
         // live 与 final 都带同键：final 值若与最后一次 live 不同则并入本会话，
         // 随后收口——一个输入会话至多一步历史
         const mergeKey = `sel:${path.join('.')}:${field.key.join('.')}`
-        if (field.data) editor.updateData(path, value as string | null, { mergeKey })
-        else editor.updateSpec(path, field.key, value, { mergeKey })
+        if (field.data) {
+            if (isDataMarked(field)) {
+                // 表达式态：编辑保持标记（expression + 镜像同改），mergeKey 与
+                // 字面态分键——跨态切换不并入同一步（spec §2）
+                const expressionKey = `sel:${path.join('.')}:data.expression`
+                editor.updateDataExpression(path, value as string | null, { mergeKey: expressionKey })
+                if (final) editor.store.closeMerge(expressionKey)
+                return
+            }
+            // 静态态：字面写解除标记（updateData 既有语义，标记层不会走到这里）
+            editor.updateData(path, value as string | null, { mergeKey })
+            if (final) editor.store.closeMerge(mergeKey)
+            return
+        }
+        editor.updateSpec(path, field.key, value, { mergeKey })
         if (final) editor.store.closeMerge(mergeKey)
+    }
+
+    function toggleDataMode(field: FieldDef): void {
+        const current = layer.value
+        const path = selection.value
+        if (!current || !path || !field.data) return
+        const read = readField(current, field.key)
+        if (!read.ok) return
+        const literal = typeof read.value === 'string' ? read.value : ''
+        if (isDataMarked(field)) {
+            // 表达式 → 静态：字面接管（值保持现镜像）
+            editor.updateData(path, literal)
+        } else {
+            // 静态 → 表达式：初值 = 当前字面原文（不自动包裹/猜变量）
+            editor.updateDataExpression(path, literal)
+        }
     }
 
     function commitCanvasProp(field: FieldDef, value: unknown, final: boolean): void {
@@ -105,5 +149,6 @@ export function usePropertyPanel(editor: EditorSession): PropertyPanelBinding {
         canvas,
         sections,
         commit,
+        toggleDataMode,
     }
 }

@@ -167,13 +167,36 @@ describe('commit：面板唯一提交口（分派 updateSpec/updateData/updateCa
         scope.stop()
     })
 
-    it('标记文本 commit 分派锁死走 updateData：编辑镜像字面 → 解除标记（工票 03）', () => {
-        // encode 回 StaticValue 三键 expression:'' 属内核面（updateProps.test.ts 工票 02 已锁）；
-        // 绑定面锁的是「data 字段只经 updateData、不经 updateSpec」的分派与解除后的域状态
+    it('标记文本 commit 走 updateDataExpression：编辑镜像字面保持标记（表达式态管线）', () => {
+        // spec（canvas-web-expression-marking §2）：表达式态编辑不再解除标记——
+        // 逐键 updateDataExpression 改 expression + 镜像，mergeKey 固定 data.expression；
+        // 字面写解标的 updateData 语义仍在（静态态管线），由下一条用例锁死
         const expression = '订单 {{orderNo}} · 共 {{$count}} 件'
         const editor = makeEditor([textLayer({ text: expression, expression })])
         const updateData = vi.spyOn(editor, 'updateData')
+        const updateDataExpression = vi.spyOn(editor, 'updateDataExpression')
         const updateSpec = vi.spyOn(editor, 'updateSpec')
+        const { scope, panel } = bind(editor)
+        editor.setSelection(['layers', 0])
+
+        panel.commit(TEXT_FIELD, '订单 {{orderNo}}', true)
+
+        expect(updateDataExpression).toHaveBeenCalledTimes(1)
+        expect(updateDataExpression).toHaveBeenCalledWith(['layers', 0], '订单 {{orderNo}}', {
+            mergeKey: 'sel:layers.0:data.expression',
+        })
+        expect(updateData).not.toHaveBeenCalled()
+        expect(updateSpec).not.toHaveBeenCalled()
+        const layer = editor.store.doc!.layers[0]!
+        expect(layer.type === 'TextLayer' && layer.text).toBe('订单 {{orderNo}}')
+        expect(layer.type === 'TextLayer' && layer.expression).toBe('订单 {{orderNo}}')
+        scope.stop()
+    })
+
+    it('未标记文本 commit 仍走 updateData：字面写解除标记语义不回归（静态态管线）', () => {
+        const editor = makeEditor([textLayer()])
+        const updateData = vi.spyOn(editor, 'updateData')
+        const updateDataExpression = vi.spyOn(editor, 'updateDataExpression')
         const { scope, panel } = bind(editor)
         editor.setSelection(['layers', 0])
 
@@ -181,10 +204,8 @@ describe('commit：面板唯一提交口（分派 updateSpec/updateData/updateCa
 
         expect(updateData).toHaveBeenCalledTimes(1)
         expect(updateData).toHaveBeenCalledWith(['layers', 0], '字面文案', { mergeKey: 'sel:layers.0:text' })
-        expect(updateSpec).not.toHaveBeenCalled()
-        const layer = editor.store.doc!.layers[0]!
-        expect(layer.type === 'TextLayer' && layer.text).toBe('字面文案')
-        expect(layer.type === 'TextLayer' && layer.expression).toBeNull()
+        expect(updateDataExpression).not.toHaveBeenCalled()
+        expect(editor.store.doc!.layers[0]!.type === 'TextLayer' && editor.store.doc!.layers[0]!.expression).toBeNull()
         scope.stop()
     })
 
@@ -214,6 +235,50 @@ describe('commit：面板唯一提交口（分派 updateSpec/updateData/updateCa
         const editor = new EditorSession({ scheduleFrame: nullScheduler })
         const { scope, panel } = bind(editor)
         expect(() => panel.commit(X_FIELD, 1, true)).not.toThrow()
+        scope.stop()
+    })
+})
+
+describe('toggleDataMode：数据字段取值方式切换（静态值/表达式）', () => {
+    it('静态 → 表达式：初值 = 当前字面原文，一步历史', () => {
+        const editor = makeEditor([textLayer({ text: '普通文案' })])
+        const { scope, panel } = bind(editor)
+        editor.setSelection(['layers', 0])
+
+        panel.toggleDataMode(TEXT_FIELD)
+
+        const layer = editor.store.doc!.layers[0]!
+        expect(layer.type === 'TextLayer' && layer.expression).toBe('普通文案')
+        expect(layer.type === 'TextLayer' && layer.text).toBe('普通文案')
+        expect(editor.store.history).toHaveLength(1)
+        scope.stop()
+    })
+
+    it('表达式 → 静态：字面接管（值保持现镜像），一步历史', () => {
+        const expression = '{{certCode}}'
+        const editor = makeEditor([textLayer({ text: expression, expression })])
+        const { scope, panel } = bind(editor)
+        editor.setSelection(['layers', 0])
+
+        panel.toggleDataMode(TEXT_FIELD)
+
+        const layer = editor.store.doc!.layers[0]!
+        expect(layer.type === 'TextLayer' && layer.expression).toBeNull()
+        expect(layer.type === 'TextLayer' && layer.text).toBe(expression)
+        expect(editor.store.history).toHaveLength(1)
+        scope.stop()
+    })
+
+    it('防御：非 data 字段 / 未选中（画布级）/ 值读取失败均空转', () => {
+        const editor = makeEditor([textLayer()])
+        const { scope, panel } = bind(editor)
+        const specField: FieldDef = { key: ['position', 'x'], label: 'X', control: 'number', integer: true }
+
+        editor.setSelection(['layers', 0])
+        panel.toggleDataMode(specField)
+        editor.setSelection(null)
+        panel.toggleDataMode(TEXT_FIELD)
+        expect(editor.store.history).toHaveLength(0)
         scope.stop()
     })
 })
