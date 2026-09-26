@@ -6,9 +6,21 @@
  * - 左区（x≈96–760）：背景、cover 图片、URL 字体标题、autowrap 中文长段（禁则 +
  *   emoji 字素簇）、表格、失败演示资源
  * - 右区（x≈1200–2200）：大字展示文本、第二段落、第二张 cover 图
+ * - 中列（x≈816 起）工票 03 增补的 V2 目验区（自上而下）：
+ *   - 标记图片：ExpressionValue 三键、value 恒镜像 expression（`{{assets.banner}}`），
+ *     预览按字面引用装载失败 → 占位 + 红叉（既有物化失败态机，不崩渲染）
+ *   - 标记二维码：字面 `{{orderNo}}` 按字面出码（编辑器不求值）
+ *   - 标记文本：显示镜像字面 `订单 {{orderNo}} · 共 {{$count}} 件`（spec §3.7 降级形态）
+ *   - 模板态表格：data 键值仅 rowsPath + template 内嵌行模板（标记 Text/Image/Qr
+ *     内容层各一；行/格声明高与 autoHeight 混合 = 高度豁免的 wire 形态演练），
+ *     rows 不写键 → 渲染为空壳（bg/border 照画、行区零高，spec §4.4 同门）
  * - QR 挂画布 bottom-right（-32,-32 负溢出不钳位）
- * - priority 叠放（数组头先画垫底）：100 背景 → 40 → 38 → 35 → 30 → 25 → 20 → 15 → 12 → 10 QR 最上
+ * - priority 叠放（数组头先画垫底）：100 背景 → 40 → 38 → 35 → 30 → 25 → 20 →
+ *   15 → 14 → 13 → 12 → 11 → 10 QR → 9 最上
  * - 工单 04 的物化三态保留可目验：/demo-missing.png 失败红叉、URL 字体、QR 固定选项
+ *
+ * 落点选择（工票 03）：样例增补落 DEMO_GRAPH_JSON（打开 playground 默认载入即可见，
+ * 无需额外点击）；visualCheckGraph（php visual-check 同场景口径）保持不动。
  */
 export const DEMO_GRAPH_JSON = `{
   "canvas": { "width": 2400, "height": 1500 },
@@ -148,6 +160,67 @@ export const DEMO_GRAPH_JSON = `{
       ]
     },
     {
+      "type": "TableLayer",
+      "priority": 14,
+      "spec": {
+        "shape": {
+          "width": 600, "height": 200, "backgroundColor": "#155e75",
+          "padding": { "top": 12, "bottom": 12, "left": 12, "right": 12 },
+          "border": { "top": { "width": 2, "color": "#67e8f9" }, "bottom": { "width": 2, "color": "#67e8f9" }, "left": { "width": 2, "color": "#67e8f9" }, "right": { "width": 2, "color": "#67e8f9" } }
+        },
+        "position": { "x": 816, "y": 1120, "position": "top-left" }
+      },
+      "data": { "rowsPath": "order.items" },
+      "template": {
+        "type": "TableRowTemplate",
+        "spec": { "shape": { "width": 600, "height": 0, "autoHeight": true } },
+        "cells": [
+          {
+            "type": "TableCellLayer",
+            "spec": { "shape": { "width": 240, "height": 0, "autoHeight": true, "backgroundColor": "#0e7490" } },
+            "content": {
+              "type": "TextLayer",
+              "spec": {
+                "shape": { "width": 240, "height": "auto", "padding": { "top": 6, "bottom": 6, "left": 12, "right": 12 } },
+                "fontFamily": { "fontSize": 16, "fontColor": "#e0f2fe" }
+              },
+              "data": { "valueType": "ExpressionValue", "expression": "姓名：{{row.name}}（{{$index}}）", "value": "姓名：{{row.name}}（{{$index}}）" }
+            }
+          },
+          {
+            "type": "TableCellLayer",
+            "spec": { "shape": { "width": 180, "height": 48, "backgroundColor": "#0369a1" } },
+            "content": {
+              "type": "ImageLayer",
+              "spec": { "shape": { "width": 180, "height": 48 } },
+              "data": { "valueType": "ExpressionValue", "expression": "{{row.avatar}}", "value": "{{row.avatar}}" }
+            }
+          },
+          {
+            "type": "TableCellLayer",
+            "spec": { "shape": { "width": 180, "height": 48 } },
+            "content": {
+              "type": "QrCodeLayer",
+              "spec": { "shape": { "width": 180, "height": 48 } },
+              "data": { "valueType": "ExpressionValue", "expression": "{{row.code}}", "value": "{{row.code}}" }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "ImageLayer",
+      "priority": 13,
+      "spec": {
+        "shape": {
+          "width": 200, "height": 140, "backgroundColor": "#164e63",
+          "padding": { "top": 8, "bottom": 8, "left": 8, "right": 8 }
+        },
+        "position": { "x": 816, "y": 96, "position": "top-left" }
+      },
+      "data": { "valueType": "ExpressionValue", "expression": "{{assets.banner}}", "value": "{{assets.banner}}" }
+    },
+    {
       "type": "ImageLayer",
       "priority": 12,
       "spec": {
@@ -160,6 +233,17 @@ export const DEMO_GRAPH_JSON = `{
       "data": { "valueType": "StaticValue", "value": "/demo-missing.png" }
     },
     {
+      "type": "TextLayer",
+      "priority": 11,
+      "spec": {
+        "shape": { "width": 400, "height": 72, "backgroundColor": "rgba(103, 232, 249, 0.16)" },
+        "align": { "horizontal": "left", "vertical": "center" },
+        "position": { "x": 816, "y": 500, "position": "top-left" },
+        "fontFamily": { "fontSize": 24, "fontColor": "#67e8f9" }
+      },
+      "data": { "valueType": "ExpressionValue", "expression": "订单 {{orderNo}} · 共 {{$count}} 件", "value": "订单 {{orderNo}} · 共 {{$count}} 件" }
+    },
+    {
       "type": "QrCodeLayer",
       "priority": 10,
       "spec": {
@@ -170,6 +254,15 @@ export const DEMO_GRAPH_JSON = `{
         "position": { "x": -32, "y": -32, "position": "bottom-right" }
       },
       "data": { "valueType": "StaticValue", "value": "https://example.com" }
+    },
+    {
+      "type": "QrCodeLayer",
+      "priority": 9,
+      "spec": {
+        "shape": { "width": 144, "backgroundColor": "#155e75" },
+        "position": { "x": 816, "y": 300, "position": "top-left" }
+      },
+      "data": { "valueType": "ExpressionValue", "expression": "{{orderNo}}", "value": "{{orderNo}}" }
     }
   ]
 }`

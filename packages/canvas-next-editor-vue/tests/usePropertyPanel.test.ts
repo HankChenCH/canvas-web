@@ -167,6 +167,27 @@ describe('commit：面板唯一提交口（分派 updateSpec/updateData/updateCa
         scope.stop()
     })
 
+    it('标记文本 commit 分派锁死走 updateData：编辑镜像字面 → 解除标记（工票 03）', () => {
+        // encode 回 StaticValue 三键 expression:'' 属内核面（updateProps.test.ts 工票 02 已锁）；
+        // 绑定面锁的是「data 字段只经 updateData、不经 updateSpec」的分派与解除后的域状态
+        const expression = '订单 {{orderNo}} · 共 {{$count}} 件'
+        const editor = makeEditor([textLayer({ text: expression, expression })])
+        const updateData = vi.spyOn(editor, 'updateData')
+        const updateSpec = vi.spyOn(editor, 'updateSpec')
+        const { scope, panel } = bind(editor)
+        editor.setSelection(['layers', 0])
+
+        panel.commit(TEXT_FIELD, '字面文案', true)
+
+        expect(updateData).toHaveBeenCalledTimes(1)
+        expect(updateData).toHaveBeenCalledWith(['layers', 0], '字面文案', { mergeKey: 'sel:layers.0:text' })
+        expect(updateSpec).not.toHaveBeenCalled()
+        const layer = editor.store.doc!.layers[0]!
+        expect(layer.type === 'TextLayer' && layer.text).toBe('字面文案')
+        expect(layer.type === 'TextLayer' && layer.expression).toBeNull()
+        scope.stop()
+    })
+
     it('未选中时提交画布级字段（宽/高），live 合步', () => {
         const editor = makeEditor([textLayer()])
         const { scope, panel } = bind(editor)

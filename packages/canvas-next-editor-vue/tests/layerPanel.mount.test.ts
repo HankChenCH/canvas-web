@@ -263,3 +263,19 @@ describe('LayerPanel：表格容器结构编辑（工单 12）', () => {
         wrapper.unmount()
     })
 })
+
+describe('LayerPanel：V2 绑定面（工票 03）', () => {
+    it('新增菜单四入口锁死：不含 TableRowTemplate（模板不可新建，硬编码清单不得扩张）', async () => {
+        const editor = makeEditor([])
+        const wrapper = mount(LayerPanel, { props: { editor } })
+
+        const adds = wrapper.findAll('[data-add]')
+        expect(adds.map((button) => button.attributes('data-add'))).toEqual([
+            'TextLayer',
+            'ImageLayer',
+            'QrCodeLayer',
+            'TableLayer',
+        ])
+        wrapper.unmount()
+    })
+})
