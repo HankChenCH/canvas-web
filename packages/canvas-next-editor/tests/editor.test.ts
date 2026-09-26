@@ -63,6 +63,7 @@ const doc = (width = 2400, height = 1500): Canvas => ({
             align: { horizontal: 'left', vertical: 'top' },
             position: { anchor: 'top-left', x: 10, y: 10 },
             text: 'hi',
+            expression: null,
             font: '',
             fontSize: 16,
             fontColor: '#000000',

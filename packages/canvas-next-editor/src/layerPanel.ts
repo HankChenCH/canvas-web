@@ -36,6 +36,7 @@ export interface LayerOutlineNode {
 function childLists(layer: Layer): { key: 'rows' | 'cells' | 'content'; layers: readonly Layer[] }[] {
     switch (layer.type) {
         case 'TableLayer':
+            // 模板态表格：模板子树不在 rows 内，不进大纲（工票 02 扩展编辑语义）
             return [{ key: 'rows', layers: layer.rows }]
         case 'TableRowLayer':
             return [{ key: 'cells', layers: layer.cells }]
@@ -44,6 +45,7 @@ function childLists(layer: Layer): { key: 'rows' | 'cells' | 'content'; layers: 
         case 'ImageLayer':
         case 'TextLayer':
         case 'QrCodeLayer':
+        case 'TableRowTemplate':
             return []
     }
 }
@@ -103,6 +105,7 @@ export function createDefaultLayer(type: LayerType): Layer {
                 type,
                 shape: { ...base.shape, width: 200, height: 60 },
                 text: '文本',
+                expression: null,
                 font: '',
                 fontSize: 24,
                 fontColor: '#111827',
@@ -110,12 +113,16 @@ export function createDefaultLayer(type: LayerType): Layer {
                 autowrap: false,
             }
         case 'ImageLayer':
-            return { ...base, type, shape: { ...base.shape, width: 200, height: 150 }, src: null }
+            return { ...base, type, shape: { ...base.shape, width: 200, height: 150 }, src: null, expression: null }
         case 'QrCodeLayer':
-            return { ...base, type, shape: { ...base.shape, width: 120, height: 120 }, value: 'canvas-web' }
+            return { ...base, type, shape: { ...base.shape, width: 120, height: 120 }, value: 'canvas-web', expression: null }
         case 'TableLayer':
-            return { ...base, type, shape: { ...base.shape, width: 400, height: 120 }, rows: [] }
+            return { ...base, type, shape: { ...base.shape, width: 400, height: 120 }, template: null, rowsPath: '', rows: [] }
         case 'TableRowLayer':
+            return { ...base, type, shape: { ...base.shape, width: 400, height: 60 }, cells: [] }
+        case 'TableRowTemplate':
+            // 行模板不提供编辑器新建入口（ADD_TYPES 不含，spec §8.3 UX 不在本 effort）；
+            // 工厂臂只为穷举完整性兜底
             return { ...base, type, shape: { ...base.shape, width: 400, height: 60 }, cells: [] }
         case 'TableCellLayer':
             return { ...base, type, shape: { ...base.shape, width: 200, height: 60 }, content: null }

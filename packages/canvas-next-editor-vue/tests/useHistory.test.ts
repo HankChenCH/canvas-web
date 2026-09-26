@@ -31,6 +31,7 @@ const addLayer = (priority: number): DocRecipe => (draft) => {
             align: { horizontal: 'left', vertical: 'top' },
             position: { anchor: 'top-left', x: 0, y: 0 },
             text: 'x',
+            expression: null,
             font: '',
             fontSize: 12,
             fontColor: '#000000',

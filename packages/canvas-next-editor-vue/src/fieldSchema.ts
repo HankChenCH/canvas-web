@@ -146,6 +146,8 @@ export const FIELD_SECTIONS_BY_TYPE: Record<LayerType, readonly FieldSection[]> 
     TableLayer: [POSITION_SECTION, ALIGN_SECTION, SHAPE_SECTION],
     TableRowLayer: [POSITION_SECTION, ALIGN_SECTION, SHAPE_SECTION],
     TableCellLayer: [POSITION_SECTION, ALIGN_SECTION, SHAPE_SECTION],
+    // 行模板（V2）：无编辑字段（绑定编辑面板属 fog，工票 02 后另立 effort）
+    TableRowTemplate: [],
 }
 
 /** 注册表查找的宽容口：白名单之外的 type 串返回空清单（不抛、不告警） */

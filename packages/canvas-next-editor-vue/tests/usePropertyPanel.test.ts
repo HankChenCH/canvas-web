@@ -25,6 +25,7 @@ const textLayer = (overrides: Record<string, unknown> = {}): Canvas['layers'][nu
     align: { horizontal: 'left', vertical: 'top' },
     position: { anchor: 'top-left', x: 0, y: 0 },
     text: '甲',
+    expression: null,
     font: '',
     fontSize: 16,
     fontColor: '#000000',

@@ -52,6 +52,7 @@ export function textLayer(overrides: LayerOverrides<TextLayer> = {}): TextLayer 
             align: { horizontal: 'left', vertical: 'top' },
             position: { anchor: 'top-left', x: 0, y: 0 },
             text: '你好画布',
+            expression: null,
             font: '',
             fontSize: 16,
             fontColor: '#111827',
@@ -71,6 +72,7 @@ export function imageLayer(overrides: LayerOverrides<ImageLayer> = {}): ImageLay
             align: { horizontal: 'left', vertical: 'top' },
             position: { anchor: 'top-left', x: 0, y: 0 },
             src: null,
+            expression: null,
         },
         overrides,
     )
@@ -85,6 +87,7 @@ export function qrLayer(overrides: LayerOverrides<QrCodeLayer> = {}): QrCodeLaye
             align: { horizontal: 'left', vertical: 'top' },
             position: { anchor: 'top-left', x: 0, y: 0 },
             value: 'canvas-web',
+            expression: null,
         },
         overrides,
     )
@@ -135,6 +138,8 @@ export function tableLayer(
             shape: defaultShape(),
             align: { horizontal: 'left', vertical: 'top' },
             position: { anchor: 'top-left', x: 0, y: 0 },
+            template: null,
+            rowsPath: '',
             rows,
         },
         overrides,

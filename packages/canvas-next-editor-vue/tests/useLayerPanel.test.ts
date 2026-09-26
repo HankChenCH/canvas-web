@@ -20,6 +20,7 @@ const textLayer = (priority: number, text: string) => ({
     align: { horizontal: 'left' as const, vertical: 'top' as const },
     position: { anchor: 'top-left' as const, x: 0, y: 0 },
     text,
+    expression: null,
     font: '',
     fontSize: 16,
     fontColor: '#000000',

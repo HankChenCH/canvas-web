@@ -46,6 +46,7 @@ const layer = (x: number) => ({
     align: { horizontal: 'left' as const, vertical: 'top' as const },
     position: { anchor: 'top-left' as const, x, y: 200 },
     text: 'hi',
+    expression: null,
     font: '',
     fontSize: 16,
     fontColor: '#000000',

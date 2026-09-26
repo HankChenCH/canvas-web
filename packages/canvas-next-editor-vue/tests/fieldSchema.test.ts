@@ -45,12 +45,13 @@ const baseLayer = () => ({
 const layerByType = (type: LayerType): Layer => {
     switch (type) {
         case 'ImageLayer':
-            return { type, ...baseLayer(), src: null }
+            return { type, ...baseLayer(), src: null, expression: null }
         case 'TextLayer':
             return {
                 type,
                 ...baseLayer(),
                 text: '文',
+                expression: null,
                 font: '',
                 fontSize: 16,
                 fontColor: '#000000',
@@ -58,13 +59,15 @@ const layerByType = (type: LayerType): Layer => {
                 autowrap: false,
             }
         case 'QrCodeLayer':
-            return { type, ...baseLayer(), value: 'payload' }
+            return { type, ...baseLayer(), value: 'payload', expression: null }
         case 'TableRowLayer':
+            return { type, ...baseLayer(), cells: [] }
+        case 'TableRowTemplate':
             return { type, ...baseLayer(), cells: [] }
         case 'TableCellLayer':
             return { type, ...baseLayer(), content: null }
         case 'TableLayer':
-            return { type, ...baseLayer(), rows: [] }
+            return { type, ...baseLayer(), template: null, rowsPath: '', rows: [] }
     }
 }
 
@@ -76,11 +79,14 @@ const fieldKeys = (sections: readonly { title: string; fields: readonly FieldDef
     flatFields(sections).map((f) => f.key.join('.'))
 
 describe('type 标识 ↔ 注册表映射', () => {
-    it('6 种 type 全部有注册表条目，且恰为 LAYER_TYPES 全集（无多余条目）', () => {
+    it('7 种 type 全部有注册表条目，且恰为 LAYER_TYPES 全集（无多余条目）', () => {
         expect(Object.keys(FIELD_SECTIONS_BY_TYPE).sort()).toEqual([...LAYER_TYPES].sort())
+        // 行模板（V2）无编辑字段（绑定面板属 fog）：注册表占位空清单
         for (const type of LAYER_TYPES) {
+            if (type === 'TableRowTemplate') continue
             expect(fieldSectionsForType(type).length).toBeGreaterThan(0)
         }
+        expect(fieldSectionsForType('TableRowTemplate')).toEqual([])
     })
 
     it('每种 type 的每个字段 key 都能在该 type 的领域实例上解析（路径与文档模型同步）', () => {
@@ -103,6 +109,7 @@ describe('type 标识 ↔ 注册表映射', () => {
         expect(dataKeys('QrCodeLayer')).toEqual(['value'])
         expect(dataKeys('TableLayer')).toEqual([])
         expect(dataKeys('TableRowLayer')).toEqual([])
+        expect(dataKeys('TableRowTemplate')).toEqual([])
         expect(dataKeys('TableCellLayer')).toEqual([])
     })
 

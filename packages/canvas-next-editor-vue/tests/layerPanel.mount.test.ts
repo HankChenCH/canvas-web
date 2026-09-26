@@ -43,6 +43,7 @@ const textLayer = (priority: number, text: string): Layer => ({
     align: baseAlign,
     position: basePosition,
     text,
+    expression: null,
     font: '',
     fontSize: 16,
     fontColor: '#000000',
@@ -56,6 +57,8 @@ const tableLayer = (rows: readonly Layer[], width = 600): Layer => ({
     shape: baseShape(width, 200),
     align: baseAlign,
     position: basePosition,
+    template: null,
+    rowsPath: '',
     rows: rows as TableRowLayer[],
 })
 

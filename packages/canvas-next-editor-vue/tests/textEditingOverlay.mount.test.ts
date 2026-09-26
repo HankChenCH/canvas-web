@@ -60,10 +60,10 @@ const shape = (width = 100, height = 50) => ({
 const base = { priority: 10, shape: shape(), align: { horizontal: 'left' as const, vertical: 'top' as const }, position: { anchor: 'top-left' as const, x: 40, y: 30 } }
 
 const doc = (): Canvas['layers'] => [
-    { ...base, type: 'TextLayer', text: '你好画布', font: '', fontSize: 16, fontColor: '#111827', angle: 0, autowrap: false },
+    { ...base, type: 'TextLayer', text: '你好画布', expression: null, font: '', fontSize: 16, fontColor: '#111827', angle: 0, autowrap: false },
 ]
 
-const imageDoc = (): Canvas['layers'] => [{ ...base, type: 'ImageLayer', src: null }]
+const imageDoc = (): Canvas['layers'] => [{ ...base, type: 'ImageLayer', src: null, expression: null }]
 
 /** 图层盒 100×50 @ (40,30)：中心点场景坐标 */
 const layerCenter = { x: 40 + 50, y: 30 + 25 }
@@ -127,6 +127,7 @@ describe('beginAt：双击进入编辑', () => {
                 align: { horizontal: 'center', vertical: 'center' },
                 type: 'TextLayer',
                 text: '你好画布',
+                expression: null,
                 font: '',
                 fontSize: 16,
                 fontColor: '#111827',
