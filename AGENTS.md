@@ -20,7 +20,8 @@ pnpm --filter playground dev
 - `packages/canvas-next/` — `@hankchen/canvas-next` 文档模型。**零 DOM、零运行时依赖**。
 - `packages/canvas-next-browser-renderer/` — Canvas2D 五原语后端。
 - `packages/canvas-next-editor/` — headless 内核，运行时仅依赖 immer。测试全部 Node 无 DOM 环境。
-- `packages/canvas-next-editor-vue/` — Vue 3 薄绑定。
+  src 按 `session → spatial/editing/shared` 分层（下层禁引上层，depcruise `editor-*-isolation` 锁定）；只保留根 barrel 单出口。详见包内 `AGENTS.md`。
+- `packages/canvas-next-editor-vue/` — Vue 3 薄绑定。src 按领域分域：`canvas / property-panel / layer-panel / status-bar / shared`（域间禁横引、跨域只经 shared，depcruise `editor-vue-*-isolation` 锁定）；宿主可按域子路径引用（`./canvas` 等）。详见包内 `AGENTS.md`。
 - `playground/` — 目验壳（不发布，无单测；验证走 `pnpm --filter playground dev` + `build`）。
 - `.dependency-cruiser.cjs` — 依赖红线；`scripts/check-guardrails.sh` — 红线自验金丝雀。
 
