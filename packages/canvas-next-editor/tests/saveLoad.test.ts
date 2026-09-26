@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest'
 import { decodeGraph, encodeGraph } from '@hankchen/canvas-next'
 
 import { EditorSession } from '../src/editor'
+import { shapeWire, templateTableWire, wireNode } from './support/fixtures'
 
 const syncScheduler = (callback: () => void) => {
     callback()
@@ -113,5 +114,71 @@ describe('保存→打开：真实编辑产物的往返恒等', () => {
         const saved = JSON.stringify(encodeGraph(editor.store.doc!))
         const reopened = JSON.stringify(encodeGraph(decodeGraph(JSON.parse(saved))))
         expect(reopened).toBe(saved)
+    })
+})
+
+describe('模板态保存→打开（工票 02）：编辑不产非法 wire、往返不丢数据', () => {
+    const openTemplateDoc = () => {
+        const editor = new EditorSession({ scheduleFrame: syncScheduler })
+        editor.openDocument(decodeGraph({ canvas: { width: 800, height: 600 }, layers: [templateTableWire()] }))
+        return editor
+    }
+
+    it('模板态图 encode→decode→encode 恒等（原样打开零编辑）', () => {
+        const editor = openTemplateDoc()
+        const saved = JSON.stringify(encodeGraph(editor.store.doc!))
+        const reopened = JSON.stringify(encodeGraph(decodeGraph(JSON.parse(saved))))
+        expect(reopened).toBe(saved)
+    })
+
+    it('编辑序列（改表宽/编辑标记文本）后保存：仍合法（无 template+rows 双键）且往返恒等', () => {
+        const editor = new EditorSession({ scheduleFrame: syncScheduler })
+        editor.openDocument(
+            decodeGraph({
+                canvas: { width: 800, height: 600 },
+                // 模板表 + 画布级标记文本（行模板子树不可寻址，可编辑的标记层在根层）
+                layers: [
+                    templateTableWire(),
+                    wireNode('TextLayer', shapeWire(200, 40), {
+                        priority: 5,
+                        data: { valueType: 'ExpressionValue', expression: '全局：{{orderNo}}', value: '全局：{{orderNo}}' },
+                    }, {
+                        fontFamily: { font: '', fontSize: 12, fontColor: '#000000', angle: 0, autowrap: false },
+                    }),
+                ],
+            }),
+        )
+        editor.updateSpec(['layers', 0], ['shape', 'width'], 500)
+        editor.updateData(['layers', 1], '全局：字面')
+
+        const saved = JSON.stringify(encodeGraph(editor.store.doc!))
+
+        // 合法性：模板态 wire 不落 rows 键（XOR）；表宽重断言已同步到行模板；
+        // 被编辑的标记文本退化为字面态，模板内标记层原样
+        const layers = JSON.parse(saved).layers as Record<string, unknown>[]
+        const table = layers.find((layer) => layer.type === 'TableLayer')!
+        expect(table.rows).toBeUndefined()
+        expect(table.template).toBeDefined()
+        expect((table.data as Record<string, unknown>).rowsPath).toBe('order.items')
+        const template = table.template as { spec: { shape: { width: number } }; cells: Record<string, unknown>[] }
+        expect(template.spec.shape.width).toBe(500)
+        const markedData = ((template.cells[1] as { content: { data: Record<string, unknown> } }).content).data
+        expect(markedData.valueType).toBe('ExpressionValue')
+        const editText = layers.find((layer) => layer.type === 'TextLayer')!
+        expect((editText.data as Record<string, unknown>).valueType).toBe('StaticValue')
+
+        const reopened = JSON.stringify(encodeGraph(decodeGraph(JSON.parse(saved))))
+        expect(reopened).toBe(saved)
+    })
+
+    it('模板态 addTableRow 拒绝后保存：wire 形态与打开产物一致（守卫不产中间态）', () => {
+        const editor = openTemplateDoc()
+        editor.addTableRow(['layers', 0])
+
+        const saved = JSON.stringify(encodeGraph(editor.store.doc!))
+        const reopened = JSON.stringify(encodeGraph(decodeGraph(JSON.parse(saved))))
+        expect(reopened).toBe(saved)
+        const table = (JSON.parse(saved).layers as Record<string, unknown>[])[0]!
+        expect(table.rows).toBeUndefined()
     })
 })

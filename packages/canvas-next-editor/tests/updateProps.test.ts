@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import type { Canvas } from '@hankchen/canvas-next'
+import { encodeLayer, type Canvas } from '@hankchen/canvas-next'
 
 import { EditorSession, type FrameScheduler } from '../src/editor'
 import { imageLayer, qrLayer, tableLayer, textLayer } from './support/fixtures'
@@ -139,6 +139,62 @@ describe('updateData：数据字段写入（data.value 的领域展开，按 typ
         editor.updateData(['layers', 0], 'https://example.com')
         const layer = editor.store.doc!.layers[0]!
         expect(layer.type === 'QrCodeLayer' && layer.value).toBe('https://example.com')
+    })
+
+    // ---- 字面写解除标记（工票 02，镜像 PHP 三内容层 setter） ----
+
+    it('标记文本编辑 → expression 置 null，encode 回 StaticValue 三键 expression:\'\'', () => {
+        const expression = '姓名：{{row.name}}'
+        const editor = makeEditor(docWith([textLayer({ text: expression, expression })]))
+
+        editor.updateData(['layers', 0], '字面文案')
+
+        const layer = editor.store.doc!.layers[0]!
+        expect(layer.type === 'TextLayer' && layer.text).toBe('字面文案')
+        expect(layer.type === 'TextLayer' && layer.expression).toBeNull()
+
+        const data = encodeLayer(layer).data as Record<string, unknown>
+        expect(data.valueType).toBe('StaticValue')
+        expect(Object.keys(data)).toEqual(['valueType', 'expression', 'value'])
+        expect(data.expression).toBe('')
+        expect(data.value).toBe('字面文案')
+    })
+
+    it('标记图片编辑 → expression 置 null，encode 回两键（无 expression 键）', () => {
+        const editor = makeEditor(docWith([imageLayer({ src: '{{row.avatar}}', expression: '{{row.avatar}}' })]))
+
+        editor.updateData(['layers', 0], '/literal.png')
+
+        const layer = editor.store.doc!.layers[0]!
+        expect(layer.type === 'ImageLayer' && layer.src).toBe('/literal.png')
+        expect(layer.type === 'ImageLayer' && layer.expression).toBeNull()
+
+        const data = encodeLayer(layer).data as Record<string, unknown>
+        expect(Object.keys(data)).toEqual(['valueType', 'value'])
+        expect(data.valueType).toBe('StaticValue')
+        expect(data.value).toBe('/literal.png')
+    })
+
+    it('标记二维码编辑 → expression 置 null，encode 回两键', () => {
+        const editor = makeEditor(docWith([qrLayer({ value: '{{row.code}}', expression: '{{row.code}}' })]))
+
+        editor.updateData(['layers', 0], 'https://example.com')
+
+        const layer = editor.store.doc!.layers[0]!
+        expect(layer.type === 'QrCodeLayer' && layer.value).toBe('https://example.com')
+        expect(layer.type === 'QrCodeLayer' && layer.expression).toBeNull()
+
+        const data = encodeLayer(layer).data as Record<string, unknown>
+        expect(Object.keys(data)).toEqual(['valueType', 'value'])
+        expect(data.valueType).toBe('StaticValue')
+        expect(data.value).toBe('https://example.com')
+    })
+
+    it('未标记层 updateData 后保持 expression = null（零变化面不回归）', () => {
+        const editor = makeEditor(docWith([textLayer()]))
+        editor.updateData(['layers', 0], '普通编辑')
+        const layer = editor.store.doc!.layers[0]!
+        expect(layer.type === 'TextLayer' && layer.expression).toBeNull()
     })
 
     it('无数据字段的层（表/行/格）空转', () => {

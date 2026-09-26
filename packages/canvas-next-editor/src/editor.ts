@@ -481,6 +481,9 @@ export class EditorSession {
      * 更新图层数据字段（wire data.value 的领域展开，按 type 分派）：
      * TextLayer → text、ImageLayer → src、QrCodeLayer → value；
      * 空串/null 归空语义与解码逐条对齐（Image null、Text/Qr 空串）。
+     * 字面写解除标记（工票 02，镜像 PHP 三内容层 setter）：写值即置 expression =
+     * null，值与标记的镜像关系随之解除——标记态文档经字面编辑退化为字面态，
+     * 不可自动恢复属预期（spec §3.7 兼容面）。
      * 表/行/格无数据字段，空转。
      */
     updateData(path: LayerPath, value: string | null, options: TransactOptions = {}): void {
@@ -490,12 +493,15 @@ export class EditorSession {
             switch (layer.type) {
                 case 'TextLayer':
                     layer.text = value == null ? '' : String(value)
+                    layer.expression = null
                     break
                 case 'ImageLayer':
                     layer.src = value == null || value === '' ? null : String(value)
+                    layer.expression = null
                     break
                 case 'QrCodeLayer':
                     layer.value = value == null ? '' : String(value)
+                    layer.expression = null
                     break
                 default:
                     break

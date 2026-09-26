@@ -58,6 +58,8 @@ function hitWalk(
         case 'ImageLayer':
         case 'TextLayer':
         case 'QrCodeLayer':
+        case 'TableRowTemplate':
+            // 行模板子树不在 rows/cells/content 内，命中面天然为空（工票 02 穷举补臂）
             break
     }
 

@@ -13,24 +13,12 @@ import { describe, expect, it } from 'vitest'
 import { decodeGraph, encodeGraph, type TableLayer, type WireLayerNode } from '@hankchen/canvas-next'
 
 import { EditorSession, type FrameScheduler } from '../src/editor'
+import { ALIGN_TOP_LEFT, POSITION_ORIGIN, shapeWire, templateTableWire } from './support/fixtures'
 
 const nullScheduler: FrameScheduler = () => () => {}
 
 // ---- canonical wire 造数器：键级对齐 graph() 输出（解码副作用的输入形态） ----
-
-const SHAPE_REST = {
-    lineHeight: 1,
-    padding: { top: 0, bottom: 0, left: 0, right: 0 },
-    border: { top: null, bottom: null, left: null, right: null },
-    backgroundColor: null,
-} as const
-
-function shapeWire(width: number, height: number, extra: Record<string, unknown> = {}) {
-    return { width, height, autoWidth: false, autoHeight: false, ...SHAPE_REST, ...extra }
-}
-
-const ALIGN_TOP_LEFT = { horizontal: 'left' as const, vertical: 'top' as const }
-const POSITION_ORIGIN = { x: 0, y: 0, position: 'top-left' as const }
+// shapeWire / ALIGN_TOP_LEFT / POSITION_ORIGIN 与模板态造数器共用一份（fixtures.ts）
 
 /** 带文本内容的格（内容宽=格宽、内容高=格高：解码压平后的规范形态） */
 function cellWire(width: number, height: number, text: string, extra: Record<string, unknown> = {}): WireLayerNode {
@@ -543,6 +531,73 @@ describe('表格级联选中与结构编辑协同', () => {
         expect(session.store.ui.selection).toBeNull()
         const table = tableAt(session, 0)
         expect(table.rows[0]!.cells[0]!.content).toBeNull()
+    })
+})
+
+describe('模板态守卫与行模板重断言（工票 02）：镜像 PHP addRow 抛错与解码 setTemplate 宽度同步', () => {
+    it('addTableRow：模板表拒绝——rows 恒空、文档零变化、无历史步（template ⊕ rows 不破）', () => {
+        const session = openTableDoc(templateTableWire())
+        const before = session.store.doc!
+
+        session.addTableRow(['layers', 0])
+
+        const table = tableAt(session)
+        expect(table.rows).toEqual([])
+        expect(table.template).not.toBeNull()
+        expect(table.rowsPath).toBe('order.items')
+        expect(session.store.doc).toBe(before) // 无 patch：文档引用不动
+        expect(stepCount(session)).toBe(0)
+        roundtrips(session) // encode 不落 template+rows 双键
+    })
+
+    it('moveTableRowToTable：目标表为模板态拒绝——源表原样、目标 rows 恒空', () => {
+        const session = openTwoTablesDoc(basicTable(), templateTableWire())
+
+        session.moveTableRowToTable(['layers', 0, 'rows', 0], ['layers', 1], 0)
+
+        const source = tableAt(session, 0)
+        expect(source.rows).toHaveLength(2)
+        const target = tableAt(session, 1)
+        expect(target.rows).toEqual([])
+        expect(target.template).not.toBeNull()
+        expect(stepCount(session)).toBe(0)
+        roundtrips(session)
+    })
+
+    it('moveTableRowToTable：源表为模板态被既有下标守卫天然拒绝（rows 恒空）', () => {
+        const session = openTwoTablesDoc(templateTableWire(), basicTable())
+
+        session.moveTableRowToTable(['layers', 0, 'rows', 0], ['layers', 1], 0)
+
+        const source = tableAt(session, 0)
+        expect(source.rows).toEqual([])
+        const target = tableAt(session, 1)
+        expect(target.rows).toHaveLength(2)
+        expect(stepCount(session)).toBe(0)
+    })
+
+    it('表宽写入 → 行模板行宽=新表宽、autoWidth 关（镜像解码 setTemplate→setWidth）', () => {
+        const session = openTableDoc(templateTableWire())
+
+        session.updateSpec(['layers', 0], ['shape', 'width'], 500)
+
+        const table = tableAt(session)
+        expect(table.shape.width).toBe(500)
+        expect(table.template!.shape.width).toBe(500)
+        expect(table.template!.shape.autoWidth).toBe(false)
+        roundtrips(session) // 重断言后 encode→decode 仍稳定
+    })
+
+    it('表 autoWidth 写入走同一重同步分支：行模板保持 行宽=表宽、autoWidth 关（幂等保形）', () => {
+        const session = openTableDoc(templateTableWire())
+
+        session.updateSpec(['layers', 0], ['shape', 'autoWidth'], true)
+
+        const template = tableAt(session).template!
+        expect(template.shape.width).toBe(320)
+        expect(template.shape.autoWidth).toBe(false)
+        // 注：autoWidth 置位后表宽的解码清零语义（PHP setWidth('auto') 镜像）是
+        // 全图层的既有面，不在本票重断言范围——此处只锁行模板不被该写路径破坏
     })
 })
 

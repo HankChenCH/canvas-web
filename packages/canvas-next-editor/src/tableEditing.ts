@@ -20,9 +20,14 @@
  * 切换不是裸标志写：开 = 采纳内容动态高（autowrap 文本即「行数×行高+padding」）
  * 并固化，空格 = 置标志（解码对无内容的格保留该标志，往返恒等不受影响）。
  *
+ * 模板态（工票 02，TableLayer V2）：行模板与 rows XOR，行级结构编辑在模板态
+ * 拒绝（镜像 PHP addRow 抛 InvalidArgumentException，编辑器取 no-op 返回 null）；
+ * 表宽写入对行模板做同款宽度重同步（镜像解码 setTemplate→setWidth）。行模板
+ * 子树不可寻址（路径语法不含 template 段、不进大纲），其余函数在模板态不可达。
+ *
  * 全模块纯 draft 变换、无 DOM；与 layerPanel.ts（工单 10 根层/行重排）分立。
  */
-import { layerHeight, lineHeightPx, textLines, type Canvas, type Layer, type TableCellLayer, type TableRowLayer, type TextLayoutPolicies } from '@hankchen/canvas-next'
+import { layerHeight, lineHeightPx, textLines, type Canvas, type Layer, type TableCellLayer, type TableRowLayer, type TableRowTemplateLayer, type TextLayoutPolicies } from '@hankchen/canvas-next'
 import type { Draft } from 'immer'
 
 import { pathsEqual, resolveLayer, type LayerPath } from './layerPath'
@@ -31,6 +36,8 @@ import { createDefaultLayer, moveGuard } from './layerPanel'
 type DraftRow = Draft<TableRowLayer>
 type DraftCell = Draft<TableCellLayer>
 type DraftContent = Draft<Layer>
+/** 行模板/具体行的 shape 写入面：syncRowWidth 只触 shape，两型结构兼容（工票 02） */
+type DraftRowOrTemplate = Draft<TableRowLayer | TableRowTemplateLayer>
 
 /**
  * resolveLayer 的 draft 断言形态：immer draft 结构上兼容只读领域类型，navigate
@@ -62,8 +69,8 @@ function contentDynamicHeight(content: DraftContent, policies?: TextLayoutPolici
     return layerHeight(content, policies)
 }
 
-/** addRow 副作用：行宽同步表宽并关 autoWidth */
-export function syncRowWidthInDraft(row: DraftRow, tableWidth: number): void {
+/** addRow 副作用：行宽同步表宽并关 autoWidth（行模板重断言复用同款同步） */
+export function syncRowWidthInDraft(row: DraftRowOrTemplate, tableWidth: number): void {
     row.shape.width = tableWidth
     row.shape.autoWidth = false
 }
@@ -126,10 +133,15 @@ function buildDefaultCellIntoRowInDraft(row: DraftRow, fallbackWidth: number): D
  * 行宽=表宽（addRow）→ 内容宽=格宽、固定格压平内容高（addContentLayer）→
  * 行高取最高格（addCell）。首格宽取行宽（单格行铺满），后续格宽随末格（均齐
  * 直觉）。返回新行下标；路径无法解析到表返回 null。
+ *
+ * 模板态守卫（工票 02）：目标表 template !== null 返回 null、文档零变化——
+ * 镜像 PHP addRow 抛 InvalidArgumentException 的 API 误用语义，编辑器取 no-op
+ * （防 template+rows 双键落 wire）。
  */
 export function addTableRowInDraft(draft: Draft<Canvas>, tablePath: LayerPath): number | null {
     const table = resolveDraft(draft, tablePath)
     if (!table || table.type !== 'TableLayer') return null
+    if (table.template !== null) return null
     const rows = table.rows as DraftRow[]
 
     const row = createDefaultLayer('TableRowLayer') as DraftRow
@@ -207,6 +219,9 @@ export function moveTableRowToTableInDraft(
     if (!sourceTable || !targetTable || sourceTable.type !== 'TableLayer' || targetTable.type !== 'TableLayer') {
         return null
     }
+    // 目标表模板态守卫（工票 02）：移入即落 template+rows 双键，拒绝（no-op null）；
+    // 源表模板态 rows 恒空，下方下标守卫天然挡住，无需显式分支
+    if (targetTable.template !== null) return null
     if (!Number.isSafeInteger(toIndex) || toIndex < 0 || toIndex > targetTable.rows.length) return null
 
     const sourceRows = sourceTable.rows as DraftRow[]
@@ -308,7 +323,8 @@ export function setCellAutoHeightInDraft(
 /**
  * 字段写入后的解码不变量重断言：解码在每次打开时强同步表格耦合，编辑器写入后
  * 立即重断言同一组关系（往返恒等的编辑器侧镜像）——
- * - 表：shape.width/autoWidth 写入 → 全部行宽重同步（行宽=表宽）；
+ * - 表：shape.width/autoWidth 写入 → 全部行宽重同步（行宽=表宽）；模板态对模板
+ *   行做同款重同步（镜像解码 setTemplate→setWidth，工票 02）；
  * - 行：行宽恒归表宽（强同步字段的写入被覆写）、行高只增长到最高格；
  * - 格：内容宽/高按 addContentLayer 重同步（auto 采纳 / 固定压平）、行高取最高格；
  * - 内容：归属格的同步重断言（隐藏字段的直写被压回）。
@@ -356,6 +372,9 @@ export function canonicalizeTableSyncInDraft(
         const layer = draft.layers[path[1]] as DraftContent | undefined
         if (!layer || layer.type !== 'TableLayer') return
         if (layer.shape.autoHeight) layer.shape.height = 0
+        // 模板态重同步（工票 02）：镜像解码 setTemplate→setWidth 的宽度耦合，保
+        // encode→decode 在编辑序列后稳定；模板态 rows 恒空，下方循环天然空转
+        if (layer.template !== null) syncRowWidthInDraft(layer.template, layer.shape.width)
         for (const row of layer.rows as DraftRow[]) syncRowWidthInDraft(row, layer.shape.width)
     }
 }

@@ -16,7 +16,7 @@ import { decodeGraph, encodeGraph } from '@hankchen/canvas-next'
 
 import { EditorSession } from '../src/editor'
 import type { FrameScheduler } from '../src/editor'
-import { cellLayer, imageLayer, rowLayer, tableLayer, textLayer } from './support/fixtures'
+import { cellLayer, imageLayer, rowLayer, tableLayer, templateTableWire, textLayer } from './support/fixtures'
 import type { Layer, TableLayer, TextLayer } from '@hankchen/canvas-next'
 
 const nullScheduler: FrameScheduler = () => () => {}
@@ -185,6 +185,41 @@ describe('copySelection / pasteFromClipboard：子树深拷贝 + 置顶 + 偏移
         expect(session.store.doc!.layers).toHaveLength(2)
         expect(session.store.ui.selection).toBeNull() // 重做不恢复选择（历史不携带 ui 路径态）
         expect((session.store.doc!.layers[1] as TextLayer).text).toBe('顶')
+    })
+
+    it('模板态表可复制：粘贴产物 template/rowsPath/标记 expression 存活（工票 02）', () => {
+        const session = new EditorSession({ scheduleFrame: nullScheduler })
+        session.openDocument(
+            decodeGraph({ canvas: { width: 800, height: 600 }, layers: [templateTableWire()] }),
+        )
+        select(session, ['layers', 0])
+        expect(session.copySelection()).toBe(true)
+        expect(session.pasteFromClipboard()).toEqual(['layers', 1])
+
+        const copy = session.store.doc!.layers[1] as TableLayer
+        expect(copy.template).not.toBeNull()
+        expect(copy.rowsPath).toBe('order.items')
+        expect(copy.rows).toEqual([])
+        const text = copy.template!.cells[0]!.content as TextLayer
+        expect(text.expression).toBe('姓名：{{row.name}}')
+        expect(text.text).toBe('姓名：{{row.name}}') // 值字段恒镜像表达式原文
+        const qr = copy.template!.cells[2]!.content as { expression: string | null; value: string }
+        expect(qr.expression).toBe('{{row.code}}')
+        expect(qr.value).toBe('{{row.code}}')
+
+        const json = JSON.stringify(encodeGraph(session.store.doc!))
+        expect(JSON.stringify(encodeGraph(decodeGraph(JSON.parse(json))))).toBe(json)
+    })
+
+    it('行模板本身不可复制（TableRowTemplate 不可落根层 = 不可复制）', () => {
+        const session = new EditorSession({ scheduleFrame: nullScheduler })
+        session.openDocument(
+            decodeGraph({ canvas: { width: 800, height: 600 }, layers: [templateTableWire()] }),
+        )
+        select(session, ['layers', 0, 'template'])
+        expect(session.copySelection()).toBe(false)
+        expect(session.duplicateSelection()).toBeNull()
+        expect(session.store.doc!.layers).toHaveLength(1)
     })
 
     it('往返恒等：粘贴后 encode→decode→encode 字节级恒等', () => {
