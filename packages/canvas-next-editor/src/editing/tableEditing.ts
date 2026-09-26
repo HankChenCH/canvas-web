@@ -30,7 +30,7 @@
 import { layerHeight, lineHeightPx, textLines, type Canvas, type Layer, type TableCellLayer, type TableRowLayer, type TableRowTemplateLayer, type TextLayoutPolicies } from '@hankchen/canvas-next'
 import type { Draft } from 'immer'
 
-import { pathsEqual, resolveLayer, type LayerPath } from './layerPath'
+import { pathsEqual, resolveLayer, type LayerPath } from '../shared/layerPath'
 import { createDefaultLayer, moveGuard } from './layerPanel'
 
 type DraftRow = Draft<TableRowLayer>

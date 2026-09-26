@@ -20,7 +20,7 @@
 
 import { anchorOffset, type Anchor, type Canvas, type Layer, type LayerBox, type LayerType } from '@hankchen/canvas-next'
 
-import { resolveLayer, type LayerPath } from './layerPath'
+import { resolveLayer, type LayerPath } from '../shared/layerPath'
 
 /** 粘贴/副本的位置偏移基数（场景像素，整数） */
 export const PASTE_OFFSET_PX = 20

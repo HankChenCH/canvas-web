@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { EditorSession, type FrameScheduler } from '../src/editor'
+import { EditorSession, type FrameScheduler } from '../../src/session/editor'
 import type { Canvas } from '@hankchen/canvas-next'
 
-import { cellLayer, imageLayer, rowLayer, tableLayer, textLayer } from './support/fixtures'
+import { cellLayer, imageLayer, rowLayer, tableLayer, textLayer } from '../support/fixtures'
 
 /** 同步手动调度器：测试里不真正驱动重绘，只让会话可构造 */
 const nullScheduler: FrameScheduler = () => () => {}

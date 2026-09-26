@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { classifyWheel, type WheelInput } from '../src/wheel'
+import { classifyWheel, type WheelInput } from '../../src/spatial/wheel'
 
 const input = (overrides: Partial<WheelInput> = {}): WheelInput => ({
     ctrlKey: false,

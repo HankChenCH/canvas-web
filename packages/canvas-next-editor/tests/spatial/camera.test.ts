@@ -13,7 +13,7 @@ import {
     zoomAtPoint,
     type Size,
     type Viewport,
-} from '../src/camera'
+} from '../../src/spatial/camera'
 
 const BOUNDS = DEFAULT_ZOOM_BOUNDS
 

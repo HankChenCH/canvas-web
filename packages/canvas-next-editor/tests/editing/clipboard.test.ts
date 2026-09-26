@@ -14,9 +14,9 @@ import { describe, expect, it } from 'vitest'
 
 import { decodeGraph, encodeGraph } from '@hankchen/canvas-next'
 
-import { EditorSession } from '../src/editor'
-import type { FrameScheduler } from '../src/editor'
-import { cellLayer, imageLayer, rowLayer, tableLayer, templateTableWire, textLayer } from './support/fixtures'
+import { EditorSession } from '../../src/session/editor'
+import type { FrameScheduler } from '../../src/session/editor'
+import { cellLayer, imageLayer, rowLayer, tableLayer, templateTableWire, textLayer } from '../support/fixtures'
 import type { Layer, TableLayer, TextLayer } from '@hankchen/canvas-next'
 
 const nullScheduler: FrameScheduler = () => () => {}

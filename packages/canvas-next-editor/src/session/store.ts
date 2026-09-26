@@ -15,8 +15,8 @@ import { applyPatches, enablePatches, produceWithPatches, setAutoFreeze, type Dr
 
 import type { Canvas } from '@hankchen/canvas-next'
 
-import type { Point, Viewport } from './camera'
-import { pathsEqual, type LayerPath } from './layerPath'
+import type { Point, Viewport } from '../spatial/camera'
+import { pathsEqual, type LayerPath } from '../shared/layerPath'
 
 enablePatches()
 // 关闭 immer 自动冻结：文档树以「不可变 + 结构共享」语义流转（引用相等即未变），

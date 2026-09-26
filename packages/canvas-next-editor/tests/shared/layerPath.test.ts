@@ -8,8 +8,8 @@ import {
     pathsEqual,
     resolveLayer,
     selectionParentPath,
-} from '../src/layerPath'
-import { cellLayer, qrLayer, rowLayer, tableLayer, textLayer } from './support/fixtures'
+} from '../../src/shared/layerPath'
+import { cellLayer, qrLayer, rowLayer, tableLayer, textLayer } from '../support/fixtures'
 
 const doc = (layers: Canvas['layers']): Canvas => ({ width: 2400, height: 1500, layers })
 

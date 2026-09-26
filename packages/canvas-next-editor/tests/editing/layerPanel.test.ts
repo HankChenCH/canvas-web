@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest'
 
 import { encodeGraph, decodeGraph } from '@hankchen/canvas-next'
 
-import { EditorSession } from '../src/editor'
+import { EditorSession } from '../../src/session/editor'
 import {
     buildLayerOutline,
     createDefaultLayer,
-} from '../src/layerPanel'
-import type { FrameScheduler } from '../src/editor'
-import { cellLayer, rowLayer, tableLayer, textLayer } from './support/fixtures'
+} from '../../src/editing/layerPanel'
+import type { FrameScheduler } from '../../src/session/editor'
+import { cellLayer, rowLayer, tableLayer, textLayer } from '../support/fixtures'
 
 const nullScheduler: FrameScheduler = () => () => {}
 

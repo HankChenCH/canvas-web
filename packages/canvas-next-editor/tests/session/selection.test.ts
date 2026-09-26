@@ -2,9 +2,9 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { Canvas } from '@hankchen/canvas-next'
 
-import type { FrameScheduler, OverlayPainter } from '../src/editor'
-import { EditorSession } from '../src/editor'
-import { cellLayer, rowLayer, tableLayer, textLayer } from './support/fixtures'
+import type { FrameScheduler, OverlayPainter } from '../../src/session/editor'
+import { EditorSession } from '../../src/session/editor'
+import { cellLayer, rowLayer, tableLayer, textLayer } from '../support/fixtures'
 
 const nullScheduler: FrameScheduler = () => () => {}
 

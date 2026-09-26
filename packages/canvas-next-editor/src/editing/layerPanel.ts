@@ -19,7 +19,7 @@
 import type { Canvas, Layer, LayerType, TableCellLayer, TableRowLayer } from '@hankchen/canvas-next'
 import type { Draft } from 'immer'
 
-import { isLayerPath, resolveLayer, type LayerPath } from './layerPath'
+import { isLayerPath, resolveLayer, type LayerPath } from '../shared/layerPath'
 
 /** 图层在容器树里的角色（决定面板缩进与可拖动性） */
 export type LayerOutlineRole = 'root' | 'row' | 'cell' | 'content'

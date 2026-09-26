@@ -3,8 +3,8 @@ import { applyPatches, type Draft } from 'immer'
 
 import type { Canvas } from '@hankchen/canvas-next'
 
-import { EditorStore } from '../src/store'
-import { textLayer } from './support/fixtures'
+import { EditorStore } from '../../src/session/store'
+import { textLayer } from '../support/fixtures'
 
 const layerDoc = (): Canvas => ({
     width: 100,

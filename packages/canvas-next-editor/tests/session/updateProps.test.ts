@@ -2,9 +2,9 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { encodeLayer, type Canvas } from '@hankchen/canvas-next'
 
-import { EditorSession, type FrameScheduler } from '../src/editor'
-import { imageLayer, qrLayer, tableLayer, textLayer } from './support/fixtures'
-import { cellLayer, rowLayer } from './support/fixtures'
+import { EditorSession, type FrameScheduler } from '../../src/session/editor'
+import { imageLayer, qrLayer, tableLayer, textLayer } from '../support/fixtures'
+import { cellLayer, rowLayer } from '../support/fixtures'
 
 /** 同步手动调度器：测试里不真正驱动重绘，只让会话可构造 */
 const nullScheduler: FrameScheduler = () => () => {}

@@ -12,8 +12,8 @@ import { describe, expect, it } from 'vitest'
 
 import { decodeGraph, encodeGraph, type TableLayer, type WireLayerNode } from '@hankchen/canvas-next'
 
-import { EditorSession, type FrameScheduler } from '../src/editor'
-import { ALIGN_TOP_LEFT, POSITION_ORIGIN, shapeWire, templateTableWire } from './support/fixtures'
+import { EditorSession, type FrameScheduler } from '../../src/session/editor'
+import { ALIGN_TOP_LEFT, POSITION_ORIGIN, shapeWire, templateTableWire } from '../support/fixtures'
 
 const nullScheduler: FrameScheduler = () => () => {}
 

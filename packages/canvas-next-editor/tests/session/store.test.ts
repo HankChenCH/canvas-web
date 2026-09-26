@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { Canvas } from '@hankchen/canvas-next'
 
-import { EditorStore, type EditorChange } from '../src/store'
+import { EditorStore, type EditorChange } from '../../src/session/store'
 
 const doc = (layers: Canvas['layers'] = []): Canvas => ({ width: 100, height: 80, layers })
 

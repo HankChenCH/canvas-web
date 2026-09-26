@@ -3,9 +3,9 @@ import { applyPatches, type Draft } from 'immer'
 
 import type { Canvas } from '@hankchen/canvas-next'
 
-import type { HistoryStep } from '../src/store'
-import { EditorStore } from '../src/store'
-import { textLayer } from './support/fixtures'
+import type { HistoryStep } from '../../src/session/store'
+import { EditorStore } from '../../src/session/store'
+import { textLayer } from '../support/fixtures'
 
 const layerDoc = (): Canvas => ({
     width: 100,

@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 
 import type { Canvas } from '@hankchen/canvas-next'
 
-import { hitTest } from '../src/hitTest'
-import { cellLayer, imageLayer, qrLayer, rowLayer, tableLayer, textLayer } from './support/fixtures'
+import { hitTest } from '../../src/spatial/hitTest'
+import { cellLayer, imageLayer, qrLayer, rowLayer, tableLayer, textLayer } from '../support/fixtures'
 
 const doc = (layers: Canvas['layers']): Canvas => ({ width: 2400, height: 1500, layers })
 

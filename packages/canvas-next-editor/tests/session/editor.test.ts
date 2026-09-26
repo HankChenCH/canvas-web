@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { Canvas, RenderBackend } from '@hankchen/canvas-next'
 
-import { EditorSession, type FrameScheduler, type OverlayPainter } from '../src/editor'
+import { EditorSession, type FrameScheduler, type OverlayPainter } from '../../src/session/editor'
 
 /** 录制后端：只数 begin（每次内容重绘恰一次），其余原语空实现 */
 function recordingBackend(): RenderBackend & { beginCount: () => number; resetBeginCount: () => void } {

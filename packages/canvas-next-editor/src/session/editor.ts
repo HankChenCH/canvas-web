@@ -37,9 +37,9 @@ import {
     type Size,
     type Viewport,
     type ZoomBounds,
-} from './camera'
+} from '../spatial/camera'
 import type { LayerBox, Layer, LayerType, ImageLayer } from '@hankchen/canvas-next'
-import { hitTest as hitTestAt } from './hitTest'
+import { hitTest as hitTestAt } from '../spatial/hitTest'
 import {
     layerBoxByPath,
     isRootLayerPath,
@@ -49,13 +49,13 @@ import {
     resolveLayer,
     selectionParentPath,
     type LayerPath,
-} from './layerPath'
+} from '../shared/layerPath'
 import {
     PASTE_OFFSET_PX,
     canCopyLayerAt,
     cloneLayerSubtree,
     prepareRootPaste,
-} from './clipboard'
+} from '../editing/clipboard'
 import {
     addRootLayerInDraft,
     deleteLayerInDraft,
@@ -63,7 +63,7 @@ import {
     moveRootLayerInDraft,
     moveTableRowInDraft,
     type DeletedLayerRef,
-} from './layerPanel'
+} from '../editing/layerPanel'
 import {
     addTableCellInDraft,
     addTableRowInDraft,
@@ -73,11 +73,11 @@ import {
     moveTableRowToTableInDraft,
     setCellAutoHeightInDraft,
     type MovedSubtreeRef,
-} from './tableEditing'
+} from '../editing/tableEditing'
 import { EditorStore, type EditorChange, type TransactOptions } from './store'
 import type { EditorShortcutAction } from './shortcuts'
-import { FontCatalog, type FontCatalogEntry } from './fontCatalog'
-import { UploadHandlerMissingError, uploadDisplayName, type UploadFile, type UploadHandler } from './upload'
+import { FontCatalog, type FontCatalogEntry } from '../editing/fontCatalog'
+import { UploadHandlerMissingError, uploadDisplayName, type UploadFile, type UploadHandler } from '../editing/upload'
 
 /** transact 回调向外传值的容器：TS 会把闭包内赋值的 let 窄化回初值类型，盒属性访问不受影响 */
 type TxOut<T> = { v: T }

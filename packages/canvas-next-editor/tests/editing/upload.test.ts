@@ -2,9 +2,9 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { decodeGraph } from '@hankchen/canvas-next'
 
-import { EditorSession } from '../src/editor'
-import { FontCatalog, type FontCatalogEntry } from '../src/fontCatalog'
-import type { UploadFile } from '../src/upload'
+import { EditorSession } from '../../src/session/editor'
+import { FontCatalog, type FontCatalogEntry } from '../../src/editing/fontCatalog'
+import type { UploadFile } from '../../src/editing/upload'
 
 const file = (name: string, mime = 'image/png'): UploadFile => ({
     name,

@@ -7,7 +7,7 @@
  */
 import { resolveChildAt, resolveLayerBox, type Canvas, type Layer, type LayerBox, type TextLayoutPolicies } from '@hankchen/canvas-next'
 
-import type { LayerPath } from './layerPath'
+import type { LayerPath } from '../shared/layerPath'
 
 /** 半开区间包含 [x, x+w) × [y, y+h)：相邻格边界恰好归一格，零尺寸不可命中 */
 function contains(box: LayerBox, x: number, y: number): boolean {

@@ -10,8 +10,8 @@ import { describe, expect, it } from 'vitest'
 
 import { decodeGraph, encodeGraph } from '@hankchen/canvas-next'
 
-import { EditorSession } from '../src/editor'
-import { shapeWire, templateTableWire, wireNode } from './support/fixtures'
+import { EditorSession } from '../../src/session/editor'
+import { shapeWire, templateTableWire, wireNode } from '../support/fixtures'
 
 const syncScheduler = (callback: () => void) => {
     callback()

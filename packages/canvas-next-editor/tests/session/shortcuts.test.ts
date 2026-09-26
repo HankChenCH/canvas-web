@@ -12,13 +12,13 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { EditorSession, type FrameScheduler } from '../src/editor'
+import { EditorSession, type FrameScheduler } from '../../src/session/editor'
 import {
     DEFAULT_EDITOR_SHORTCUTS,
     classifyEditorShortcut,
     type EditorShortcutInput,
-} from '../src/shortcuts'
-import { textLayer } from './support/fixtures'
+} from '../../src/session/shortcuts'
+import { textLayer } from '../support/fixtures'
 
 const nullScheduler: FrameScheduler = () => () => {}
 
