@@ -509,6 +509,40 @@ export class EditorSession {
         }, options)
     }
 
+    /**
+     * 数据字段表达式标记写入口（打标/解标，spec：canvas-web-expression-marking §1；
+     * 镜像 PHP 三内容层 setExpression 与 decode 标记/未标记分支）：
+     * - expression 非 null = 打标：expression 原文 + 值字段恒镜像原文（Text.text /
+     *   Image.src / QrCode.value）；标记态不做空串 →null 归一（decodeImageLayer
+     *   标记分支同门）。
+     * - expression = null = 解标：值字段保持现值退字面，`expression = null`；
+     *   字面态空值归一交给 updateData/decode 分支（这里不清值，字面接管语义）。
+     * - 仅三内容层生效，表/行/格/行模板空转（与 updateData 同门）。
+     * - updateData 语义不变：字面写解除标记仍成立（spec §1 明示两者并排）。
+     */
+    updateDataExpression(path: LayerPath, expression: string | null, options: TransactOptions = {}): void {
+        this.store.transact((draft) => {
+            const layer = resolveLayer(draft, path) as Draft<Layer> | null
+            if (!layer) return
+            switch (layer.type) {
+                case 'TextLayer':
+                    layer.expression = expression == null ? null : String(expression)
+                    if (layer.expression !== null) layer.text = layer.expression
+                    break
+                case 'ImageLayer':
+                    layer.expression = expression == null ? null : String(expression)
+                    if (layer.expression !== null) layer.src = layer.expression
+                    break
+                case 'QrCodeLayer':
+                    layer.expression = expression == null ? null : String(expression)
+                    if (layer.expression !== null) layer.value = layer.expression
+                    break
+                default:
+                    break
+            }
+        }, options)
+    }
+
     /** 更新画布级字段（未选中图层时面板的宽/高写入口）；键由类型收窄为 width/height */
     updateCanvasProp(key: 'width' | 'height', value: number, options: TransactOptions = {}): void {
         this.store.transact((draft) => {
