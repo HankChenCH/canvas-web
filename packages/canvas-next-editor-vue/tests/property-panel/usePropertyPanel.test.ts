@@ -285,6 +285,46 @@ describe('toggleDataMode：数据字段取值方式切换（静态值/表达式�
     })
 })
 
+describe('位置与尺寸组面板桥（layer-panel-ux 工票 03）', () => {
+    it('layerBox：EditorSession.layerBoxAt 的 computed 切片（选中驱动，gizmo 同源）', () => {
+        const editor = makeEditor([textLayer()])
+        const { scope, panel } = bind(editor)
+        expect(panel.layerBox.value).toBeNull() // 未选中
+        editor.setSelection(['layers', 0])
+        expect(panel.layerBox.value).toEqual(editor.layerBoxAt(['layers', 0]))
+        expect(panel.isPreviewBox.value).toBe(false)
+        editor.setSelection(null)
+        expect(panel.layerBox.value).toBeNull()
+        scope.stop()
+    })
+
+    it('isPreviewBox：选中路径含 template 段即预览盒（与内核 isTemplateSubtreePath 同义）', () => {
+        const editor = makeEditor([textLayer()])
+        const { scope, panel } = bind(editor)
+        editor.setSelection(['layers', 0, 'template', 'cells', 0, 'content'])
+        expect(panel.isPreviewBox.value).toBe(true)
+        editor.setSelection(['layers', 0, 'rows', 0, 'cells', 0, 'content'])
+        expect(panel.isPreviewBox.value).toBe(false)
+        scope.stop()
+    })
+
+    it('anchorExpanded：store ui 分支投影，setAnchorExpanded 写回（会话记忆）', () => {
+        const editor = makeEditor([textLayer()])
+        const { scope, panel } = bind(editor)
+        expect(panel.anchorExpanded.value).toBe(false)
+
+        panel.setAnchorExpanded(true)
+        expect(panel.anchorExpanded.value).toBe(true)
+        expect(editor.store.ui.anchorExpanded).toBe(true)
+        expect(editor.store.history).toHaveLength(0) // ui 分支不进历史
+
+        // 面板外直改 store 也回灌投影（同一事实源）
+        editor.store.setAnchorExpanded(false)
+        expect(panel.anchorExpanded.value).toBe(false)
+        scope.stop()
+    })
+})
+
 describe('选择切换闭合未收口事务', () => {
     it('live 提交后切换选择：开放 mergeKey 自动闭合（卸载丢焦不遗留开放步）', () => {
         const editor = makeEditor([textLayer(), textLayer({ text: '乙' })])

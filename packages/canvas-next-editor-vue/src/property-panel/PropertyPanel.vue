@@ -5,14 +5,22 @@
  * usePropertyPanel.commit 分派内核 action（updateSpec/updateData/
  * updateCanvasProp），面板零直改。注册表没有的字段不渲染、不告警。
  *
+ * 两条块级/复合路由（layer-panel-ux 工票 03，域内展示决策）：
+ * - control === 'anchor'：锚点折叠区（默认收起 + 9 点微缩图），不经
+ *   PropertyField 的 label+control 行布局，直接渲染注册表条目；
+ * - control === 'pair'：两列语义行仍经 PropertyField 分发，额外下发
+ *   pairDisplays（自适应禁用态替代显示），子字段提交经 sub-commit 回归
+ *   同一条 commit 管线。
+ *
  * 视觉：暗色「精密仪器」检视面板——设计令牌见 panel-theme.css（作用域在
  * .cn-props 根，自带主题不渗漏宿主）；工具类由宿主 tailwind 经 @source 编译。
  */
 import { computed } from 'vue'
 
-import type { Canvas, EditorSession, Layer } from '@hankchen/canvas-next-editor'
+import type { Anchor, Canvas, EditorSession, Layer } from '@hankchen/canvas-next-editor'
 
-import { readField, type FieldDef } from './fieldSchema'
+import { readField, pairItemKey, type FieldDef, type FieldDisplay } from './fieldSchema'
+import AnchorDisclosureField from './fields/AnchorDisclosureField.vue'
 import PropertyField from './PropertyField.vue'
 import { usePropertyPanel } from './usePropertyPanel'
 
@@ -72,6 +80,37 @@ const visibleSections = computed<readonly RenderSection[]>(() => {
     }
     return result
 })
+
+/**
+ * pair 自适应列的禁用态替代显示（工票 03）：高自适应 → layerBoxAt 解析值
+ * （gizmo 同源；模板子树是预览盒，preview 标记驱动斜体 + 悬停说明的区分
+ * 展示）；宽自适应不给显示值——三端布局求值缺失，解析值 = 声明值会误导，
+ * 控件显「自动」占位（缺口跟踪：layer-panel-ux 工票 11）。显示键按注册表
+ * 推导（auto.key = autoHeight 的 pair 列），不硬编码键串。
+ */
+const pairDisplays = computed<Record<string, FieldDisplay>>(() => {
+    const displays: Record<string, FieldDisplay> = {}
+    const box = panel.layerBox.value
+    const layer = panel.layer.value
+    if (!box || !layer || !layer.shape.autoHeight) return displays
+    for (const section of panel.sections.value) {
+        for (const field of section.fields) {
+            for (const item of field.items ?? []) {
+                if (item.auto && item.auto.key.join('.') === 'autoHeight') {
+                    displays[pairItemKey(field, item).join('.')] = {
+                        value: Math.round(box.height * 100) / 100,
+                        preview: panel.isPreviewBox.value,
+                    }
+                }
+            }
+        }
+    }
+    return displays
+})
+
+function toggleAnchorExpanded(): void {
+    panel.setAnchorExpanded(!panel.anchorExpanded.value)
+}
 </script>
 
 <template>
@@ -107,16 +146,28 @@ const visibleSections = computed<readonly RenderSection[]>(() => {
                 {{ section.title }}
             </h3>
             <div class="flex flex-col gap-1.5">
-                <PropertyField
-                    v-for="item in section.fields"
-                    :key="item.key"
-                    :field="item.field"
-                    :value="item.value"
-                    :data-mode="item.dataMode"
-                    @input="panel.commit(item.field, $event, false)"
-                    @change="panel.commit(item.field, $event, true)"
-                    @toggle-mode="panel.toggleDataMode(item.field)"
-                />
+                <template v-for="item in section.fields" :key="item.key">
+                    <!-- 锚点 = 块级折叠区：不经 PropertyField 行布局，直接渲染注册表条目 -->
+                    <AnchorDisclosureField
+                        v-if="item.field.control === 'anchor'"
+                        :field="item.field"
+                        :model-value="item.value as Anchor"
+                        :expanded="panel.anchorExpanded.value"
+                        @change="panel.commit(item.field, $event, true)"
+                        @toggle="toggleAnchorExpanded"
+                    />
+                    <PropertyField
+                        v-else
+                        :field="item.field"
+                        :value="item.value"
+                        :data-mode="item.dataMode"
+                        :displays="pairDisplays"
+                        @input="panel.commit(item.field, $event, false)"
+                        @change="panel.commit(item.field, $event, true)"
+                        @toggle-mode="panel.toggleDataMode(item.field)"
+                        @sub-commit="panel.commit"
+                    />
+                </template>
             </div>
         </section>
     </aside>

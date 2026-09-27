@@ -56,6 +56,47 @@ describe('ui 分支：viewport 整体替换、不进历史（ui 分支无历史�
     })
 })
 
+describe('ui 分支：anchorExpanded（属性面板锚点折叠区会话记忆，layer-panel-ux 工票 03）', () => {
+    it('默认收起（false），setAnchorExpanded 展开并按 branch 通知', () => {
+        const store = new EditorStore()
+        expect(store.ui.anchorExpanded).toBe(false)
+
+        const changes: EditorChange[] = []
+        store.subscribe((c) => changes.push(c))
+        store.setAnchorExpanded(true)
+
+        expect(store.ui.anchorExpanded).toBe(true)
+        expect(changes).toEqual([{ scope: 'ui', branch: 'anchorExpanded' }])
+    })
+
+    it('同值写入短路不通知（重复点击不重绘）', () => {
+        const store = new EditorStore()
+        const listener = vi.fn()
+        store.subscribe(listener)
+        store.setAnchorExpanded(false)
+        expect(listener).not.toHaveBeenCalled()
+
+        store.setAnchorExpanded(true)
+        store.setAnchorExpanded(true)
+        expect(listener).toHaveBeenCalledTimes(1)
+    })
+
+    it('会话内记忆：openDocument 换文档不重置（与 viewport 同款的面板偏好）', () => {
+        const store = new EditorStore()
+        store.setAnchorExpanded(true)
+        store.openDocument(doc())
+        expect(store.ui.anchorExpanded).toBe(true)
+    })
+
+    it('不进历史：展开/收起不产生 undo 步', () => {
+        const store = new EditorStore()
+        store.openDocument(doc())
+        store.setAnchorExpanded(true)
+        store.setAnchorExpanded(false)
+        expect(store.history).toHaveLength(0)
+    })
+})
+
 describe('订阅', () => {
     it('退订后不再通知', () => {
         const store = new EditorStore()

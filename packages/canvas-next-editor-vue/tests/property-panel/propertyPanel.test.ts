@@ -75,6 +75,7 @@ describe('PropertyField：<component :is> 注册表分发', () => {
             'color',
             'select',
             'boolean',
+            'pair',
             'anchor',
             'padding',
             'border',
@@ -110,7 +111,10 @@ describe('PropertyPanel：schema 驱动表单', () => {
 
         expect(wrapper.text()).toContain('图层属性')
         expect(wrapper.text()).toContain('锚点')
-        // 九宫锚点选择器：点击即最终提交
+        // 锚点默认收起：展开折叠区后九宫可选，点击即最终提交
+        expect(wrapper.findAll('.cn-anchor__cell')).toHaveLength(0)
+        await wrapper.find('.cn-anchor-disclosure__header').trigger('click')
+        await wrapper.vm.$nextTick()
         const anchorCells = wrapper.findAll('.cn-anchor__cell')
         expect(anchorCells).toHaveLength(9)
         await anchorCells[4]!.trigger('click')
@@ -160,13 +164,14 @@ describe('PropertyPanel：schema 驱动表单', () => {
         editor.setSelection(['layers', 0])
         await wrapper.vm.$nextTick()
 
-        // 注册表没有的字段（如 TextLayer 的 priority 之外的面板未注册字段）不出现：
-        // 用 autoWidth 开着的形态验证 width 隐藏
+        // 注册表没有的字段不出现：autoWidth 开启后宽输入仍在但禁用（禁用态归
+        // 控件层，工票 03），高不受影响
         editor.updateSpec(['layers', 0], ['shape', 'autoWidth'], true)
         await wrapper.vm.$nextTick()
-        const labels = wrapper.findAll('.cn-prop-field__label').map((n) => n.text())
-        expect(labels).not.toContain('宽')
-        expect(labels).toContain('高')
+        const widthInput = wrapper.find('input[aria-label="宽"]').element as HTMLInputElement
+        expect(widthInput.disabled).toBe(true)
+        expect(widthInput.placeholder).toBe('自动')
+        expect((wrapper.find('input[aria-label="高"]').element as HTMLInputElement).disabled).toBe(false)
 
         // 全程无 console.warn（未知/悬空字段静默跳过）
         expect(warnSpy).not.toHaveBeenCalled()
@@ -186,6 +191,127 @@ describe('PropertyPanel：schema 驱动表单', () => {
         await wrapper.vm.$nextTick()
         expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('乙')
         wrapper.unmount()
+    })
+})
+
+describe('位置与尺寸组（layer-panel-ux 工票 03：两列行 + auto prefix + 折叠锚点 + angle 迁入）', () => {
+    it('X|Y 与 宽|高 各为一行两列，宽/高列带自适应 prefix 钮', async () => {
+        const editor = makeEditor([textLayer()])
+        const wrapper = mount(PropertyPanel, { props: { editor } })
+        editor.setSelection(['layers', 0])
+        await wrapper.vm.$nextTick()
+
+        const section = wrapper.findAll('.cn-props__section')[0]!
+        expect(section.text()).toContain('位置与尺寸')
+        // 前两行 = 位置 pair 与 尺寸 pair：每行两个数值输入，列自描述 X/Y/宽/高；
+        // 行级标签不复述（code-review 整改：无「尺寸 尺寸」双 label）
+        const fieldRows = section.findAll('.cn-prop-field')
+        expect(fieldRows[0]!.text()).toContain('X')
+        expect(fieldRows[0]!.text()).toContain('Y')
+        expect(fieldRows[0]!.text()).not.toContain('位置')
+        expect(fieldRows[0]!.findAll('input[type="number"]')).toHaveLength(2)
+        expect(fieldRows[1]!.text()).toContain('宽')
+        expect(fieldRows[1]!.text()).toContain('高')
+        expect(fieldRows[1]!.text()).not.toContain('尺寸')
+        expect(fieldRows[1]!.findAll('input[type="number"]')).toHaveLength(2)
+        // pair 行根不是 label（列各有 label，嵌套 label 非法）
+        expect(fieldRows[0]!.element.tagName).toBe('DIV')
+        expect(fieldRows[0]!.find('label label').exists()).toBe(false)
+        // 宽/高列各一枚「自」prefix 钮；X/Y 行无
+        const toggles = section.findAll('.cn-props__auto-toggle')
+        expect(toggles).toHaveLength(2)
+        wrapper.unmount()
+    })
+
+    it('高自适应开 → 高框禁用显示 layerBoxAt 解析值（gizmo 同源），宽不受影响', async () => {
+        const editor = makeEditor([textLayer({ shape: { width: 120, height: 80, autoWidth: false, autoHeight: true, lineHeight: 1.2, padding: { top: 0, bottom: 0, left: 0, right: 0 }, border: { top: null, bottom: null, left: null, right: null }, backgroundColor: null } })])
+        const wrapper = mount(PropertyPanel, { props: { editor } })
+        editor.setSelection(['layers', 0])
+        await wrapper.vm.$nextTick()
+
+        const heightInput = wrapper.find('input[aria-label="高"]').element as HTMLInputElement
+        expect(heightInput.disabled).toBe(true)
+        // 解析值与 EditorSession.layerBoxAt 同源（同一布局求值，不漂移）
+        expect(heightInput.value).toBe(String(editor.layerBoxAt(['layers', 0])!.height))
+        expect((wrapper.find('input[aria-label="宽"]').element as HTMLInputElement).disabled).toBe(false)
+        wrapper.unmount()
+    })
+
+    it('宽自适应开 → 宽框禁用显「自动」占位（布局求值缺失不显解析值）', async () => {
+        const editor = makeEditor([textLayer({ shape: { width: 120, height: 80, autoWidth: true, autoHeight: false, lineHeight: 1.2, padding: { top: 0, bottom: 0, left: 0, right: 0 }, border: { top: null, bottom: null, left: null, right: null }, backgroundColor: null } })])
+        const wrapper = mount(PropertyPanel, { props: { editor } })
+        editor.setSelection(['layers', 0])
+        await wrapper.vm.$nextTick()
+
+        const widthInput = wrapper.find('input[aria-label="宽"]').element as HTMLInputElement
+        expect(widthInput.disabled).toBe(true)
+        expect(widthInput.placeholder).toBe('自动')
+        expect(widthInput.value).toBe('') // 不显声明值（会误导为已生效）
+        wrapper.unmount()
+    })
+
+    it('prefix 钮点击切自适应：写 shape.autoWidth/autoHeight，一步历史', async () => {
+        const editor = makeEditor([textLayer()])
+        const wrapper = mount(PropertyPanel, { props: { editor } })
+        editor.setSelection(['layers', 0])
+        await wrapper.vm.$nextTick()
+
+        const toggles = wrapper.findAll('.cn-props__auto-toggle')
+        await toggles[0]!.trigger('click') // 宽自适应
+        await toggles[1]!.trigger('click') // 高自适应
+        const shape = editor.store.doc!.layers[0]!.shape
+        expect(shape.autoWidth).toBe(true)
+        expect(shape.autoHeight).toBe(true)
+        expect(editor.store.history).toHaveLength(2) // 两次独立切换 = 两步
+        wrapper.unmount()
+    })
+
+    it('锚点折叠区：默认收起（微缩图在场），展开后九宫可选；开合写 store ui 分支（会话记忆）', async () => {
+        const editor = makeEditor([textLayer()])
+        const wrapper = mount(PropertyPanel, { props: { editor } })
+        editor.setSelection(['layers', 0])
+        await wrapper.vm.$nextTick()
+
+        // 收起态：九宫不在场、微缩图 svg 在场、aria-expanded=false
+        const header = wrapper.find('.cn-anchor-disclosure__header')
+        expect(header.attributes('aria-expanded')).toBe('false')
+        expect(header.find('svg').exists()).toBe(true)
+        expect(wrapper.findAll('.cn-anchor__cell')).toHaveLength(0)
+        expect(editor.store.ui.anchorExpanded).toBe(false)
+
+        await header.trigger('click')
+        await wrapper.vm.$nextTick()
+        expect(wrapper.find('.cn-anchor-disclosure__header').attributes('aria-expanded')).toBe('true')
+        expect(wrapper.findAll('.cn-anchor__cell')).toHaveLength(9)
+        expect(editor.store.ui.anchorExpanded).toBe(true)
+        expect(editor.store.history).toHaveLength(0) // 开合不进历史
+
+        // 会话内记忆：面板重挂载（同一 editor）仍展开
+        wrapper.unmount()
+        const remounted = mount(PropertyPanel, { props: { editor } })
+        expect(remounted.findAll('.cn-anchor__cell')).toHaveLength(9)
+        remounted.unmount()
+    })
+
+    it('angle 迁入位置与尺寸组：TextLayer 有旋转角且提交走 updateSpec，ImageLayer 无', async () => {
+        const editor = makeEditor([textLayer()])
+        const wrapper = mount(PropertyPanel, { props: { editor } })
+        editor.setSelection(['layers', 0])
+        await wrapper.vm.$nextTick()
+        expect(wrapper.text()).toContain('旋转角')
+
+        const angleInput = wrapper.find('input[aria-label="旋转角"]')
+        ;(angleInput.element as HTMLInputElement).value = '45'
+        await angleInput.trigger('input')
+        expect(editor.store.doc!.layers[0]!.type === 'TextLayer' && editor.store.doc!.layers[0]!.angle).toBe(45)
+        wrapper.unmount()
+
+        const imageEditor = makeEditor([{ ...textLayer(), type: 'ImageLayer', src: null } as Layer])
+        const imagePanel = mount(PropertyPanel, { props: { editor: imageEditor } })
+        imageEditor.setSelection(['layers', 0])
+        await imagePanel.vm.$nextTick()
+        expect(imagePanel.text()).not.toContain('旋转角')
+        imagePanel.unmount()
     })
 })
 

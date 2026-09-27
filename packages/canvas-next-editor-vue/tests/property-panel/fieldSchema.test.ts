@@ -78,8 +78,11 @@ const layerByType = (type: LayerType): Layer => {
 const flatFields = (sections: readonly { title: string; fields: readonly FieldDef[] }[]): FieldDef[] =>
     sections.flatMap((s) => [...s.fields])
 
+/** 拍平的字段键（pair 子字段按 `pair键.子键` 绝对键展开，工票 03） */
 const fieldKeys = (sections: readonly { title: string; fields: readonly FieldDef[] }[]): string[] =>
-    flatFields(sections).map((f) => f.key.join('.'))
+    sections.flatMap((s) =>
+        s.fields.flatMap((f) => [f.key.join('.'), ...(f.items ?? []).map((it) => [...f.key, ...it.key].join('.'))]),
+    )
 
 describe('type 标识 ↔ 注册表映射', () => {
     it('7 种 type 全部有注册表条目，且恰为 LAYER_TYPES 全集（无多余条目）', () => {
@@ -92,10 +95,12 @@ describe('type 标识 ↔ 注册表映射', () => {
         expect(fieldSectionsForType('TableRowTemplate')).toEqual([])
     })
 
-    it('每种 type 的每个字段 key 都能在该 type 的领域实例上解析（路径与文档模型同步）', () => {
+    it('每种 type 实际渲染的每个字段 key 都能在该 type 的领域实例上解析（路径与文档模型同步）', () => {
+        // 用 fieldSectionsForPath（visibleWhen 过滤后的渲染面）断言：type 共享组里
+        // 被 visibleWhen 门控的字段（如 angle）只在门控 type 上要求可解析
         for (const type of LAYER_TYPES) {
             const layer = layerByType(type)
-            for (const key of fieldKeys(fieldSectionsForType(type))) {
+            for (const key of fieldKeys(fieldSectionsForPath(['layers', 0], layer))) {
                 const read = readField(layer, key.split('.'))
                 expect([type, key, read.ok]).toEqual([type, key, true])
             }
@@ -134,19 +139,87 @@ describe('type 标识 ↔ 注册表映射', () => {
 })
 
 describe('权威字段过滤（visibleWhen：注册表有、当前层不可编辑）', () => {
-    it('autoWidth/autoHeight 时隐藏 width/height 输入', () => {
+    it('autoWidth/autoHeight 时 width/height 仍渲染（禁用与替代显示归控件层，schema 不再隐藏）', () => {
         const layer = { ...layerByType('TextLayer'), shape: { ...baseLayer().shape, autoWidth: true, autoHeight: true } }
         const keys = fieldKeys(fieldSectionsForPath(['layers', 0], layer))
-        expect(keys).not.toContain('shape.width')
-        expect(keys).not.toContain('shape.height')
-        expect(keys).toContain('shape.autoWidth')
-        expect(keys).toContain('shape.autoHeight')
+        expect(keys).toContain('shape.width')
+        expect(keys).toContain('shape.height')
     })
 
     it('lineHeight 只在 TextLayer 出现（形状段共享、文本专属字段按类型显隐）', () => {
         expect(fieldKeys(fieldSectionsForPath(['layers', 0], layerByType('TextLayer')))).toContain('shape.lineHeight')
         expect(fieldKeys(fieldSectionsForPath(['layers', 0], layerByType('ImageLayer')))).not.toContain('shape.lineHeight')
         expect(fieldKeys(fieldSectionsForPath(['layers', 0], layerByType('TableLayer')))).not.toContain('shape.lineHeight')
+    })
+})
+
+describe('位置与尺寸组重排（layer-panel-ux 工票 03：两列行 + auto prefix + angle 迁入）', () => {
+    const findField = (sections: readonly { title: string; fields: readonly FieldDef[] }[], key: string): FieldDef | undefined =>
+        flatFields(sections).find((f) => f.key.join('.') === key)
+
+    it('section 更名「位置与尺寸」，X|Y 与 宽|高 各为一个 pair 字段（语义行）', () => {
+        const sections = fieldSectionsForType('TextLayer')
+        const position = sections.find((s) => s.title === '位置与尺寸')
+        expect(position).toBeDefined()
+        const xy = findField([position!], 'position')
+        const wh = findField([position!], 'shape')
+        expect(xy?.control).toBe('pair')
+        expect(wh?.control).toBe('pair')
+        expect(xy?.items?.map((i) => i.key.join('.'))).toEqual(['x', 'y'])
+        expect(wh?.items?.map((i) => i.key.join('.'))).toEqual(['width', 'height'])
+        // 行内 label 自描述（语义行不再复用整行大标签说明列含义）
+        expect(xy?.items?.map((i) => i.label)).toEqual(['X', 'Y'])
+        expect(wh?.items?.map((i) => i.label)).toEqual(['宽', '高'])
+    })
+
+    it('宽/高子字段带自适应 prefix 描述符：auto 指向 pair 值对象上的布尔键', () => {
+        const wh = findField(fieldSectionsForType('ImageLayer'), 'shape')!
+        const width = wh.items?.find((i) => i.key.join('.') === 'width')
+        const height = wh.items?.find((i) => i.key.join('.') === 'height')
+        expect(width?.auto?.key).toEqual(['autoWidth'])
+        expect(height?.auto?.key).toEqual(['autoHeight'])
+        // 宽自适应开显示「自动」占位（三端布局求值缺失，解析值 = 声明值会误导）
+        expect(width?.auto?.placeholder).toBe('自动')
+        // 数值约束跟随子字段（整数、非负），提交约束不回归
+        expect(width?.integer).toBe(true)
+        expect(width?.min).toBe(0)
+        expect(height?.integer).toBe(true)
+        expect(height?.min).toBe(0)
+    })
+
+    it('autoWidth/autoHeight 独立 BooleanField 行撤销（并入 prefix）', () => {
+        for (const type of LAYER_TYPES) {
+            const keys = fieldKeys(fieldSectionsForType(type))
+            expect(keys, type).not.toContain('shape.autoWidth')
+            expect(keys, type).not.toContain('shape.autoHeight')
+        }
+    })
+
+    it('angle 迁入位置与尺寸组（TextLayer 专属 visibleWhen 不变），文本组移除', () => {
+        const sections = fieldSectionsForType('TextLayer')
+        const position = sections.find((s) => s.title === '位置与尺寸')!
+        const angle = findField([position], 'angle')
+        expect(angle?.control).toBe('number')
+        expect(angle?.integer).toBe(true)
+        expect(angle?.visibleWhen?.(layerByType('TextLayer'))).toBe(true)
+        expect(angle?.visibleWhen?.(layerByType('ImageLayer'))).toBe(false)
+        // 非 Text 类型渲染面上无 angle（visibleWhen 门控）；文本组不再携带 angle
+        expect(fieldKeys(fieldSectionsForPath(['layers', 0], layerByType('ImageLayer')))).not.toContain('angle')
+        const text = sections.find((s) => s.title === '文本')!
+        expect(fieldKeys([text])).not.toContain('angle')
+    })
+
+    it('锚点仍以 anchor 控件字段在场（块级折叠区渲染归面板路由）', () => {
+        const anchor = findField(fieldSectionsForType('TableLayer'), 'position.anchor')
+        expect(anchor?.control).toBe('anchor')
+    })
+
+    it('位置行 X/Y 子字段保持整数数值语义', () => {
+        const xy = findField(fieldSectionsForType('QrCodeLayer'), 'position')!
+        for (const item of xy.items ?? []) {
+            expect(item.control).toBe('number')
+            expect(item.integer).toBe(true)
+        }
     })
 })
 

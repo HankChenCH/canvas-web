@@ -52,6 +52,11 @@ export interface EditorUi {
     drag: DragGesture | null
     /** 进行中的文本编辑会话；null = 非编辑态 */
     editing: TextEditingSession | null
+    /**
+     * 属性面板锚点折叠区开合（layer-panel-ux 工票 03）：默认收起，会话内记忆
+     * （与 viewport 同款的面板偏好——openDocument 换文档不重置，永不进历史）。
+     */
+    anchorExpanded: boolean
 }
 
 /** 一步历史：一次（或同键合并的多次）文档事务的正向/逆向 patch 组 */
@@ -87,6 +92,7 @@ export class EditorStore {
         hovered: null,
         drag: null,
         editing: null,
+        anchorExpanded: false,
     }
     /** undo 栈：已提交步，栈尾最新 */
     private undoSteps: HistoryStep[] = []
@@ -222,6 +228,13 @@ export class EditorStore {
     setEditing(session: TextEditingSession | null): void {
         this.uiValue = { ...this.uiValue, editing: session }
         this.notify({ scope: 'ui', branch: 'editing' })
+    }
+
+    /** 锚点折叠区开合：布尔值等短路（重复点击同一态不重绘） */
+    setAnchorExpanded(open: boolean): void {
+        if (this.uiValue.anchorExpanded === open) return
+        this.uiValue = { ...this.uiValue, anchorExpanded: open }
+        this.notify({ scope: 'ui', branch: 'anchorExpanded' })
     }
 
     subscribe(listener: Listener): () => void {

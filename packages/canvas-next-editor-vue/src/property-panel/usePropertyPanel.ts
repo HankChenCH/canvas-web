@@ -19,6 +19,7 @@ import {
     type Canvas,
     type EditorSession,
     type Layer,
+    type LayerBox,
     type LayerPath,
 } from '@hankchen/canvas-next-editor'
 
@@ -41,6 +42,16 @@ export interface PropertyPanelBinding {
     readonly canvas: ComputedRef<Canvas | null>
     /** 当前目标的字段组：选中层按 type/角色过滤，画布级为宽/高，无文档为空 */
     readonly sections: ComputedRef<readonly FieldSection[]>
+    /**
+     * 选中层的绝对盒（layer-panel-ux 工票 03）：EditorSession.layerBoxAt 的
+     * computed 切片，与画布 gizmo 同源——自适应高的禁用态显示值据此计算。
+     * 模板子树经 previewCanvas 解析为预览盒（isPreviewBox 驱动区分展示）。
+     */
+    readonly layerBox: ComputedRef<LayerBox | null>
+    /** 选中路径是否落在模板子树（layerBoxAt 届时返回预览盒而非文档盒） */
+    readonly isPreviewBox: ComputedRef<boolean>
+    /** 锚点折叠区开合（store ui 分支投影，会话内记忆；工票 03） */
+    readonly anchorExpanded: ComputedRef<boolean>
     /** 面板唯一提交口：final = 收口提交（change/blur），否则按 mergeKey 合并累积 */
     commit(field: FieldDef, value: unknown, final: boolean): void
     /**
@@ -49,20 +60,27 @@ export interface PropertyPanelBinding {
      * 各为独立一步历史；仅 data 字段且有选中目标时生效。
      */
     toggleDataMode(field: FieldDef): void
+    /** 锚点折叠区开合（写 store ui 分支，不进历史） */
+    setAnchorExpanded(open: boolean): void
 }
 
 export function usePropertyPanel(editor: EditorSession): PropertyPanelBinding {
     const doc = shallowRef<Canvas | null>(editor.store.doc)
     const selection = shallowRef<LayerPath | null>(editor.store.ui.selection)
+    const anchorExpanded = shallowRef(editor.store.ui.anchorExpanded)
 
     const unsubscribe = editor.subscribe((change) => {
         if (change.scope === 'doc') {
             doc.value = editor.store.doc
-        } else if (change.branch === 'selection') {
-            selection.value = editor.store.ui.selection
-            // 选择切换（含清空）即同步闭合开放事务：字段组件随选择重挂载，
-            // blur 不再可达，避免同键事务跨选择会话并入旧步
-            editor.store.closeMerge()
+        } else if (change.scope === 'ui') {
+            if (change.branch === 'selection') {
+                selection.value = editor.store.ui.selection
+                // 选择切换（含清空）即同步闭合开放事务：字段组件随选择重挂载，
+                // blur 不再可达，避免同键事务跨选择会话并入旧步
+                editor.store.closeMerge()
+            } else if (change.branch === 'anchorExpanded') {
+                anchorExpanded.value = editor.store.ui.anchorExpanded
+            }
         }
     })
     // failSilently：测试可在无 effect scope 的环境调用
@@ -82,6 +100,19 @@ export function usePropertyPanel(editor: EditorSession): PropertyPanelBinding {
         if (current && path) return fieldSectionsForPath(path, current)
         return doc.value ? CANVAS_FIELD_SECTIONS : []
     })
+
+    const layerBox = computed<LayerBox | null>(() => {
+        const path = selection.value
+        return path && doc.value ? editor.layerBoxAt(path) : null
+    })
+
+    // 与内核 isTemplateSubtreePath 同义（path 含 template 段）；内核符号落地前
+    // 域内自持，语义漂移由内核侧测试看护
+    const isPreviewBox = computed(() => selection.value?.includes('template') ?? false)
+
+    function setAnchorExpanded(open: boolean): void {
+        editor.store.setAnchorExpanded(open)
+    }
 
     /** 数据字段取值方式派生：领域 expression 标记在场即表达式态（打标/解标动作
      *  即时改状态，按现态派生与管线自洽，无需面板侧额外状态） */
@@ -148,7 +179,11 @@ export function usePropertyPanel(editor: EditorSession): PropertyPanelBinding {
         layer,
         canvas,
         sections,
+        layerBox,
+        isPreviewBox,
+        anchorExpanded: computed(() => anchorExpanded.value),
         commit,
         toggleDataMode,
+        setAnchorExpanded,
     }
 }

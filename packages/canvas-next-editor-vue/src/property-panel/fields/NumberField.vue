@@ -68,6 +68,7 @@ function onFinish(event: Event): void {
         class="cn-field cn-field--number"
         :class="numberField"
         type="number"
+        :aria-label="field.label"
         :min="field.min"
         :max="field.max"
         :step="field.step ?? (field.integer ? 1 : 0.1)"

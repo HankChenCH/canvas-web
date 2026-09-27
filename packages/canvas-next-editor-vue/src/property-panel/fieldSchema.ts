@@ -5,9 +5,12 @@
  * - key 用领域模型的数组路径（相对图层对象根，如 ['shape','backgroundColor']），
  *   拼上选中图层路径即 patch path；数据字段（wire data.value 的领域展开
  *   Text.text / Image.src / QrCode.value）标 data:true，提交走 updateData。
- * - 权威字段过滤两层：visibleWhen（type 内的显隐，如 autoWidth 隐藏 width 输入）
+ * - 权威字段过滤两层：visibleWhen（type 内的显隐，如 angle 只在文本层出现）
  *   与容器角色过滤（解码/fromGraph 强同步的字段不渲染——行宽强制 = 表宽、格内容
  *   宽高被压平，暴露出来就是「改了又被改回去」的 bug 报告）。
+ * - pair（两列语义行，layer-panel-ux 工票 03）：items 相对 pair 值对象寻址，
+ *   提交时由面板折算成图层根绝对键（前缀 = pair.key）；子字段的 auto 描述符
+ *   声明自适应 prefix 钮（开启 → 输入禁用，替代显示归控件层）。
  * - 本模块是纯数据 + 纯函数（零 Vue 依赖），与内核同款在 Node 无 DOM 环境测试。
  */
 import {
@@ -26,16 +29,44 @@ export type FieldControl =
     | 'color'
     | 'select'
     | 'boolean'
+    | 'pair'
     | 'anchor'
     | 'padding'
     | 'border'
     | 'font'
+
+/**
+ * 自适应 prefix 钮描述（pair 子字段用）：key 相对 pair 值对象上的布尔键；
+ * 开启 → 本输入禁用。placeholder 是禁用态占位（宽自适应的布局求值三端缺失，
+ * 解析值 = 声明值会误导，故显「自动」而不显值）。
+ */
+export interface FieldAutoToggle {
+    readonly key: readonly string[]
+    readonly placeholder?: string
+}
+
+/**
+ * 禁用态替代显示（pair 自适应列，面板计算后经 PropertyField 下发）：
+ * value 为展示数值（面板侧已做浮点噪声收整）；preview = 模板子树的预览盒
+ * 值（非文档权威值），控件据此做区分展示（斜体 + 悬停说明）。
+ */
+export interface FieldDisplay {
+    readonly value: number
+    readonly preview: boolean
+}
 
 export interface FieldDef {
     /** 图层内字段路径（领域形态）；画布级字段相对画布根 */
     readonly key: readonly string[]
     readonly label: string
     readonly control: FieldControl
+    /**
+     * 两列语义行（control:'pair' 专用）：子字段清单，key 相对 pair 值对象
+     * （如 position/shape 对象），数值行内列自描述
+     */
+    readonly items?: readonly FieldDef[]
+    /** 自适应 prefix 钮（pair 子字段用）；缺省 = 无 prefix 的普通数值列 */
+    readonly auto?: FieldAutoToggle
     /** 数据字段：提交走 updateData（按 type 分派到 text/src/value），其余走 updateSpec */
     readonly data?: boolean
     /** select 取值域（领域常量原样引用，不自创缩写） */
@@ -47,7 +78,7 @@ export interface FieldDef {
     readonly integer?: boolean
     /** 颜色字段允许 null（如背景色 = 无填充） */
     readonly nullable?: boolean
-    /** 权威字段过滤：谓词为假不渲染（不告警） */
+    /** 权威字段过滤：谓词为假不渲染（不告警）；pair 子字段同款语义 */
     readonly visibleWhen?: (layer: Layer) => boolean
 }
 
@@ -58,12 +89,56 @@ export interface FieldSection {
 
 // ---- 公共字段组（各 type 共享一份描述） ----
 
+/**
+ * 位置与尺寸（layer-panel-ux 工票 03）：X|Y、宽|高两条两列语义行；宽/高列带
+ * 自适应 prefix（autoWidth/autoHeight 不再有独立布尔行）。高自适应开 → 输入
+ * 禁用、显示 layerBoxAt 解析值（gizmo 同源，替代显示由面板算好传控件）；
+ * 宽自适应开 → 禁用、显「自动」占位。angle 从文本组迁入（旋转属变换语义，
+ * TextLayer 专属 visibleWhen 不变）；锚点是块级折叠区（面板路由，默认收起）。
+ */
 const POSITION_SECTION: FieldSection = {
-    title: '位置',
+    title: '位置与尺寸',
     fields: [
+        {
+            key: ['position'],
+            label: '位置',
+            control: 'pair',
+            items: [
+                { key: ['x'], label: 'X', control: 'number', integer: true },
+                { key: ['y'], label: 'Y', control: 'number', integer: true },
+            ],
+        },
+        {
+            key: ['shape'],
+            label: '尺寸',
+            control: 'pair',
+            items: [
+                {
+                    key: ['width'],
+                    label: '宽',
+                    control: 'number',
+                    integer: true,
+                    min: 0,
+                    auto: { key: ['autoWidth'], placeholder: '自动' },
+                },
+                {
+                    key: ['height'],
+                    label: '高',
+                    control: 'number',
+                    integer: true,
+                    min: 0,
+                    auto: { key: ['autoHeight'] },
+                },
+            ],
+        },
+        {
+            key: ['angle'],
+            label: '旋转角',
+            control: 'number',
+            integer: true,
+            visibleWhen: (layer) => layer.type === 'TextLayer',
+        },
         { key: ['position', 'anchor'], label: '锚点', control: 'anchor' },
-        { key: ['position', 'x'], label: 'X', control: 'number', integer: true },
-        { key: ['position', 'y'], label: 'Y', control: 'number', integer: true },
     ],
 }
 
@@ -78,24 +153,7 @@ const ALIGN_SECTION: FieldSection = {
 const SHAPE_SECTION: FieldSection = {
     title: '形状',
     fields: [
-        {
-            key: ['shape', 'width'],
-            label: '宽',
-            control: 'number',
-            integer: true,
-            min: 0,
-            visibleWhen: (layer) => !layer.shape.autoWidth,
-        },
-        {
-            key: ['shape', 'height'],
-            label: '高',
-            control: 'number',
-            integer: true,
-            min: 0,
-            visibleWhen: (layer) => !layer.shape.autoHeight,
-        },
-        { key: ['shape', 'autoWidth'], label: '宽自适应', control: 'boolean' },
-        { key: ['shape', 'autoHeight'], label: '高自适应', control: 'boolean' },
+        // 宽/高/autoWidth/autoHeight 已迁位置与尺寸组（两列行 + auto prefix，工票 03）
         { key: ['shape', 'backgroundColor'], label: '背景色', control: 'color', nullable: true },
         {
             key: ['shape', 'lineHeight'],
@@ -120,7 +178,7 @@ const TEXT_SECTION: FieldSection = {
         { key: ['font'], label: '字体', control: 'font' },
         { key: ['fontSize'], label: '字号', control: 'number', integer: true, min: 1 },
         { key: ['fontColor'], label: '字色', control: 'color' },
-        { key: ['angle'], label: '旋转角', control: 'number', integer: true },
+        // angle 已迁位置与尺寸组（工票 03：旋转属变换语义）
         { key: ['autowrap'], label: '自动换行', control: 'boolean' },
     ],
 }
@@ -182,17 +240,38 @@ const ROLE_HIDDEN_KEYS: Record<LayerRole, readonly string[]> = {
 }
 
 /**
+ * pair 子字段的图层根绝对键（code-review 整改：提交折算、禁用态显示键、
+ * 角色过滤三处共用这一条规则，防键拼接约定漂移）。
+ */
+export function pairItemKey(field: FieldDef, item: FieldDef): readonly string[] {
+    return [...field.key, ...item.key]
+}
+
+/**
  * 面板实际渲染的字段组：type 注册表 ∩ 角色权威过滤 ∩ visibleWhen。
- * 过滤后为空的 section 不输出（不渲染空标题）。
+ * pair 行按子字段的绝对键（pairItemKey）逐列过滤——部分隐藏 = 行内少一列，
+ * 全部隐藏才整行不输出；普通字段过滤后为空即不渲染。过滤后为空的 section
+ * 不输出（不渲染空标题）。
  */
 export function fieldSectionsForPath(path: LayerPath, layer: Layer): readonly FieldSection[] {
     const hidden = new Set(ROLE_HIDDEN_KEYS[layerRoleAt(path)])
     const result: FieldSection[] = []
     for (const section of fieldSectionsForType(layer.type)) {
-        const fields = section.fields.filter(
-            (field) =>
-                !hidden.has(field.key.join('.')) && (!field.visibleWhen || field.visibleWhen(layer)),
-        )
+        const fields: FieldDef[] = []
+        for (const field of section.fields) {
+            if (field.items) {
+                const items = field.items.filter(
+                    (item) =>
+                        !hidden.has(pairItemKey(field, item).join('.')) &&
+                        (!item.visibleWhen || item.visibleWhen(layer)),
+                )
+                if (items.length > 0) fields.push({ ...field, items })
+                continue
+            }
+            if (hidden.has(field.key.join('.'))) continue
+            if (field.visibleWhen && !field.visibleWhen(layer)) continue
+            fields.push(field)
+        }
         if (fields.length > 0) result.push({ title: section.title, fields })
     }
     return result

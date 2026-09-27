@@ -9,12 +9,13 @@ import { mount } from '@vue/test-utils'
 
 import type { Border, Padding } from '@hankchen/canvas-next-editor'
 
-import AnchorField from '../../src/property-panel/fields/AnchorField.vue'
+import AnchorDisclosureField from '../../src/property-panel/fields/AnchorDisclosureField.vue'
 import BooleanField from '../../src/property-panel/fields/BooleanField.vue'
 import BorderField from '../../src/property-panel/fields/BorderField.vue'
 import ColorField from '../../src/property-panel/fields/ColorField.vue'
 import NumberField from '../../src/property-panel/fields/NumberField.vue'
 import PaddingField from '../../src/property-panel/fields/PaddingField.vue'
+import PairField from '../../src/property-panel/fields/PairField.vue'
 import SelectField from '../../src/property-panel/fields/SelectField.vue'
 import TextField from '../../src/property-panel/fields/TextField.vue'
 import TextareaField from '../../src/property-panel/fields/TextareaField.vue'
@@ -188,22 +189,146 @@ describe('BooleanField', () => {
     })
 })
 
-describe('AnchorField', () => {
+describe('AnchorDisclosureField（块级折叠区，layer-panel-ux 工票 03）', () => {
     const field: FieldDef = { key: ['position', 'anchor'], label: '锚点', control: 'anchor' }
 
-    it('渲染九宫格，选中态落在当前锚点', () => {
-        const wrapper = mount(AnchorField, { props: { field, modelValue: 'center' } })
-        const cells = wrapper.findAll('button')
-        expect(cells).toHaveLength(9)
-        expect(cells[4]!.classes()).toContain('cn-anchor__cell--active')
-        expect(cells[4]!.attributes('aria-pressed')).toBe('true')
-        expect(cells[0]!.attributes('title')).toBe('top-left')
+    it('收起态：九宫不在场，微缩图 svg 在场且点亮当前锚点，aria-expanded=false', () => {
+        const wrapper = mount(AnchorDisclosureField, { props: { field, modelValue: 'center', expanded: false } })
+        expect(wrapper.findAll('.cn-anchor__cell')).toHaveLength(0)
+        const svg = wrapper.find('svg')
+        expect(svg.exists()).toBe(true)
+        // center = 行优先下标 4 的点被点亮（fill accent），其余弱化
+        const dots = svg.findAll('circle')
+        expect(dots).toHaveLength(9)
+        expect(dots[4]!.classes()).toContain('fill-cn-accent')
+        expect(dots[0]!.classes()).not.toContain('fill-cn-accent')
+        expect(wrapper.find('.cn-anchor-disclosure__header').attributes('aria-expanded')).toBe('false')
     })
 
-    it('点击即最终提交对应锚点', async () => {
-        const wrapper = mount(AnchorField, { props: { field, modelValue: 'top-left' } })
-        await wrapper.findAll('button')[8]!.trigger('click')
+    it('微缩图点亮位按锚点名映射（单词形态 top/left/right/center 同款规则）', async () => {
+        const litIndex = (anchor: string): number => {
+            const wrapper = mount(AnchorDisclosureField, {
+                props: { field, modelValue: anchor as never, expanded: false },
+            })
+            const index = wrapper.findAll('circle').findIndex((d) => d.classes().includes('fill-cn-accent'))
+            wrapper.unmount()
+            return index
+        }
+        expect(litIndex('top-left')).toBe(0)
+        expect(litIndex('top')).toBe(1) // 顶行中列
+        expect(litIndex('left')).toBe(3) // 中行左列
+        expect(litIndex('center')).toBe(4)
+        expect(litIndex('right')).toBe(5)
+        expect(litIndex('bottom-right')).toBe(8)
+    })
+
+    it('点击标题行只报 toggle（开合归 store ui 分支）；expanded 后九宫在场', async () => {
+        const wrapper = mount(AnchorDisclosureField, { props: { field, modelValue: 'top-left', expanded: false } })
+        await wrapper.find('.cn-anchor-disclosure__header').trigger('click')
+        expect(wrapper.emitted('toggle')).toHaveLength(1)
+        expect(wrapper.emitted('change')).toBeUndefined() // 开合不是锚点提交
+
+        await wrapper.setProps({ expanded: true })
+        const cells = wrapper.findAll('.cn-anchor__cell')
+        expect(cells).toHaveLength(9)
+        expect(cells[0]!.classes()).toContain('cn-anchor__cell--active')
+    })
+
+    it('展开后点击九宫即最终提交对应锚点', async () => {
+        const wrapper = mount(AnchorDisclosureField, { props: { field, modelValue: 'top-left', expanded: true } })
+        await wrapper.findAll('.cn-anchor__cell')[8]!.trigger('click')
         expect(wrapper.emitted('change')!.at(-1)).toEqual(['bottom-right'])
+    })
+})
+
+describe('PairField（两列语义行 + 自适应 prefix，layer-panel-ux 工票 03）', () => {
+    const sizeField: FieldDef = {
+        key: ['shape'],
+        label: '尺寸',
+        control: 'pair',
+        items: [
+            { key: ['width'], label: '宽', control: 'number', integer: true, min: 0, auto: { key: ['autoWidth'], placeholder: '自动' } },
+            { key: ['height'], label: '高', control: 'number', integer: true, min: 0, auto: { key: ['autoHeight'] } },
+        ],
+    }
+    const shape = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+        width: 100,
+        height: 50,
+        autoWidth: false,
+        autoHeight: false,
+        ...overrides,
+    })
+
+    it('渲染两列并回显各子字段值', () => {
+        const wrapper = mount(PairField, { props: { field: sizeField, modelValue: shape() } })
+        const inputs = wrapper.findAll('input[type="number"]')
+        expect(inputs).toHaveLength(2)
+        expect((inputs[0]!.element as HTMLInputElement).value).toBe('100')
+        expect((inputs[1]!.element as HTMLInputElement).value).toBe('50')
+    })
+
+    it('子字段提交上抛图层根绝对键（前缀 = pair.key），input 实时 / change 收口', async () => {
+        const wrapper = mount(PairField, { props: { field: sizeField, modelValue: shape() } })
+        const widthInput = wrapper.find('input[aria-label="宽"]')
+
+        ;(widthInput.element as HTMLInputElement).value = '120'
+        await widthInput.trigger('input')
+        let emission = wrapper.emitted('sub-commit')!.at(-1)!
+        expect(emission[0]).toMatchObject({ key: ['shape', 'width'] })
+        expect(emission[1]).toBe(120)
+        expect(emission[2]).toBe(false) // 实时
+
+        await widthInput.trigger('change')
+        emission = wrapper.emitted('sub-commit')!.at(-1)!
+        expect(emission[2]).toBe(true) // 收口
+        void widthInput
+    })
+
+    it('自适应开：本列禁用——宽显「自动」占位，高显 displays 解析值', async () => {
+        const wrapper = mount(PairField, {
+            props: {
+                field: sizeField,
+                modelValue: shape({ autoWidth: true, autoHeight: true }),
+                displays: { 'shape.height': { value: 137.5, preview: false } },
+            },
+        })
+        const widthInput = wrapper.find('input[aria-label="宽"]').element as HTMLInputElement
+        const heightInput = wrapper.find('input[aria-label="高"]').element as HTMLInputElement
+        expect(widthInput.disabled).toBe(true)
+        expect(widthInput.placeholder).toBe('自动')
+        expect(widthInput.value).toBe('')
+        expect(heightInput.disabled).toBe(true)
+        expect(heightInput.value).toBe('137.5')
+
+        // 禁用列不产生提交
+        await wrapper.find('input[aria-label="宽"]').trigger('input')
+        expect(wrapper.emitted('sub-commit')).toBeUndefined()
+    })
+
+    it('模板子树预览值：preview 标记驱动 cn-field--preview 区分展示 + 悬停说明', () => {
+        const wrapper = mount(PairField, {
+            props: {
+                field: sizeField,
+                modelValue: shape({ autoHeight: true }),
+                displays: { 'shape.height': { value: 66, preview: true } },
+            },
+        })
+        const heightInput = wrapper.find('input[aria-label="高"]')
+        expect(heightInput.classes()).toContain('cn-field--preview')
+        expect(heightInput.attributes('title')).toContain('预览盒')
+    })
+
+    it('prefix 钮点击上抛自适应布尔的绝对键（一次切换 = 一步历史语义的 final 提交）', async () => {
+        const wrapper = mount(PairField, { props: { field: sizeField, modelValue: shape() } })
+        const toggles = wrapper.findAll('.cn-props__auto-toggle')
+        expect(toggles).toHaveLength(2)
+        expect(toggles[0]!.attributes('aria-pressed')).toBe('false')
+
+        await toggles[0]!.trigger('click')
+        const [emittedField, value, final] = wrapper.emitted('sub-commit')!.at(-1)!
+        expect(emittedField).toMatchObject({ key: ['shape', 'autoWidth'], control: 'boolean' })
+        expect(value).toBe(true)
+        expect(final).toBe(true)
     })
 })
 
