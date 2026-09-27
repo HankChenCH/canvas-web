@@ -15,6 +15,31 @@ import type { Border, BorderSide, Padding } from '@hankchen/canvas-next-editor'
 /** 简写值模式：1 = 四边一框、2 = 上下|左右两框、4 = 四边各一框 */
 export type ShorthandMode = 1 | 2 | 4
 
+/** 边名（Padding/Border 四键同名，两域共用一张框布局表） */
+export type SideName = 'top' | 'bottom' | 'left' | 'right'
+
+/** 一框 = 代表边（显示与输入取值）+ 收编边清单（提交时同写代表边值） */
+export interface ShorthandBox {
+    readonly label: string
+    readonly rep: SideName
+    readonly sides: readonly SideName[]
+}
+
+/** 各模式的框布局：1 = 四边一框（代表值上）；2 = 上下|左右（代表值上|左）；4 = 四框 */
+export const SHORTHAND_BOXES: Record<ShorthandMode, readonly ShorthandBox[]> = {
+    1: [{ label: '四边', rep: 'top', sides: ['top', 'bottom', 'left', 'right'] }],
+    2: [
+        { label: '上下', rep: 'top', sides: ['top', 'bottom'] },
+        { label: '左右', rep: 'left', sides: ['left', 'right'] },
+    ],
+    4: [
+        { label: '上', rep: 'top', sides: ['top'] },
+        { label: '下', rep: 'bottom', sides: ['bottom'] },
+        { label: '左', rep: 'left', sides: ['left'] },
+        { label: '右', rep: 'right', sides: ['right'] },
+    ],
+}
+
 /** 循环次序 1→2→4→1（单按钮循环的唯一合法迁移） */
 export function nextShorthandMode(mode: ShorthandMode): ShorthandMode {
     return mode === 1 ? 2 : mode === 2 ? 4 : 1

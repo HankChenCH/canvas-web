@@ -411,6 +411,16 @@ describe('PaddingField（简写 1/2/4 模式循环，工单 04）', () => {
         await wrapper.setProps({ modelValue: pad(1, 2, 3, 4) }) // 外部变更（撤销/拖动）
         expect(inputCount(wrapper)).toBe(4)
     })
+
+    it('modelValue 引用一变覆盖即失效：同推导值的另一图层也不保留上次 UI 态', async () => {
+        const wrapper = mount(PaddingField, { props: { field, modelValue: pad(8, 8, 4, 4) } })
+        await wrapper.find('.cn-props__mode-toggle').trigger('click') // 2→4（纯 UI）
+        expect(inputCount(wrapper)).toBe(4)
+
+        // 切到另一图层：同为成对数据（推导仍 2），覆盖不得跨数据残留
+        await wrapper.setProps({ modelValue: pad(6, 6, 2, 2) })
+        expect(inputCount(wrapper)).toBe(2)
+    })
 })
 
 describe('BorderField（简写 1/2/4 模式 + null 语义，工单 04）', () => {
@@ -508,6 +518,17 @@ describe('BorderField（简写 1/2/4 模式 + null 语义，工单 04）', () =>
         // null 框空显示、值框回显现值
         const values = wrapper.findAll('input[type="number"]').map((i) => (i.element as HTMLInputElement).value)
         expect(values).toEqual(['', '', '', ''])
+    })
+
+    it('modelValue 引用一变覆盖即失效：同推导值的另一图层也不保留上次 UI 态', async () => {
+        const paired = (): Border => ({ top: side(2, '#a'), bottom: side(2, '#a'), left: null, right: null })
+        const wrapper = mount(BorderField, { props: { field, modelValue: paired() } })
+        await wrapper.find('.cn-props__mode-toggle').trigger('click') // 2→4（纯 UI）
+        expect(inputCount(wrapper)).toBe(4)
+
+        // 切到另一图层：同为上下边框（推导仍 2），覆盖不得跨数据残留
+        await wrapper.setProps({ modelValue: { top: side(3, '#b'), bottom: side(3, '#b'), left: null, right: null } })
+        expect(inputCount(wrapper)).toBe(2)
     })
 })
 
