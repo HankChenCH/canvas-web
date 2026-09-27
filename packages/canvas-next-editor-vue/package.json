@@ -37,7 +37,8 @@
         "typecheck": "vue-tsc --noEmit -p tsconfig.json"
     },
     "dependencies": {
-        "@hankchen/canvas-next-editor": "workspace:*"
+        "@hankchen/canvas-next-editor": "workspace:*",
+        "@lucide/vue": "1.48.0"
     },
     "peerDependencies": {
         "vue": "^3.5.0"
