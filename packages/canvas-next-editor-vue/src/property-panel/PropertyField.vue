@@ -8,14 +8,16 @@
  * 显示，键 = 子字段绝对键）原样转发；子字段提交经 sub-commit 上抛（含目标
  * FieldDef 与 final 标记），面板按同一条 commit 管线分派。其余控件不受影响。
  *
- * 数据字段（field.data）额外渲染取值方式切换钮（静态值/表达式，工单 02）：
- * 表达式态输入框带 cn-field--expression 视觉标识，编辑保持标记（镜像字面）。
- * 模式由面板按图层 expression 标记派生传入，本组件零本地状态。
+ * 数据字段（field.data）额外渲染取值方式分段选择器（静态 | 表达式，工单 06，
+ * 替代原 `{{ }}` 徽章钮）：表达式态输入框带 cn-field--expression 视觉标识，
+ * 编辑保持标记（镜像字面）。模式由面板按图层 expression 标记派生传入，本组件
+ * 零本地状态；切换语义仍上抛 toggle-mode 归面板 toggleDataMode（管线不动）。
  */
 import { computed } from 'vue'
 
 import { controlRegistry } from './controls'
 import type { FieldDef, FieldDisplay } from './fieldSchema'
+import ValueTypeSegmented from './fields/ValueTypeSegmented.vue'
 
 const props = defineProps<{
     field: FieldDef
@@ -37,12 +39,6 @@ const emit = defineEmits<{
 
 const control = computed(() => controlRegistry[props.field.control])
 const isExpression = computed(() => props.dataMode === 'expression')
-const toggleLabel = '{{ }}'
-const toggleTitle = computed(() =>
-    isExpression.value
-        ? '表达式取值：内容为插值原文（{{路径}} / {{$index}} / {{$root.*}}），画布显示镜像字面；点击切回静态值'
-        : '切换为表达式取值：初值取当前内容，编辑为 {{路径}} 插值原文',
-)
 
 /** 复合控件的子字段提交转发（模板内联箭头的参数标注不便，收口到脚本） */
 function relaySubCommit(field: FieldDef, value: unknown, final: boolean): void {
@@ -64,14 +60,13 @@ function relaySubCommit(field: FieldDef, value: unknown, final: boolean): void {
         >
             {{ field.label }}
         </span>
-        <button
+        <!-- 数据字段取值方式分段选择器（工单 06）：目标态由组件守卫（当前段零
+             事件），切换语义经既有 toggle-mode 归面板 toggleDataMode -->
+        <ValueTypeSegmented
             v-if="field.data"
-            type="button"
-            class="cn-props__data-toggle shrink-0"
-            :class="{ 'cn-props__data-toggle--active': isExpression }"
-            :title="toggleTitle"
-            @click.prevent="emit('toggle-mode')"
-        >{{ toggleLabel }}</button>
+            :mode="dataMode ?? 'static'"
+            @change="emit('toggle-mode')"
+        />
         <!-- 宽度由各控件自持：输入类自带 flex-1 撑满，定宽类（锚点九宫/开关）保持固有尺寸 -->
         <component
             :is="control"

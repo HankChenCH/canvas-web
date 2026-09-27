@@ -64,32 +64,15 @@
     color: var(--cn-fg);
 }
 
-/* 数据字段取值方式切换（静态值/表达式，工单 02）：{{ }} 徽章 + 表达式态输入框描边。
-   双类名选择器压过控件上的单类 tailwind border 色，无需 !important */
-.cn-props .cn-props__data-toggle {
-    font-family: var(--cn-font-mono);
-    font-size: 9px;
-    line-height: 1;
-    padding: 3px 4px;
-    border-radius: 4px;
-    border: 1px solid var(--cn-field-line);
-    color: var(--cn-muted);
-    background: transparent;
-    cursor: pointer;
-}
-
-.cn-props .cn-props__data-toggle:hover {
-    color: var(--cn-fg);
-    border-color: var(--cn-muted);
-}
-
-.cn-props .cn-props__data-toggle--active {
+/* 数据字段表达式态输入框描边（工单 02 落地、工单 06 保留）：取值方式切换已
+   升级为分段选择器（ValueTypeSegmented，tailwind 配方在组件模板），原 {{ }}
+   徽章令牌随控件退役。双类名选择器压过控件上的单类 tailwind border 色 */
+.cn-props .cn-field--expression {
     border-color: var(--cn-accent);
-    color: var(--cn-accent);
-    background: var(--cn-accent-soft);
 }
 
-/* pair 自适应 prefix 切换钮（工票 03）：与 data-toggle 同视觉语言的「自」字徽章。
+/* pair 自适应 prefix 切换钮（工票 03）：徽章方钮视觉语言（原 {{ }} 徽章钮同族，
+   该钮已于工单 06 升级为分段选择器）的「自」字徽章。
    双类名选择器压过控件上的单类 tailwind border 色，无需 !important */
 .cn-props .cn-props__auto-toggle {
     font-size: 9px;
@@ -113,8 +96,8 @@
     background: var(--cn-accent-soft);
 }
 
-/* 简写控件的模式循环钮（工单 04）：1/2/4 值模式单按钮循环，同 data-toggle /
-   auto-toggle 视觉语言的图标方钮。双类名选择器压过控件上的单类 tailwind
+/* 简写控件的模式循环钮（工单 04）：1/2/4 值模式单按钮循环，徽章方钮视觉语言
+   的图标方钮。双类名选择器压过控件上的单类 tailwind
    border 色，无需 !important */
 .cn-props .cn-props__mode-toggle {
     display: inline-flex;
@@ -139,10 +122,6 @@
    斜体 + 弱化提示（悬停有完整说明），与声明值一眼可辨 */
 .cn-props .cn-field--preview {
     font-style: italic;
-}
-
-.cn-props .cn-field--expression {
-    border-color: var(--cn-accent);
 }
 
 /* ---- 图层行卡片 + 根层拖拽把手（工单 08）----

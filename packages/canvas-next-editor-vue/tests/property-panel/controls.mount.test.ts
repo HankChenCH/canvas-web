@@ -26,6 +26,7 @@ import PairField from '../../src/property-panel/fields/PairField.vue'
 import SelectField from '../../src/property-panel/fields/SelectField.vue'
 import TextField from '../../src/property-panel/fields/TextField.vue'
 import TextareaField from '../../src/property-panel/fields/TextareaField.vue'
+import ValueTypeSegmented from '../../src/property-panel/fields/ValueTypeSegmented.vue'
 import type { FieldDef } from '../../src/property-panel/fieldSchema'
 
 const numField: FieldDef = { key: ['position', 'x'], label: 'X', control: 'number', integer: true }
@@ -244,6 +245,56 @@ describe('AlignField（对齐分段图标按钮组，layer-panel-ux 工单 05）
 
         await segments[1]!.trigger('click')
         expect(wrapper.emitted('change')!.at(-1)).toEqual(['end'])
+    })
+})
+
+describe('ValueTypeSegmented（valueType 分段选择器：静态 | 表达式，layer-panel-ux 工单 06）', () => {
+    it('渲染两段（静态 | 表达式），当前段 accent 高亮 + aria-pressed，容器带组语义', () => {
+        const wrapper = mount(ValueTypeSegmented, { props: { mode: 'static' } })
+        expect(wrapper.find('[role="group"][aria-label="取值方式"]').exists()).toBe(true)
+        const segments = wrapper.findAll('.cn-valuetype__option')
+        expect(segments).toHaveLength(2)
+        expect(segments[0]!.text()).toBe('静态')
+        expect(segments[1]!.text()).toBe('表达式')
+        expect(segments[0]!.classes()).toContain('cn-valuetype__option--active')
+        expect(segments[0]!.attributes('aria-pressed')).toBe('true')
+        expect(segments[1]!.attributes('aria-pressed')).toBe('false')
+        expect(segments[1]!.classes()).not.toContain('cn-valuetype__option--active')
+    })
+
+    it('表达式态：高亮与 aria-pressed 迁移到表达式段', () => {
+        const wrapper = mount(ValueTypeSegmented, { props: { mode: 'expression' } })
+        const segments = wrapper.findAll('.cn-valuetype__option')
+        expect(segments[1]!.classes()).toContain('cn-valuetype__option--active')
+        expect(segments[1]!.attributes('aria-pressed')).toBe('true')
+        expect(segments[0]!.attributes('aria-pressed')).toBe('false')
+    })
+
+    it('点击另一段发出 change（目标态）；点击当前段零事件（无冗余提交，不进历史）', async () => {
+        const wrapper = mount(ValueTypeSegmented, { props: { mode: 'static' } })
+        const segments = wrapper.findAll('.cn-valuetype__option')
+
+        await segments[1]!.trigger('click')
+        expect(wrapper.emitted('change')!.at(-1)).toEqual(['expression'])
+
+        // 面板回声：提交落文档后 mode 跟进（隔离挂载需手动模拟）
+        await wrapper.setProps({ mode: 'expression' })
+        await segments[1]!.trigger('click') // 已是当前态：不产生冗余提交
+        expect(wrapper.emitted('change')).toHaveLength(1)
+    })
+
+    it('两段各有悬停 tooltip：静态讲字面直显；表达式含插值子集说明（{{路径}} / {{$index}} / {{$root.*}}）', () => {
+        const wrapper = mount(ValueTypeSegmented, { props: { mode: 'static' } })
+        const titles = wrapper.findAll('.cn-valuetype__option').map((s) => s.attributes('title'))
+        expect(titles[0]).toContain('静态值')
+        expect(titles[0]).toContain('字面')
+        expect(titles[1]).toContain('表达式')
+        expect(titles[1]).toContain('{{路径}}')
+        expect(titles[1]).toContain('{{$index}}')
+        expect(titles[1]).toContain('{{$root.*}}')
+        // 未激活段带切换提示；激活段是当前态说明
+        expect(titles[1]).toContain('点击切换')
+        expect(titles[0]).not.toContain('点击切换')
     })
 })
 

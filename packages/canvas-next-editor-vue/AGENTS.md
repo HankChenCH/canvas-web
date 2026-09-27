@@ -5,7 +5,7 @@ Vue 3 薄绑定：composables 切片桥、画布表面组件、schema 驱动属�
 ## Layout（src 按领域分域，2026-09 起）
 
 - `src/canvas/` — 画布表面域：CanvasSurface（双层 canvas + 事件桥）与其内挂 overlay（TextEditingOverlay、ContextMenu）、gizmo 画笔、rAF 调度（scheduler）、DPR 桥（useDpr）、文本编辑切片（useTextEditing）。
-- `src/property-panel/` — 属性面板域：fieldSchema（字段描述注册表 + 领域类型）、PropertyPanel/PropertyField、controls（`<component :is>` 注册表）、controlStyles（Tailwind 类名常量，包内私有）、fontPicker 注入缝；`fields/` 收 11 个字段控件（经域内 barrel 供 controls 收集，不进包级公共出口）。
+- `src/property-panel/` — 属性面板域：fieldSchema（字段描述注册表 + 领域类型）、PropertyPanel/PropertyField、controls（`<component :is>` 注册表）、controlStyles（Tailwind 类名常量，包内私有）、fontPicker 注入缝；`fields/` 收字段控件与行内辅助件（注册表控件经域内 barrel 供 controls 收集；行内辅助件如 BorderWidthInput / ShorthandModeButton / ValueTypeSegmented 由消费方直引；均不进包级公共出口）。
 - `src/layer-panel/` — 图层面板域：LayerPanel + useLayerPanel。
 - `src/status-bar/` — 状态栏域：StatusBar + layerPathLabel（路径展示格式化）。
 - `src/shared/` — 跨域切片桥：useSelection / useViewport / useHistory / useShortcuts / editableTarget，

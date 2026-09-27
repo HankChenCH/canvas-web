@@ -10,6 +10,7 @@ import { mount } from '@vue/test-utils'
 
 import { EditorSession, type FrameScheduler, type Layer } from '@hankchen/canvas-next-editor'
 
+import { cellLayer, rowLayer, tableLayer } from '../../../canvas-next-editor/tests/support/fixtures'
 import PropertyField from '../../src/property-panel/PropertyField.vue'
 import PropertyPanel from '../../src/property-panel/PropertyPanel.vue'
 import NumberField from '../../src/property-panel/fields/NumberField.vue'
@@ -316,24 +317,27 @@ describe('位置与尺寸组（layer-panel-ux 工票 03：两列行 + auto prefi
     })
 })
 
-describe('数据字段取值方式切换（静态值/表达式，工单 02）', () => {
-    it('未选中：画布级字段组无取值方式切换钮', async () => {
+describe('数据字段取值方式分段选择器（静态 | 表达式，layer-panel-ux 工单 06）', () => {
+    it('未选中：画布级字段组无取值方式分段选择器', async () => {
         const editor = makeEditor([textLayer()])
         const wrapper = mount(PropertyPanel, { props: { editor } })
         await wrapper.vm.$nextTick()
-        expect(wrapper.find('.cn-props__data-toggle').exists()).toBe(false)
+        expect(wrapper.find('.cn-valuetype').exists()).toBe(false)
         wrapper.unmount()
     })
 
-    it('静态态：切换钮未激活，编辑走 updateData（保持未标记）', async () => {
+    it('静态态：两段渲染、静态段 accent 高亮，编辑走 updateData（保持未标记）', async () => {
         const editor = makeEditor([textLayer({ text: '甲' })])
         const wrapper = mount(PropertyPanel, { props: { editor } })
         editor.setSelection(['layers', 0])
         await wrapper.vm.$nextTick()
 
-        const chip = wrapper.find('.cn-props__data-toggle')
-        expect(chip.exists()).toBe(true)
-        expect(chip.classes()).not.toContain('cn-props__data-toggle--active')
+        const segments = wrapper.findAll('.cn-valuetype__option')
+        expect(segments).toHaveLength(2)
+        expect(segments[0]!.text()).toBe('静态')
+        expect(segments[1]!.text()).toBe('表达式')
+        expect(segments[0]!.classes()).toContain('cn-valuetype__option--active')
+        expect(segments[1]!.classes()).not.toContain('cn-valuetype__option--active')
         expect(wrapper.find('textarea.cn-field--expression').exists()).toBe(false)
 
         const area = wrapper.find('textarea')
@@ -345,14 +349,16 @@ describe('数据字段取值方式切换（静态值/表达式，工单 02）', 
         wrapper.unmount()
     })
 
-    it('表达式态：切换钮激活 + 输入框标识，编辑保持标记（镜像字面更新）', async () => {
+    it('表达式态：表达式段高亮 + 输入框标识，编辑保持标记（镜像字面更新）', async () => {
         const expression = '{{certCode}}'
         const editor = makeEditor([textLayer({ text: expression, expression })])
         const wrapper = mount(PropertyPanel, { props: { editor } })
         editor.setSelection(['layers', 0])
         await wrapper.vm.$nextTick()
 
-        expect(wrapper.find('.cn-props__data-toggle').classes()).toContain('cn-props__data-toggle--active')
+        const segments = wrapper.findAll('.cn-valuetype__option')
+        expect(segments[1]!.classes()).toContain('cn-valuetype__option--active')
+        expect(segments[0]!.classes()).not.toContain('cn-valuetype__option--active')
         expect(wrapper.find('textarea.cn-field--expression').exists()).toBe(true)
 
         const area = wrapper.find('textarea')
@@ -364,28 +370,95 @@ describe('数据字段取值方式切换（静态值/表达式，工单 02）', 
         wrapper.unmount()
     })
 
-    it('点击切换钮双向换态：表达式→静态字面接管，静态→表达式初值取当前字面', async () => {
+    it('点击分段双向换态：语义与升级前一致（各一步、不丢字面、undo 可回）', async () => {
         const expression = '{{certCode}}'
         const editor = makeEditor([textLayer({ text: expression, expression })])
         const wrapper = mount(PropertyPanel, { props: { editor } })
         editor.setSelection(['layers', 0])
         await wrapper.vm.$nextTick()
 
-        // 表达式 → 静态：字面接管
-        await wrapper.find('.cn-props__data-toggle').trigger('click')
+        // 表达式 → 静态：字面接管（一步历史）
+        await wrapper.findAll('.cn-valuetype__option')[0]!.trigger('click')
         let layer = editor.store.doc!.layers[0]!
         expect(layer.type === 'TextLayer' && layer.expression).toBeNull()
         expect(layer.type === 'TextLayer' && layer.text).toBe(expression)
+        expect(editor.store.history).toHaveLength(1)
         await wrapper.vm.$nextTick()
-        expect(wrapper.find('.cn-props__data-toggle').classes()).not.toContain('cn-props__data-toggle--active')
+        expect(wrapper.findAll('.cn-valuetype__option')[0]!.classes()).toContain('cn-valuetype__option--active')
 
-        // 静态 → 表达式：初值 = 当前字面（不自动包裹）
-        await wrapper.find('.cn-props__data-toggle').trigger('click')
+        // 静态 → 表达式：初值 = 当前字面（不自动包裹），undo 回静态再 redo 复原
+        await wrapper.findAll('.cn-valuetype__option')[1]!.trigger('click')
         layer = editor.store.doc!.layers[0]!
         expect(layer.type === 'TextLayer' && layer.expression).toBe(expression)
         expect(layer.type === 'TextLayer' && layer.text).toBe(expression)
+        expect(editor.store.history).toHaveLength(2)
+
+        editor.undo()
         await wrapper.vm.$nextTick()
-        expect(wrapper.find('.cn-props__data-toggle').classes()).toContain('cn-props__data-toggle--active')
+        layer = editor.store.doc!.layers[0]!
+        expect(layer.type === 'TextLayer' && layer.expression).toBeNull()
+        expect(wrapper.findAll('.cn-valuetype__option')[0]!.classes()).toContain('cn-valuetype__option--active')
+
+        editor.redo()
+        await wrapper.vm.$nextTick()
+        layer = editor.store.doc!.layers[0]!
+        expect(layer.type === 'TextLayer' && layer.expression).toBe(expression)
+        expect(wrapper.findAll('.cn-valuetype__option')[1]!.classes()).toContain('cn-valuetype__option--active')
+        wrapper.unmount()
+    })
+
+    it('点击当前态分段不产生冗余历史步', async () => {
+        const editor = makeEditor([textLayer({ expression: null })])
+        const wrapper = mount(PropertyPanel, { props: { editor } })
+        editor.setSelection(['layers', 0])
+        await wrapper.vm.$nextTick()
+
+        await wrapper.findAll('.cn-valuetype__option')[0]!.trigger('click') // 静态已是当前态
+        expect(editor.store.history).toHaveLength(0)
+        expect(editor.store.doc!.layers[0]!.type === 'TextLayer' && editor.store.doc!.layers[0]!.expression).toBeNull()
+        wrapper.unmount()
+    })
+
+    it('三内容层对称：text/src/value 行都带分段选择器', async () => {
+        const editor = makeEditor([
+            textLayer(),
+            { ...textLayer(), type: 'ImageLayer', src: null } as Layer,
+            { ...textLayer(), type: 'QrCodeLayer', value: '甲' } as Layer,
+        ])
+        const wrapper = mount(PropertyPanel, { props: { editor } })
+
+        editor.setSelection(['layers', 0])
+        await wrapper.vm.$nextTick()
+        expect(wrapper.find('.cn-valuetype').exists()).toBe(true)
+
+        editor.setSelection(['layers', 1])
+        await wrapper.vm.$nextTick()
+        expect(wrapper.find('.cn-valuetype').exists()).toBe(true)
+
+        editor.setSelection(['layers', 2])
+        await wrapper.vm.$nextTick()
+        expect(wrapper.find('.cn-valuetype').exists()).toBe(true)
+        wrapper.unmount()
+    })
+
+    it('格内容层路径生效、行模板子树不渲染（现状保持）', async () => {
+        // 共享造数器（包 AGENTS.md：跨包 fixture 经 ../../.. 取 canvas-next-editor tests/support）
+        const table = tableLayer([
+            rowLayer([cellLayer(textLayer({ text: '姓名：{{row.name}}', expression: null }))]),
+        ])
+        const editor = makeEditor([table])
+        const wrapper = mount(PropertyPanel, { props: { editor } })
+
+        // 格内容层：数据字段 + 分段选择器在场
+        editor.setSelection(['layers', 0, 'rows', 0, 'cells', 0, 'content'])
+        await wrapper.vm.$nextTick()
+        expect(wrapper.find('.cn-valuetype').exists()).toBe(true)
+        expect(wrapper.find('textarea').exists()).toBe(true)
+
+        // 表格根层无数据字段：无分段选择器（行模板子树本就无字段组，schema 层已锁）
+        editor.setSelection(['layers', 0])
+        await wrapper.vm.$nextTick()
+        expect(wrapper.find('.cn-valuetype').exists()).toBe(false)
         wrapper.unmount()
     })
 })
