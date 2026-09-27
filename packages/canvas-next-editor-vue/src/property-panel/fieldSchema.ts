@@ -31,6 +31,7 @@ export type FieldControl =
     | 'boolean'
     | 'pair'
     | 'anchor'
+    | 'align'
     | 'padding'
     | 'border'
     | 'font'
@@ -145,8 +146,10 @@ const POSITION_SECTION: FieldSection = {
 const ALIGN_SECTION: FieldSection = {
     title: '对齐',
     fields: [
-        { key: ['align', 'horizontal'], label: '水平', control: 'select', domain: HORIZONTAL_ALIGNS },
-        { key: ['align', 'vertical'], label: '垂直', control: 'select', domain: VERTICAL_ALIGNS },
+        // 分段图标按钮组（工单 05）：水平（左/中/右）、垂直（上/中/下）各一排。
+        // 值域（领域常量）与提交管线不变——一次点击 = change 收口 = 一步历史
+        { key: ['align', 'horizontal'], label: '水平', control: 'align', domain: HORIZONTAL_ALIGNS },
+        { key: ['align', 'vertical'], label: '垂直', control: 'align', domain: VERTICAL_ALIGNS },
     ],
 }
 

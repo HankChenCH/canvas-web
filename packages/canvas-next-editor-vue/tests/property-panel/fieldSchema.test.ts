@@ -136,6 +136,22 @@ describe('type 标识 ↔ 注册表映射', () => {
         expect(ANCHORS).toHaveLength(9)
         expect(VERTICAL_ALIGNS).toEqual(['top', 'center', 'bottom'])
     })
+
+    it('对齐两字段注册为分段图标控件（工单 05：不再走 select 下拉），值域不变', () => {
+        const find = (type: LayerType): { horizontal: FieldDef; vertical: FieldDef } => {
+            const fields = flatFields(fieldSectionsForType(type))
+            return {
+                horizontal: fields.find((f) => f.key.join('.') === 'align.horizontal')!,
+                vertical: fields.find((f) => f.key.join('.') === 'align.vertical')!,
+            }
+        }
+        for (const type of ['ImageLayer', 'TextLayer', 'QrCodeLayer', 'TableLayer', 'TableRowLayer', 'TableCellLayer'] as const) {
+            const { horizontal, vertical } = find(type)
+            expect([type, horizontal.control, vertical.control]).toEqual([type, 'align', 'align'])
+        }
+        expect(find('TextLayer').horizontal.domain).toEqual(HORIZONTAL_ALIGNS)
+        expect(find('TextLayer').vertical.domain).toEqual(VERTICAL_ALIGNS)
+    })
 })
 
 describe('权威字段过滤（visibleWhen：注册表有、当前层不可编辑）', () => {

@@ -12,6 +12,7 @@
 import { markRaw, type Component } from 'vue'
 
 import type { FieldControl } from './fieldSchema'
+import AlignField from './fields/AlignField.vue'
 import AnchorDisclosureField from './fields/AnchorDisclosureField.vue'
 import BooleanField from './fields/BooleanField.vue'
 import BorderField from './fields/BorderField.vue'
@@ -33,6 +34,7 @@ export const controlRegistry: Record<FieldControl, Component> = {
     boolean: markRaw(BooleanField),
     pair: markRaw(PairField),
     anchor: markRaw(AnchorDisclosureField),
+    align: markRaw(AlignField),
     padding: markRaw(PaddingField),
     border: markRaw(BorderField),
     font: markRaw(FontField),

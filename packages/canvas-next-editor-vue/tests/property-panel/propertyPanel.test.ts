@@ -77,6 +77,7 @@ describe('PropertyField：<component :is> 注册表分发', () => {
             'boolean',
             'pair',
             'anchor',
+            'align',
             'padding',
             'border',
         ]
@@ -385,6 +386,76 @@ describe('数据字段取值方式切换（静态值/表达式，工单 02）', 
         expect(layer.type === 'TextLayer' && layer.text).toBe(expression)
         await wrapper.vm.$nextTick()
         expect(wrapper.find('.cn-props__data-toggle').classes()).toContain('cn-props__data-toggle--active')
+        wrapper.unmount()
+    })
+})
+
+describe('对齐分段图标按钮组（layer-panel-ux 工单 05：两排分段替代 select 下拉）', () => {
+    async function mountWithSelection(layers: readonly Layer[]) {
+        const editor = makeEditor(layers)
+        const wrapper = mount(PropertyPanel, { props: { editor } })
+        editor.setSelection(['layers', 0])
+        await wrapper.vm.$nextTick()
+        return { editor, wrapper }
+    }
+
+    it('对齐 section 渲染两排分段组（水平/垂直各 3 枚图标钮），无 select 下拉', async () => {
+        const { wrapper } = await mountWithSelection([textLayer()])
+        const groups = wrapper.findAll('.cn-align')
+        expect(groups).toHaveLength(2)
+        expect(groups[0]!.attributes('aria-label')).toBe('水平')
+        expect(groups[1]!.attributes('aria-label')).toBe('垂直')
+        for (const group of groups) {
+            expect(group.findAll('.cn-align__option')).toHaveLength(3)
+            expect(group.findAll('.cn-align__option svg')).toHaveLength(3)
+        }
+        expect(wrapper.find('select').exists()).toBe(false)
+        wrapper.unmount()
+    })
+
+    it('一次点击精准切换：提交正确枚举值（updateSpec 管线），一步历史', async () => {
+        const { editor, wrapper } = await mountWithSelection([textLayer()])
+        const groups = wrapper.findAll('.cn-align')
+
+        // 水平 → 右
+        await groups[0]!.findAll('.cn-align__option')[2]!.trigger('click')
+        let layer = editor.store.doc!.layers[0]!
+        expect(layer.type === 'TextLayer' && layer.align.horizontal).toBe('right')
+        expect(editor.store.history).toHaveLength(1)
+
+        // 垂直 → 底（另一轴独立提交，互不合并）
+        await groups[1]!.findAll('.cn-align__option')[2]!.trigger('click')
+        layer = editor.store.doc!.layers[0]!
+        expect(layer.type === 'TextLayer' && layer.align.vertical).toBe('bottom')
+        expect(editor.store.history).toHaveLength(2)
+        wrapper.unmount()
+    })
+
+    it('点击已选中分段不产生冗余历史步', async () => {
+        const { editor, wrapper } = await mountWithSelection([textLayer()])
+        await wrapper.findAll('.cn-align')[0]!.findAll('.cn-align__option')[0]!.trigger('click') // 水平已是 left
+        expect(editor.store.history).toHaveLength(0)
+        wrapper.unmount()
+    })
+
+    it('选中态渲染跟随文档值：提交后高亮迁移，undo 回归到旧值高亮', async () => {
+        const { editor, wrapper } = await mountWithSelection([textLayer()])
+        const segments = () => wrapper.findAll('.cn-align')[1]!.findAll('.cn-align__option')
+        const activeTitle = () =>
+            segments()
+                .find((s) => s.classes().includes('cn-align__option--active'))
+                ?.attributes('title')
+        expect(activeTitle()).toBe('垂直：顶对齐')
+
+        await segments()[2]!.trigger('click') // 垂直 → 底
+        await wrapper.vm.$nextTick()
+        expect(editor.store.doc!.layers[0]!.type === 'TextLayer' && editor.store.doc!.layers[0]!.align.vertical).toBe('bottom')
+        expect(activeTitle()).toBe('垂直：底对齐')
+
+        editor.undo() // 回归：撤销一步，文档与高亮同步复原
+        await wrapper.vm.$nextTick()
+        expect(editor.store.doc!.layers[0]!.type === 'TextLayer' && editor.store.doc!.layers[0]!.align.vertical).toBe('top')
+        expect(activeTitle()).toBe('垂直：顶对齐')
         wrapper.unmount()
     })
 })

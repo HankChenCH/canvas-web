@@ -7,8 +7,14 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 
-import type { Border, Padding } from '@hankchen/canvas-next-editor'
+import {
+    HORIZONTAL_ALIGNS,
+    VERTICAL_ALIGNS,
+    type Border,
+    type Padding,
+} from '@hankchen/canvas-next-editor'
 
+import AlignField from '../../src/property-panel/fields/AlignField.vue'
 import AnchorDisclosureField from '../../src/property-panel/fields/AnchorDisclosureField.vue'
 import BooleanField from '../../src/property-panel/fields/BooleanField.vue'
 import BorderField from '../../src/property-panel/fields/BorderField.vue'
@@ -162,6 +168,82 @@ describe('SelectField', () => {
 
         await wrapper.find('select').setValue('center')
         expect(wrapper.emitted('change')!.at(-1)).toEqual(['center'])
+    })
+})
+
+describe('AlignField（对齐分段图标按钮组，layer-panel-ux 工单 05）', () => {
+    const hField: FieldDef = {
+        key: ['align', 'horizontal'],
+        label: '水平',
+        control: 'align',
+        domain: HORIZONTAL_ALIGNS,
+    }
+    const vField: FieldDef = {
+        key: ['align', 'vertical'],
+        label: '垂直',
+        control: 'align',
+        domain: VERTICAL_ALIGNS,
+    }
+
+    it('按 domain 渲染分段（水平 3 枚），每枚是带图标的按钮，无 select 下拉', () => {
+        const wrapper = mount(AlignField, { props: { field: hField, modelValue: 'left' } })
+        const segments = wrapper.findAll('.cn-align__option')
+        expect(segments).toHaveLength(3)
+        expect(segments.every((s) => s.find('svg').exists())).toBe(true)
+        expect(wrapper.find('select').exists()).toBe(false)
+    })
+
+    it('选中态 accent 高亮：aria-pressed 与激活类只落在当前值分段上', () => {
+        const wrapper = mount(AlignField, { props: { field: hField, modelValue: 'center' } })
+        const segments = wrapper.findAll('.cn-align__option')
+        expect(segments[0]!.attributes('aria-pressed')).toBe('false')
+        expect(segments[1]!.attributes('aria-pressed')).toBe('true')
+        expect(segments[1]!.classes()).toContain('cn-align__option--active')
+        expect(segments[0]!.classes()).not.toContain('cn-align__option--active')
+        expect(segments[2]!.classes()).not.toContain('cn-align__option--active')
+    })
+
+    it('一次点击精准切换：change 发出所选枚举值；点击已选中分段不重复提交', async () => {
+        const wrapper = mount(AlignField, { props: { field: hField, modelValue: 'left' } })
+        const segments = wrapper.findAll('.cn-align__option')
+
+        await segments[2]!.trigger('click')
+        expect(wrapper.emitted('change')!.at(-1)).toEqual(['right'])
+
+        // 面板回声：提交落文档后 modelValue 跟进（隔离挂载需手动模拟）
+        await wrapper.setProps({ modelValue: 'right' })
+        await segments[2]!.trigger('click') // 已是当前值：不产生冗余提交（不进历史）
+        expect(wrapper.emitted('change')).toHaveLength(1)
+    })
+
+    it('悬停文案按轴区分：水平左/中/右、垂直上/中/下', () => {
+        const h = mount(AlignField, { props: { field: hField, modelValue: 'left' } })
+        const hTitles = h.findAll('.cn-align__option').map((s) => s.attributes('title'))
+        expect(hTitles).toEqual(['水平：左对齐', '水平：居中对齐', '水平：右对齐'])
+
+        const v = mount(AlignField, { props: { field: vField, modelValue: 'top' } })
+        const vTitles = v.findAll('.cn-align__option').map((s) => s.attributes('title'))
+        expect(vTitles).toEqual(['垂直：顶对齐', '垂直：居中对齐', '垂直：底对齐'])
+    })
+
+    it('垂直轴渲染 top/center/bottom 三分段且选中态跟随', () => {
+        const wrapper = mount(AlignField, { props: { field: vField, modelValue: 'bottom' } })
+        const segments = wrapper.findAll('.cn-align__option')
+        expect(segments).toHaveLength(3)
+        expect(segments[2]!.attributes('aria-pressed')).toBe('true')
+        expect(segments[2]!.classes()).toContain('cn-align__option--active')
+    })
+
+    it('未知取值域退化为文字分段（注册表宽容口的控件侧对位）', async () => {
+        const field: FieldDef = { key: ['align', 'horizontal'], label: '水平', control: 'align', domain: ['start', 'end'] }
+        const wrapper = mount(AlignField, { props: { field, modelValue: 'start' } })
+        const segments = wrapper.findAll('.cn-align__option')
+        expect(segments).toHaveLength(2)
+        expect(segments.every((s) => !s.find('svg').exists())).toBe(true)
+        expect(segments[0]!.text()).toBe('start')
+
+        await segments[1]!.trigger('click')
+        expect(wrapper.emitted('change')!.at(-1)).toEqual(['end'])
     })
 })
 
