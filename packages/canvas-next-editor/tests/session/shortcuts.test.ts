@@ -61,6 +61,12 @@ describe('classifyEditorShortcut：缺省注册表（excalidraw 惯例、v1 单�
         expect(classifyEditorShortcut(input({ key: 'Delete', mod: true }))).toBeNull()
     })
 
+    it('重命名：F2（无修饰键；key 大小写归一后匹配）', () => {
+        expect(classifyEditorShortcut(input({ key: 'F2', mod: false, shift: false }))).toBe('rename')
+        expect(classifyEditorShortcut(input({ key: 'F2', mod: true, shift: false }))).toBeNull()
+        expect(classifyEditorShortcut(input({ key: 'F2', mod: false, shift: true }))).toBeNull()
+    })
+
     it('key 大小写归一（大写锁定/Shift 折算后匹配）', () => {
         expect(classifyEditorShortcut(input({ key: 'Z', mod: true, shift: false }))).toBe('undo')
         expect(classifyEditorShortcut(input({ key: 'C', mod: true, shift: false }))).toBe('copy')
@@ -160,5 +166,14 @@ describe('executeShortcut：action → 会话动作分派', () => {
         expect(action).toBeNull()
         expect(session.store.doc!.layers).toHaveLength(1)
         expect(session.store.ui.editing).not.toBeNull()
+    })
+
+    it('端到端：F2 分类为 rename 分派开重命名会话（工单 09）', () => {
+        const session = makeSession()
+        session.setSelection(['layers', 0])
+        const action = classifyEditorShortcut(input({ key: 'F2', mod: false, shift: false }))
+        expect(action).toBe('rename')
+        expect(session.executeShortcut(action!)).toBe(true)
+        expect(session.store.ui.renaming).toEqual(['layers', 0])
     })
 })

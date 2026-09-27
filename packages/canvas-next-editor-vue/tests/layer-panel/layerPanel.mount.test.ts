@@ -332,3 +332,148 @@ describe('LayerPanel：行卡片化 + 拖拽把手（工单 08）', () => {
         wrapper.unmount()
     })
 })
+
+describe('LayerPanel：行内重命名（工单 09）', () => {
+    it('labelFor：根层 name 非空显示 name，空串回退派生标签（type 计数逻辑不动）', () => {
+        const editor = makeEditor([textLayer(30, '底'), { ...textLayer(10, '顶'), name: '封面标题' }])
+        const wrapper = mount(LayerPanel, { props: { editor } })
+        // 面板序：顶（已命名 → 封面标题）、底（未命名 → 派生；同类计数含已命名层）
+        expect(rowLabels(wrapper)).toEqual(['封面标题', 'TextLayer 2'])
+        wrapper.unmount()
+    })
+
+    it('双击行标签进入行内编辑：input 覆盖标签、初值 = 显示标签、自动聚焦全选', async () => {
+        const editor = makeEditor([textLayer(30, '底'), { ...textLayer(10, '顶'), name: '封面标题' }])
+        // attachTo：focus/activeElement 只对已入文档的元素生效（textEditingOverlay 同款）
+        const wrapper = mount(LayerPanel, { props: { editor }, attachTo: document.body })
+
+        await wrapper.findAll('.cn-layers__label')[0]!.trigger('dblclick')
+        // 第二拍：renaming watch 的 nextTick 聚焦（TextEditingOverlay 同款时序）
+        await wrapper.vm.$nextTick()
+        const input = wrapper.find('[data-rename-input]')
+        expect(input.exists()).toBe(true)
+        expect((input.element as HTMLInputElement).value).toBe('封面标题')
+        expect(document.activeElement).toBe(input.element)
+        expect((input.element as HTMLInputElement).selectionEnd).toBe('封面标题'.length) // 全选
+        wrapper.unmount()
+    })
+
+    it('Enter 提交：name 落文档 = 一步历史，input 卸载、标签显示新名，undo 可撤销', async () => {
+        const editor = makeEditor([textLayer(10, '顶')])
+        const wrapper = mount(LayerPanel, { props: { editor } })
+
+        await wrapper.findAll('.cn-layers__label')[0]!.trigger('dblclick')
+        const input = wrapper.find('[data-rename-input]')
+        await input.setValue('主标题')
+        await input.trigger('keydown', { key: 'Enter' })
+
+        expect(editor.store.doc!.layers[0]!.name).toBe('主标题')
+        expect(editor.store.history).toHaveLength(1)
+        expect(wrapper.find('[data-rename-input]').exists()).toBe(false)
+        expect(rowLabels(wrapper)).toEqual(['主标题'])
+
+        editor.undo()
+        await wrapper.vm.$nextTick()
+        expect(editor.store.doc!.layers[0]!.name).toBe('')
+        expect(rowLabels(wrapper)).toEqual(['TextLayer 1'])
+        wrapper.unmount()
+    })
+
+    it('Esc 取消：不落文档、无历史步、标签不变、input 卸载', async () => {
+        const editor = makeEditor([textLayer(10, '顶')])
+        const wrapper = mount(LayerPanel, { props: { editor } })
+
+        await wrapper.findAll('.cn-layers__label')[0]!.trigger('dblclick')
+        const input = wrapper.find('[data-rename-input]')
+        await input.setValue('改一半')
+        await input.trigger('keydown', { key: 'Escape' })
+
+        expect(editor.store.doc!.layers[0]!.name).toBe('')
+        expect(editor.store.history).toHaveLength(0)
+        expect(wrapper.find('[data-rename-input]').exists()).toBe(false)
+        expect(rowLabels(wrapper)).toEqual(['TextLayer 1'])
+        wrapper.unmount()
+    })
+
+    it('未命名层打开编辑未改字直接提交：退化为取消——不落 name 键、无历史步（用户重命名才落键）', async () => {
+        const editor = makeEditor([textLayer(10, '顶')])
+        const wrapper = mount(LayerPanel, { props: { editor } })
+
+        await wrapper.findAll('.cn-layers__label')[0]!.trigger('dblclick')
+        const input = wrapper.find('[data-rename-input]')
+        expect((input.element as HTMLInputElement).value).toBe('TextLayer 1') // 初值 = 派生标签
+        await input.trigger('keydown', { key: 'Enter' })
+
+        expect(editor.store.doc!.layers[0]!.name).toBe('')
+        expect(editor.store.history).toHaveLength(0)
+        expect(wrapper.find('[data-rename-input]').exists()).toBe(false)
+        expect(rowLabels(wrapper)).toEqual(['TextLayer 1'])
+
+        // 失焦路径同语义：blur 提交与基线一致同样空转
+        await wrapper.findAll('.cn-layers__label')[0]!.trigger('dblclick')
+        await wrapper.find('[data-rename-input]').trigger('blur')
+        expect(editor.store.doc!.layers[0]!.name).toBe('')
+        expect(editor.store.history).toHaveLength(0)
+        wrapper.unmount()
+    })
+
+    it('空名提交回退派生标签：name 归空串（不落键的缺省态）', async () => {
+        const editor = makeEditor([{ ...textLayer(10, '顶'), name: '封面标题' }])
+        const wrapper = mount(LayerPanel, { props: { editor } })
+
+        await wrapper.findAll('.cn-layers__label')[0]!.trigger('dblclick')
+        const input = wrapper.find('[data-rename-input]')
+        await input.setValue('')
+        await input.trigger('keydown', { key: 'Enter' })
+
+        expect(editor.store.doc!.layers[0]!.name).toBe('')
+        expect(rowLabels(wrapper)).toEqual(['TextLayer 1'])
+        wrapper.unmount()
+    })
+
+    it('失焦提交：blur 落文档（与 Enter 同一漏斗，恰一步历史）', async () => {
+        const editor = makeEditor([textLayer(10, '顶')])
+        const wrapper = mount(LayerPanel, { props: { editor } })
+
+        await wrapper.findAll('.cn-layers__label')[0]!.trigger('dblclick')
+        const input = wrapper.find('[data-rename-input]')
+        await input.setValue('失焦提交的名')
+        await input.trigger('blur')
+
+        expect(editor.store.doc!.layers[0]!.name).toBe('失焦提交的名')
+        expect(editor.store.history).toHaveLength(1)
+        wrapper.unmount()
+    })
+
+    it('hover 铅笔仅根层：点击进入行内编辑；行/格无铅笔、双击标签不开会话', async () => {
+        const editor = makeEditor([textLayer(30, '底'), tableLayer([rowLayer(30), rowLayer(20)])])
+        const wrapper = mount(LayerPanel, { props: { editor } })
+        const rows = wrapper.findAll('.cn-layers__row')
+        expect(wrapper.findAll('[data-rename]')).toHaveLength(2) // 两个根层行
+        expect(rows[1]!.find('[data-rename]').exists()).toBe(false)
+        expect(rows[2]!.find('[data-rename]').exists()).toBe(false)
+
+        // 行/格双击标签不开重命名会话
+        await rows[1]!.find('.cn-layers__label').trigger('dblclick')
+        expect(wrapper.find('[data-rename-input]').exists()).toBe(false)
+
+        // 铅笔点击进入编辑
+        await rows[0]!.find('[data-rename]').trigger('click')
+        expect(wrapper.find('[data-rename-input]').exists()).toBe(true)
+        wrapper.unmount()
+    })
+
+    it('F2：选中根层后经注册表分派（executeShortcut）开会话——与 useShortcuts 同一入口', async () => {
+        const editor = makeEditor([textLayer(30, '底'), textLayer(10, '顶')])
+        const wrapper = mount(LayerPanel, { props: { editor } })
+
+        editor.setSelection(['layers', 0]) // 底 = 面板底行（面板顶 = 数组尾）
+        editor.executeShortcut('rename')
+        await wrapper.vm.$nextTick()
+
+        const input = wrapper.find('[data-rename-input]')
+        expect(input.exists()).toBe(true)
+        expect((input.element as HTMLInputElement).value).toBe('TextLayer 2') // 初值 = 派生标签
+        wrapper.unmount()
+    })
+})

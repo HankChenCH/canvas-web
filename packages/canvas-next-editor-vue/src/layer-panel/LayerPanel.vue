@@ -3,7 +3,9 @@
  * <LayerPanel>：图层面板（工单 10/12）——树形大纲（根层 = 视觉逆序，表格三层
  * 嵌套展开）、拖动重排（根层走 priority 中点插值 / 行格直接改数组序，两套语义
  * 分立；行可跨表、格可跨行——跨容器落点走内核重建路径同步尺寸）、增删（新增
- * 置顶 min−1、加行/加格走重建路径、删除含子树）、点选/悬停与画布双向联动。
+ * 置顶 min−1、加行/加格走重建路径、删除含子树）、点选/悬停与画布双向联动、
+ * 根层行内重命名（工单 09：双击/hover 铅笔/F2 开会话，Enter·失焦提交、Esc
+ * 取消，会话与漏斗在内核 ui 分支）。
  * 视觉沿用 .cn-props 主题命名空间（与属性面板同一套设计令牌）；行卡片化 +
  * 根层拖拽把手见 panel-theme.css 的 cn-layers 区块（工单 08）。
  *
@@ -14,9 +16,9 @@
  * （同表重排/跨表移动内核自动分流），格落点 = 任意格节点（同行重排/跨行移动
  * 同款）。内核对原位/相邻落点自动空转（无历史步）。
  */
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref, watch, type ComponentPublicInstance } from 'vue'
 
-import { GripVertical } from '@lucide/vue'
+import { GripVertical, Pencil } from '@lucide/vue'
 
 import {
     pathsEqual,
@@ -52,11 +54,15 @@ const ADD_TYPES: readonly { type: LayerType; label: string; title: string }[] = 
     { type: 'TableLayer', label: '表', title: '新增表格层' },
 ]
 
-/** 显示名：根层 = type + 同类序号（graph 无 name 字段）；行/格 = 容器内序号；内容 = type */
+/**
+ * 显示名（工单 09）：根层 name 非空上屏、空串回退派生标签（`TextLayer 1` 式，
+ * 同类计数只数根层出现序，与命名与否无关——计数逻辑不动）；行/格 = 容器内序号；
+ * 内容 = type。
+ */
 function labelFor(node: LayerOutlineNode, typeOrdinal: number): string {
     switch (node.role) {
         case 'root':
-            return `${node.type} ${typeOrdinal}`
+            return node.name !== '' ? node.name : `${node.type} ${typeOrdinal}`
         case 'row':
             return `行 ${Number(node.path[node.path.length - 1]) + 1}`
         case 'cell':
@@ -220,6 +226,71 @@ function isSelected(row: FlatRow): boolean {
 function isHovered(row: FlatRow): boolean {
     return pathsEqual(panel.hovered.value, row.node.path)
 }
+
+// ---- 行内重命名（工单 09：仅根层；会话与提交漏斗都在内核 ui 分支） ----
+
+/** 重命名输入框的草稿文本（住组件，提交才落内核——逐键不入历史） */
+const renameDraft = ref('')
+
+/**
+ * 会话开启时的草稿基线（开启时点的显示标签）：提交值与基线一致 = 未改名，
+ * 退化为取消语义（不落 name 键、不进历史）——未命名层草稿初值是派生标签，
+ * 直接回车不得把派生标签固化为 name（spec §2.2：用户重命名才落键）。
+ */
+let renameBaseline: string | null = null
+
+/** 行内输入框元素记录（函数 ref；聚焦走 renaming watch 的 nextTick，见下） */
+let renameInputEl: HTMLInputElement | null = null
+
+function setRenameInputEl(el: Element | ComponentPublicInstance | null): void {
+    renameInputEl = el instanceof HTMLInputElement ? el : null
+}
+
+function isRenaming(row: FlatRow): boolean {
+    return pathsEqual(panel.renaming.value, row.node.path)
+}
+
+function startRename(row: FlatRow): void {
+    if (!isRootRow(row)) return
+    props.editor.beginRename(row.node.path)
+}
+
+/** 提交（Enter/失焦共用）：trim 后空串 = 回退派生标签的缺省态；与基线一致 = 未改名取消 */
+function commitRename(): void {
+    const value = renameDraft.value.trim()
+    if (renameBaseline !== null && value === renameBaseline.trim()) {
+        props.editor.cancelRename()
+        return
+    }
+    props.editor.commitRename(value)
+}
+
+function cancelRename(): void {
+    props.editor.cancelRename()
+}
+
+/**
+ * 会话入口统一初始化（TextEditingOverlay 同款 watch + nextTick 聚焦模式）：
+ * 草稿初值 = 当前显示标签（未命名即派生标签，全选后首键即替换）——双击/铅笔/
+ * F2 三入口与外部直接 beginRename 都收敛到这一处；非根层路径不会被内核接受，
+ * 找不到行时草稿置空兜底。聚焦延到元素插入后（ref 回调时点尚未入文档，
+ * focus 静默无效）；preventScroll 防长列表定位拽动面板。
+ */
+watch(panel.renaming, async (path) => {
+    if (path === null) {
+        renameBaseline = null
+        return
+    }
+    const row = flatRows.value.find((candidate) => pathsEqual(candidate.node.path, path))
+    renameDraft.value = row?.label ?? ''
+    renameBaseline = renameDraft.value
+    await nextTick()
+    const el = renameInputEl
+    if (el) {
+        el.focus({ preventScroll: true })
+        el.select()
+    }
+})
 </script>
 
 <template>
@@ -280,9 +351,36 @@ function isHovered(row: FlatRow): boolean {
                 >
                     <PanelIcon :icon="GripVertical" :size="12" :stroke-width="2.5" />
                 </span>
-                <span class="cn-layers__label min-w-0 flex-1 truncate font-mono text-[11px] leading-4">
+                <input
+                    v-if="isRenaming(row)"
+                    :ref="setRenameInputEl"
+                    v-model="renameDraft"
+                    data-rename-input
+                    aria-label="图层重命名"
+                    class="cn-layers__rename-input min-w-0 flex-1"
+                    @click.stop
+                    @dblclick.stop
+                    @keydown.enter.prevent="commitRename()"
+                    @keydown.esc.prevent="cancelRename()"
+                    @blur="commitRename()"
+                />
+                <span
+                    v-else
+                    class="cn-layers__label min-w-0 flex-1 truncate font-mono text-[11px] leading-4"
+                    @dblclick="startRename(row)"
+                >
                     {{ row.label }}
                 </span>
+                <button
+                    v-if="isRootRow(row)"
+                    type="button"
+                    data-rename
+                    class="cn-layers__delete hidden size-5 shrink-0 items-center justify-center rounded text-cn-muted hover:bg-cn-accent/15 hover:text-cn-accent group-hover:flex"
+                    title="重命名（双击名称或 F2）"
+                    @click.stop="startRename(row)"
+                >
+                    <PanelIcon :icon="Pencil" :size="11" :stroke-width="2" />
+                </button>
                 <button
                     v-if="row.node.role === 'root' && row.node.type === 'TableLayer'"
                     type="button"

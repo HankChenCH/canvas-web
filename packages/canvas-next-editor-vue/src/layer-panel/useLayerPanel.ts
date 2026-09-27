@@ -4,8 +4,9 @@
  *
  * - outline：面板大纲（内核 buildLayerOutline 的 computed 投影：根层逆序 =
  *   视觉顶在先，表格行/格保持数组序）。文档任意变更重算（图元量级小，O(n) 可忽略）。
- * - selection/hovered：与画布命中共享同一 ui 分支——面板点选与画布点选同源，
- *   面板行高亮即画布 gizmo 选中态的镜像。
+ * - selection/hovered/renaming：与画布命中共享同一 ui 分支——面板点选与画布点选
+ *   同源，面板行高亮即画布 gizmo 选中态的镜像；renaming 是行内重命名会话
+ *   （工单 09，beginRename/commitRename 漏斗在内核）。
  * - 拖放落点判定的纯函数面（isUpperHalf/dropTargetIndex）随桥导出供单测。
  */
 import { computed, onScopeDispose, shallowRef, type ComputedRef } from 'vue'
@@ -22,17 +23,21 @@ export interface LayerPanelBinding {
     readonly outline: ComputedRef<readonly LayerOutlineNode[]>
     readonly selection: ComputedRef<LayerPath | null>
     readonly hovered: ComputedRef<LayerPath | null>
+    /** 重命名会话（工单 09）：正在行内改名的根层路径；null = 非编辑态 */
+    readonly renaming: ComputedRef<LayerPath | null>
 }
 
 export function useLayerPanel(editor: EditorSession): LayerPanelBinding {
     const doc = shallowRef<Canvas | null>(editor.store.doc)
     const selection = shallowRef<LayerPath | null>(editor.store.ui.selection)
     const hovered = shallowRef<LayerPath | null>(editor.store.ui.hovered)
+    const renaming = shallowRef<LayerPath | null>(editor.store.ui.renaming)
 
     const unsubscribe = editor.subscribe((change) => {
         if (change.scope === 'doc') doc.value = editor.store.doc
         else if (change.branch === 'selection') selection.value = editor.store.ui.selection
         else if (change.branch === 'hovered') hovered.value = editor.store.ui.hovered
+        else if (change.branch === 'renaming') renaming.value = editor.store.ui.renaming
     })
     // failSilently：测试可在无 effect scope 的环境调用
     onScopeDispose(unsubscribe, true)
@@ -43,6 +48,7 @@ export function useLayerPanel(editor: EditorSession): LayerPanelBinding {
         outline,
         selection: computed(() => selection.value),
         hovered: computed(() => hovered.value),
+        renaming: computed(() => renaming.value),
     }
 }
 

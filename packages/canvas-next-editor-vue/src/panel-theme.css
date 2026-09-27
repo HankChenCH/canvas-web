@@ -195,3 +195,17 @@
 .cn-props .cn-layers__handle:active {
     cursor: grabbing;
 }
+
+/* 行内重命名输入框（工单 09）：覆盖行标签同槽（flex-1 由模板 utility 承担）——
+   accent 描边 + 抬升底色标识编辑态，字号/字族与 .cn-layers__label 对齐 */
+.cn-props .cn-layers__rename-input {
+    padding: 0 3px;
+    font-family: var(--cn-font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    color: var(--cn-fg);
+    background-color: var(--cn-bg-elevated);
+    border: 1px solid var(--cn-accent);
+    border-radius: 3px;
+    outline: none;
+}

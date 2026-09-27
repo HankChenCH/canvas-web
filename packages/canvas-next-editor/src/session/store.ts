@@ -53,6 +53,12 @@ export interface EditorUi {
     /** 进行中的文本编辑会话；null = 非编辑态 */
     editing: TextEditingSession | null
     /**
+     * 重命名编辑会话（layer-panel-ux 工单 09）：正在行内改名的根层路径。与
+     * editing 同款会话语义——住 ui 分支不进历史，提交经 commitRename 漏斗一次
+     * 落文档；null = 非重命名态。
+     */
+    renaming: LayerPath | null
+    /**
      * 属性面板锚点折叠区开合（layer-panel-ux 工票 03）：默认收起，会话内记忆
      * （与 viewport 同款的面板偏好——openDocument 换文档不重置，永不进历史）。
      */
@@ -92,6 +98,7 @@ export class EditorStore {
         hovered: null,
         drag: null,
         editing: null,
+        renaming: null,
         anchorExpanded: false,
     }
     /** undo 栈：已提交步，栈尾最新 */
@@ -121,12 +128,12 @@ export class EditorStore {
         return this.redoSteps.length > 0
     }
 
-    /** 打开/替换文档：ui 选择/编辑会话与双向历史一并重置（新文档不继承旧路径/旧事务） */
+    /** 打开/替换文档：ui 选择/编辑/重命名会话与双向历史一并重置（新文档不继承旧路径/旧事务） */
     openDocument(canvas: Canvas): void {
         this.docValue = canvas
         this.undoSteps = []
         this.redoSteps = []
-        this.uiValue = { ...this.uiValue, selection: null, hovered: null, drag: null, editing: null }
+        this.uiValue = { ...this.uiValue, selection: null, hovered: null, drag: null, editing: null, renaming: null }
         this.notify({ scope: 'doc', patches: [], inversePatches: [] })
     }
 
@@ -212,7 +219,7 @@ export class EditorStore {
     }
 
     /** 路径类 ui 切片的共同形状：值等短路 → 整体替换 → 分支通知 */
-    private setUiPath(branch: 'selection' | 'hovered', path: LayerPath | null): void {
+    private setUiPath(branch: 'selection' | 'hovered' | 'renaming', path: LayerPath | null): void {
         if (pathsEqual(this.uiValue[branch], path)) return
         this.uiValue = { ...this.uiValue, [branch]: path }
         this.notify({ scope: 'ui', branch })
@@ -228,6 +235,11 @@ export class EditorStore {
     setEditing(session: TextEditingSession | null): void {
         this.uiValue = { ...this.uiValue, editing: session }
         this.notify({ scope: 'ui', branch: 'editing' })
+    }
+
+    /** 重命名会话开始/结束（null）；路径类切片，值等短路（重复 begin 同一路径不重绘） */
+    setRenaming(path: LayerPath | null): void {
+        this.setUiPath('renaming', path)
     }
 
     /** 锚点折叠区开合：布尔值等短路（重复点击同一态不重绘） */

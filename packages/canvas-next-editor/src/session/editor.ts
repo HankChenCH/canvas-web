@@ -665,6 +665,55 @@ export class EditorSession {
         if (pathsEqual(this.store.ui.hovered, removed.v.path)) this.store.setHovered(null)
     }
 
+    /**
+     * 重命名根图层（layer-panel-ux 工单 09）：一次调用 = 一步历史（可撤销）。
+     * 仅根图层——行/格是容器内结构（显示层「行 N / 格 N」派生标签），路径非根
+     * 或不可解析一律空转（无历史步）；空名 = 回退缺省（文档 name 归空串，
+     * wire 键随之省略，显示层回落派生标签）。不改结构与 priority，选择/悬停
+     * 路径不受影响。
+     */
+    renameLayer(path: LayerPath, name: string): void {
+        if (!this.store.doc || !isRootLayerPath(path)) return
+        this.store.transact((draft) => {
+            const layer = resolveLayer(draft, path) as Draft<Layer> | null
+            if (!layer) return
+            layer.name = name
+        })
+    }
+
+    /**
+     * 开始重命名会话（图层面板双击/铅笔/F2 的统一入口）：路径必须解析到根图层。
+     * 会话只进 ui 分支（不进历史），输入框的草稿文本住绑定层，提交经
+     * commitRename 漏斗一次性落文档。
+     */
+    beginRename(path: LayerPath | null): boolean {
+        if (path === null || !this.store.doc || !isRootLayerPath(path)) return false
+        if (resolveLayer(this.store.doc, path) === null) return false
+        this.store.setRenaming(path)
+        return true
+    }
+
+    /**
+     * 重命名提交漏斗的统一出口：Enter / blur 两条退出路径都收拢到这里。先清
+     * 会话再落文档——退出路径可能级联触发（Enter 提交后 input 卸载的 blur），
+     * 会话清空后后续调用幂等，保证一次退出恰一步历史。空名直传 renameLayer
+     * （回退缺省语义在内核）；与现名相同不产生历史步（进出编辑零噪声）。
+     */
+    commitRename(name: string): boolean {
+        const renaming = this.store.ui.renaming
+        if (renaming === null) return false
+        this.store.setRenaming(null)
+        const layer = this.store.doc ? resolveLayer(this.store.doc, renaming) : null
+        if (!layer || layer.name === name) return false
+        this.renameLayer(renaming, name)
+        return true
+    }
+
+    /** 取消重命名会话：清 ui 态不落文档（Esc 语义） */
+    cancelRename(): void {
+        this.store.setRenaming(null)
+    }
+
     // ---- 剪贴板与置顶/置底（工单 14）：子树深拷贝语义见 clipboard.ts ----
 
     /**
@@ -781,9 +830,10 @@ export class EditorSession {
     // ---- 快捷键分派（工单 14）：注册表分类（shortcuts.ts）→ 这里执行 ----
 
     /**
-     * 执行快捷键动作（注册表分类的出口）：undo/redo/delete/copy/paste/duplicate
-     * 的统一分派面。让路规则在分类器（classifyEditorShortcut）裁决，到达这里的
-     * 动作不再重复判态；动作为空转（无选择/空剪贴板）返回 false，其余 true。
+     * 执行快捷键动作（注册表分类的出口）：undo/redo/delete/copy/paste/duplicate/
+     * rename 的统一分派面。让路规则在分类器（classifyEditorShortcut）裁决，到达
+     * 这里的动作不再重复判态；动作为空转（无选择/空剪贴板/非根层）返回 false，
+     * 其余 true。rename 开选中根层的重命名会话（F2，工单 09），不直接写文档。
      */
     executeShortcut(action: EditorShortcutAction): boolean {
         switch (action) {
@@ -799,6 +849,8 @@ export class EditorSession {
                 return this.pasteFromClipboard() !== null
             case 'duplicate':
                 return this.duplicateSelection() !== null
+            case 'rename':
+                return this.beginRename(this.store.ui.selection)
             case 'delete': {
                 const path = this.store.ui.selection
                 if (!path) return false
@@ -954,9 +1006,9 @@ export class EditorSession {
     // ---- 内部：合帧与重绘 ----
 
     /**
-     * 结构变更后重映射 ui 分支的路径态（选择/悬停）：路径是数组下标身份，
-     * 容器 splice 后按 remapPathAfterSplice 平移，被移出子树的路径落地为清除。
-     * ui 整体替换、不进历史；值未变的路径 set* 内部值等短路。
+     * 结构变更后重映射 ui 分支的路径态（选择/悬停/重命名会话）：路径是数组下标
+     * 身份，容器 splice 后按 remapPathAfterSplice 平移，被移出子树的路径落地为
+     * 清除。ui 整体替换、不进历史；值未变的路径 set* 内部值等短路。
      */
     private remapPathSlices(
         containerPath: LayerPath,
@@ -970,6 +1022,8 @@ export class EditorSession {
         if (selection !== this.store.ui.selection) this.store.setSelection(selection)
         const hovered = remap(this.store.ui.hovered)
         if (hovered !== this.store.ui.hovered) this.store.setHovered(hovered)
+        const renaming = remap(this.store.ui.renaming)
+        if (renaming !== this.store.ui.renaming) this.store.setRenaming(renaming)
     }
 
     /**
@@ -997,13 +1051,14 @@ export class EditorSession {
         }
     }
 
-    /** 悬空路径清理：选择/悬停指向已不存在的图层即清空（撤销/重做与采纳类收口共用） */
+    /** 悬空路径清理：选择/悬停/重命名会话指向已不存在的图层即清空（撤销/重做与采纳类收口共用） */
     private pruneDanglingPaths(): void {
         const doc = this.store.doc
         if (!doc) return
-        const { selection, hovered } = this.store.ui
+        const { selection, hovered, renaming } = this.store.ui
         if (selection !== null && resolveLayer(doc, selection) === null) this.store.setSelection(null)
         if (hovered !== null && resolveLayer(doc, hovered) === null) this.store.setHovered(null)
+        if (renaming !== null && resolveLayer(doc, renaming) === null) this.store.setRenaming(null)
     }
 
     private onStoreChange(change: EditorChange): void {

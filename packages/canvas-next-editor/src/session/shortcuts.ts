@@ -5,6 +5,7 @@
  * 快捷键自工单 08 的 historyShortcut 并入此表（单表声明，消除双分类器）。缺省集
  * 跟随 excalidraw 惯例并按 v1 单选裁剪：工具切换/全选不可用（单选无对象），剪切
  * 未纳入（工单范围 = 复制/粘贴/副本/删除/撤销/重做）；置顶/置底走右键菜单无键位。
+ * 重命名 F2 自 layer-panel-ux 工单 09 入表（分派到选中根层的重命名编辑会话）。
  *
  * 让路规则（绑定层折算输入，分类器统一裁决——全部有测试锁定）：
  * - 输入法合成中（isComposing || keyCode 229 折算为 composing）：候选窗里的按键
@@ -13,13 +14,13 @@
  *   不得删图层、Ctrl/Cmd+Z 撤「输入」而非文档（原生 undo）；
  * - 焦点在可编辑元素（input/textarea/select/contentEditable 折算为
  *   editableTarget）：属性面板/工具栏输入框的原生编辑优先（Delete 删的是输入框
- *   里的字符，不是图层）。
+ *   里的字符，不是图层）——重命名输入框内按键同样由此让路。
  *
  * 本模块无 DOM：KeyboardEvent → 输入的折算归绑定层（useShortcuts）。
  */
 
 /** 快捷键动作（会话分派面 executeShortcut 的入参域） */
-export type EditorShortcutAction = 'undo' | 'redo' | 'copy' | 'paste' | 'duplicate' | 'delete'
+export type EditorShortcutAction = 'undo' | 'redo' | 'copy' | 'paste' | 'duplicate' | 'delete' | 'rename'
 
 /** 键位组合声明：key 为 KeyboardEvent.key 的小写归一形态；mod/shift 精确匹配 */
 export interface ShortcutCombo {
@@ -48,6 +49,7 @@ export const DEFAULT_EDITOR_SHORTCUTS: readonly EditorShortcutBinding[] = [
     { combo: { key: 'd', mod: true, shift: false }, action: 'duplicate' },
     { combo: { key: 'delete', mod: false, shift: false }, action: 'delete' },
     { combo: { key: 'backspace', mod: false, shift: false }, action: 'delete' },
+    { combo: { key: 'f2', mod: false, shift: false }, action: 'rename' },
 ]
 
 /** 快捷键输入：绑定层从 KeyboardEvent 与会话状态折算（本类型不出现任何 DOM 类型） */

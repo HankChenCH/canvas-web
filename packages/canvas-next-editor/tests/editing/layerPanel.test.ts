@@ -101,6 +101,20 @@ describe('buildLayerOutline：面板大纲（面板顶部 = 视觉最上层 = �
     it('空画布输出空大纲', () => {
         expect(buildLayerOutline({ width: 100, height: 100, layers: [] })).toEqual([])
     })
+
+    it('节点携带文档 name 原文（工单 09 显示层投影）：未命名为空串', () => {
+        const doc = {
+            width: 800,
+            height: 600,
+            layers: [
+                textLayer({ priority: 20, name: '' }),
+                textLayer({ priority: 10, name: '封面标题' }),
+            ],
+        }
+        const outline = buildLayerOutline(doc)
+        // 面板序 = 数组逆序：尾层（封面标题）在先
+        expect(outline.map((node) => node.name)).toEqual(['封面标题', ''])
+    })
 })
 
 describe('createDefaultLayer：编辑器新增图层的缺省形态', () => {

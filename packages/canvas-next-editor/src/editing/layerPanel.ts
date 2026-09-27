@@ -29,6 +29,11 @@ export interface LayerOutlineNode {
     readonly type: LayerType
     readonly path: LayerPath
     readonly role: LayerOutlineRole
+    /**
+     * 用户命名（layer-panel-ux 工单 09）：原样携带文档 name（根层重命名后由此
+     * 上屏），空串 = 未命名，显示层回落派生标签。行/格/内容同字段照带（不消费）。
+     */
+    readonly name: string
     readonly children: readonly LayerOutlineNode[]
 }
 
@@ -60,7 +65,7 @@ function outlineWalk(layer: Layer, path: LayerPath, role: LayerOutlineRole): Lay
             children.push(outlineWalk(layers[i]!, childPath, roleOfChild))
         }
     }
-    return { type: layer.type, path, role, children }
+    return { type: layer.type, path, role, name: layer.name, children }
 }
 
 /**
