@@ -4,14 +4,19 @@
  * 嵌套展开）、拖动重排（根层走 priority 中点插值 / 行格直接改数组序，两套语义
  * 分立；行可跨表、格可跨行——跨容器落点走内核重建路径同步尺寸）、增删（新增
  * 置顶 min−1、加行/加格走重建路径、删除含子树）、点选/悬停与画布双向联动。
- * 视觉沿用 .cn-props 主题命名空间（与属性面板同一套设计令牌）。
+ * 视觉沿用 .cn-props 主题命名空间（与属性面板同一套设计令牌）；行卡片化 +
+ * 根层拖拽把手见 panel-theme.css 的 cn-layers 区块（工单 08）。
  *
- * 拖放约定：行上半 = insert-before 当前行、下半 = insert-after（面板底经最后
- * 一行的下半可达）；行落点 = 任意行的行节点（同表重排/跨表移动内核自动分流），
- * 格落点 = 任意格节点（同行重排/跨行移动同款）。内核对原位/相邻落点自动空转
- * （无历史步）。
+ * 拖放约定（工单 08 起发起区域分域）：根层拖拽仅从行内六点把手发起（整行
+ * draggable 摘除，规避与行选中/双击重命名手势冲突）；行/格保持整行拖拽不加
+ * 把手（I2=A 行/格不动）。落点约定两域一致：行上半 = insert-before 当前行、
+ * 下半 = insert-after（面板底经最后一行的下半可达）；行落点 = 任意行的行节点
+ * （同表重排/跨表移动内核自动分流），格落点 = 任意格节点（同行重排/跨行移动
+ * 同款）。内核对原位/相邻落点自动空转（无历史步）。
  */
 import { computed, ref } from 'vue'
+
+import { GripVertical } from '@lucide/vue'
 
 import {
     pathsEqual,
@@ -21,6 +26,7 @@ import {
     type LayerType,
 } from '@hankchen/canvas-next-editor'
 
+import PanelIcon from '../shared/PanelIcon.vue'
 import { isUpperHalf, useLayerPanel } from './useLayerPanel'
 const props = defineProps<{ editor: EditorSession }>()
 
@@ -136,7 +142,12 @@ function canDrop(row: FlatRow): boolean {
     return row.node.role === 'cell'
 }
 
-function onDragStart(row: FlatRow, event: DragEvent): void {
+/** 把手行判定：仅根层有把手、仅根层从把手发起拖拽（行/格不加把手，I2=A 行/格不动） */
+function isRootRow(row: FlatRow): boolean {
+    return row.node.role === 'root'
+}
+
+function onHandleDragStart(row: FlatRow, event: DragEvent): void {
     if (!row.draggable) return
     dragSource.value =
         row.node.role === 'root'
@@ -147,6 +158,20 @@ function onDragStart(row: FlatRow, event: DragEvent): void {
     // Firefox 需要 setData 才会启动拖拽；其余环境无副作用
     event.dataTransfer?.setData('text/plain', row.key)
     if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
+}
+
+/** 行元素上的 dragstart：根层不发起（发起区域仅把手），行/格保持整行拖拽。
+ *  把手的 dragstart 也经冒泡穿过这里——root 守卫使其空转，不会二次置源。 */
+function onRowDragStart(row: FlatRow, event: DragEvent): void {
+    if (isRootRow(row)) return
+    onHandleDragStart(row, event)
+}
+
+/** 行元素的 draggable 属性：根层收敛到把手（整行禁拖，undefined = 摘除属性）；
+ *  行/格保持整行可拖；内容行本就不可拖 */
+function rowDraggableAttr(row: FlatRow): boolean | undefined {
+    if (isRootRow(row)) return undefined
+    return row.draggable || undefined
 }
 
 function onDragOver(row: FlatRow, event: DragEvent): void {
@@ -223,31 +248,38 @@ function isHovered(row: FlatRow): boolean {
             画布还没有图层，用上方按钮新增
         </p>
 
-        <ul class="cn-layers__tree flex flex-col py-1" @dragend="onDragEnd">
+        <ul class="cn-layers__tree flex flex-col gap-0.5 px-1.5 py-1" @dragend="onDragEnd">
             <li
                 v-for="row in flatRows"
                 :key="row.key"
                 :data-key="row.key"
-                :draggable="row.draggable"
-                class="cn-layers__row group flex cursor-default select-none items-center gap-1 border-l-2 py-1 pr-1.5 text-[12px]"
+                :draggable="rowDraggableAttr(row)"
+                class="cn-layers__row group flex cursor-default select-none items-center gap-1 py-1 pr-1 text-[12px]"
                 :class="{
                     'cn-layers__row--selected': isSelected(row),
                     'cn-layers__row--hovered': isHovered(row) && !isSelected(row),
-                    'cursor-grab': row.draggable,
-                    'border-transparent hover:bg-cn-field': !isSelected(row) && !isHovered(row),
-                    'border-transparent bg-cn-field': isHovered(row) && !isSelected(row),
-                    'border-cn-accent bg-cn-accent-soft text-cn-accent': isSelected(row),
-                    'border-t-cn-accent/70': dropHint?.key === row.key && dropHint?.edge === 'before',
-                    'border-b-cn-accent/70': dropHint?.key === row.key && dropHint?.edge === 'after',
+                    'cursor-grab': row.draggable && !isRootRow(row),
+                    'cn-layers__row--drop-before': dropHint?.key === row.key && dropHint?.edge === 'before',
+                    'cn-layers__row--drop-after': dropHint?.key === row.key && dropHint?.edge === 'after',
                 }"
-                :style="{ paddingLeft: `${8 + row.indentLevel * 14}px` }"
+                :style="{ paddingLeft: `${4 + row.indentLevel * 14}px` }"
                 @click="select(row)"
                 @mouseenter="hover(row)"
                 @mouseleave="hover(null)"
-                @dragstart="onDragStart(row, $event)"
+                @dragstart="onRowDragStart(row, $event)"
                 @dragover="onDragOver(row, $event)"
                 @drop="onDrop(row, $event)"
             >
+                <span
+                    v-if="isRootRow(row)"
+                    data-drag-handle
+                    draggable="true"
+                    title="拖动排序"
+                    class="cn-layers__handle shrink-0"
+                    @dragstart="onHandleDragStart(row, $event)"
+                >
+                    <PanelIcon :icon="GripVertical" :size="12" :stroke-width="2.5" />
+                </span>
                 <span class="cn-layers__label min-w-0 flex-1 truncate font-mono text-[11px] leading-4">
                     {{ row.label }}
                 </span>

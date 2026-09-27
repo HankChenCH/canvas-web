@@ -158,14 +158,14 @@ describe('LayerPanel：渲染与联动', () => {
         wrapper.unmount()
     })
 
-    it('根层拖放：dragstart→dragover→drop 触发 moveRootLayer（中点插值）', async () => {
+    it('根层拖放：dragstart 从把手发起，dragover→drop 触发 moveRootLayer（中点插值）', async () => {
         const editor = makeEditor([textLayer(30, '底'), textLayer(20, '中'), textLayer(10, '顶')])
         const wrapper = mount(LayerPanel, { props: { editor } })
         const rows = wrapper.findAll('.cn-layers__row')
 
-        // 面板顶（顶,10）拖到面板底行的上半（insert-before 底）→ 视觉 [中, 顶, 底]
+        // 面板顶（顶,10）的把手拖到面板底行的上半（insert-before 底）→ 视觉 [中, 顶, 底]
         mockRect(rows[2]!)
-        await rows[0]!.trigger('dragstart')
+        await rows[0]!.find('[data-drag-handle]').trigger('dragstart')
         await rows[2]!.trigger('dragover', { clientY: 2 })
         await rows[2]!.trigger('drop')
         await wrapper.vm.$nextTick()
@@ -284,6 +284,51 @@ describe('LayerPanel：V2 绑定面（工票 03）', () => {
             'QrCodeLayer',
             'TableLayer',
         ])
+        wrapper.unmount()
+    })
+})
+
+describe('LayerPanel：行卡片化 + 拖拽把手（工单 08）', () => {
+    it('把手常显仅根层：根层行各一个 draggable 把手；行/格不加把手且整行可拖不变（I2=A）', async () => {
+        const editor = makeEditor([textLayer(30, '底'), tableLayer([rowLayer(30), rowLayer(20)])])
+        const wrapper = mount(LayerPanel, { props: { editor } })
+        // 面板序：表（根）、行1、行2、文本（根）——把手只落在两个根层行
+        const rows = wrapper.findAll('.cn-layers__row')
+        expect(rows).toHaveLength(4)
+
+        const handles = wrapper.findAll('[data-drag-handle]')
+        expect(handles).toHaveLength(2)
+        handles.forEach((handle) => expect(handle.attributes('draggable')).toBe('true'))
+        expect(rows[0]!.find('[data-drag-handle]').exists()).toBe(true)
+        expect(rows[1]!.find('[data-drag-handle]').exists()).toBe(false)
+        expect(rows[2]!.find('[data-drag-handle]').exists()).toBe(false)
+        expect(rows[3]!.find('[data-drag-handle]').exists()).toBe(true)
+
+        // 根层整行禁拖（draggable 收敛到把手）；行/格整行拖拽保留
+        expect(rows[0]!.attributes('draggable')).toBeUndefined()
+        expect(rows[1]!.attributes('draggable')).toBe('true')
+        expect(rows[2]!.attributes('draggable')).toBe('true')
+        expect(rows[3]!.attributes('draggable')).toBeUndefined()
+        wrapper.unmount()
+    })
+
+    it('整行拖拽禁用（根层）：行上 dragstart 不发起拖拽，后续 drop 空转文档不动', async () => {
+        const editor = makeEditor([textLayer(30, '底'), textLayer(20, '中'), textLayer(10, '顶')])
+        const wrapper = mount(LayerPanel, { props: { editor } })
+        const rows = wrapper.findAll('.cn-layers__row')
+
+        mockRect(rows[2]!)
+        await rows[0]!.trigger('dragstart')
+        await rows[2]!.trigger('dragover', { clientY: 2 })
+        await rows[2]!.trigger('drop')
+        await wrapper.vm.$nextTick()
+
+        expect(editor.store.doc!.layers.map((layer) => (layer.type === 'TextLayer' ? layer.text : ''))).toEqual([
+            '底',
+            '中',
+            '顶',
+        ])
+        expect(editor.store.doc!.layers.map((layer) => layer.priority)).toEqual([30, 20, 10])
         wrapper.unmount()
     })
 })
