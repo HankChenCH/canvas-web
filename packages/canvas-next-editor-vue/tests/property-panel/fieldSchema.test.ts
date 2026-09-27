@@ -27,6 +27,9 @@ const padding = (v: number): Padding => ({ top: v, bottom: v, left: v, right: v 
 const noBorder = (): Border => ({ top: null, bottom: null, left: null, right: null })
 
 const baseLayer = () => ({
+    // name/visible 缺省态（layer-panel-ux 工单 01）
+    name: '',
+    visible: true,
     priority: 10,
     shape: {
         width: 100,

@@ -49,6 +49,8 @@ const doc = (width = 2400, height = 1500): Canvas => ({
     layers: [
         {
             type: 'TextLayer',
+            name: '',
+            visible: true,
             priority: 10,
             shape: {
                 width: 100,

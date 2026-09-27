@@ -15,6 +15,8 @@ function makeEditor(layers: readonly Layer[]): EditorSession {
 
 const textLayer = (priority: number, text: string) => ({
     type: 'TextLayer' as const,
+    name: '',
+    visible: true,
     priority,
     shape: { width: 100, height: 50, autoWidth: false, autoHeight: false, lineHeight: 1.2, padding: { top: 0, bottom: 0, left: 0, right: 0 }, border: { top: null, bottom: null, left: null, right: null }, backgroundColor: null },
     align: { horizontal: 'left' as const, vertical: 'top' as const },
@@ -99,12 +101,16 @@ const strictPosition = { anchor: 'top-left' as const, x: 0, y: 0 }
 /** 模板态表格（rows 空 + 行模板带一个标记文本格，spec §2.5 形态的域对象版） */
 const templateTableLayer = (): Layer => ({
     type: 'TableLayer',
+    name: '',
+    visible: true,
     priority: 5,
     shape: strictShape(600, 200),
     align: strictAlign,
     position: strictPosition,
     template: {
         type: 'TableRowTemplate',
+        name: '',
+        visible: true,
         priority: 0,
         shape: strictShape(600, 0, true),
         align: strictAlign,
@@ -112,12 +118,16 @@ const templateTableLayer = (): Layer => ({
         cells: [
             {
                 type: 'TableCellLayer',
+                name: '',
+                visible: true,
                 priority: 0,
                 shape: strictShape(240, 0, true),
                 align: strictAlign,
                 position: strictPosition,
                 content: {
                     type: 'TextLayer',
+                    name: '',
+                    visible: true,
                     priority: 0,
                     shape: strictShape(240, 0, true),
                     align: { horizontal: 'left', vertical: 'bottom' },
@@ -139,6 +149,8 @@ const templateTableLayer = (): Layer => ({
 
 const emptyRowLayer = (): TableRowLayer => ({
     type: 'TableRowLayer',
+    name: '',
+    visible: true,
     priority: 0,
     shape: strictShape(600, 60),
     align: strictAlign,

@@ -57,7 +57,7 @@ const shape = (width = 100, height = 50) => ({
     border: { top: null, bottom: null, left: null, right: null },
     backgroundColor: null,
 })
-const base = { priority: 10, shape: shape(), align: { horizontal: 'left' as const, vertical: 'top' as const }, position: { anchor: 'top-left' as const, x: 40, y: 30 } }
+const base = { name: '', visible: true, priority: 10, shape: shape(), align: { horizontal: 'left' as const, vertical: 'top' as const }, position: { anchor: 'top-left' as const, x: 40, y: 30 } }
 
 const doc = (): Canvas['layers'] => [
     { ...base, type: 'TextLayer', text: '你好画布', expression: null, font: '', fontSize: 16, fontColor: '#111827', angle: 0, autowrap: false },

@@ -51,6 +51,8 @@ export function textLayer(overrides: LayerOverrides<TextLayer> = {}): TextLayer 
     return withOverrides(
         {
             type: 'TextLayer',
+            name: '',
+            visible: true,
             priority: 10,
             shape: defaultShape(),
             align: { horizontal: 'left', vertical: 'top' },
@@ -71,6 +73,8 @@ export function imageLayer(overrides: LayerOverrides<ImageLayer> = {}): ImageLay
     return withOverrides(
         {
             type: 'ImageLayer',
+            name: '',
+            visible: true,
             priority: 10,
             shape: defaultShape(),
             align: { horizontal: 'left', vertical: 'top' },
@@ -86,6 +90,8 @@ export function qrLayer(overrides: LayerOverrides<QrCodeLayer> = {}): QrCodeLaye
     return withOverrides(
         {
             type: 'QrCodeLayer',
+            name: '',
+            visible: true,
             priority: 10,
             shape: defaultShape(),
             align: { horizontal: 'left', vertical: 'top' },
@@ -104,6 +110,8 @@ export function cellLayer(
     return withOverrides(
         {
             type: 'TableCellLayer',
+            name: '',
+            visible: true,
             priority: 10,
             shape: defaultShape(),
             align: { horizontal: 'left', vertical: 'top' },
@@ -121,6 +129,8 @@ export function rowLayer(
     return withOverrides(
         {
             type: 'TableRowLayer',
+            name: '',
+            visible: true,
             priority: 10,
             shape: defaultShape(),
             align: { horizontal: 'left', vertical: 'top' },
@@ -138,6 +148,8 @@ export function tableLayer(
     return withOverrides(
         {
             type: 'TableLayer',
+            name: '',
+            visible: true,
             priority: 10,
             shape: defaultShape(),
             align: { horizontal: 'left', vertical: 'top' },

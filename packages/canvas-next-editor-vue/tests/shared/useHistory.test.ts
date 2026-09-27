@@ -17,6 +17,8 @@ const doc = (): Canvas => ({ width: 100, height: 80, layers: [] })
 const addLayer = (priority: number): DocRecipe => (draft) => {
         draft.layers.push({
             type: 'TextLayer',
+            name: '',
+            visible: true,
             priority,
             shape: {
                 width: 10,

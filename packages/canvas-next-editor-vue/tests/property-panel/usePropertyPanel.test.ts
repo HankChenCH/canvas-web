@@ -11,6 +11,8 @@ const nullScheduler: FrameScheduler = () => () => {}
 
 const textLayer = (overrides: Record<string, unknown> = {}): Canvas['layers'][number] => ({
     type: 'TextLayer',
+    name: '',
+    visible: true,
     priority: 10,
     shape: {
         width: 100,

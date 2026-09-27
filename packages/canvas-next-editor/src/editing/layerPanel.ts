@@ -84,6 +84,9 @@ export function buildLayerOutline(doc: Canvas): readonly LayerOutlineNode[] {
  */
 export function createDefaultLayer(type: LayerType): Layer {
     const base = {
+        // name/visible 缺省态（layer-panel-ux 工单 01）：未命名 + 可见，wire 键省略
+        name: '',
+        visible: true,
         priority: 0,
         shape: {
             width: 0,

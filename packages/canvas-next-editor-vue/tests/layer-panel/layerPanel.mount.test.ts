@@ -38,6 +38,8 @@ const basePosition = { anchor: 'top-left' as const, x: 0, y: 0 }
 
 const textLayer = (priority: number, text: string): Layer => ({
     type: 'TextLayer',
+    name: '',
+    visible: true,
     priority,
     shape: baseShape(100, 50),
     align: baseAlign,
@@ -53,6 +55,8 @@ const textLayer = (priority: number, text: string): Layer => ({
 
 const tableLayer = (rows: readonly Layer[], width = 600): Layer => ({
     type: 'TableLayer',
+    name: '',
+    visible: true,
     priority: 5,
     shape: baseShape(width, 200),
     align: baseAlign,
@@ -64,6 +68,8 @@ const tableLayer = (rows: readonly Layer[], width = 600): Layer => ({
 
 const rowLayer = (priority: number, cells: readonly Layer[] = []): Layer => ({
     type: 'TableRowLayer',
+    name: '',
+    visible: true,
     priority,
     shape: baseShape(600, 100),
     align: baseAlign,
@@ -73,6 +79,8 @@ const rowLayer = (priority: number, cells: readonly Layer[] = []): Layer => ({
 
 const cellLayer = (width: number): Layer => ({
     type: 'TableCellLayer',
+    name: '',
+    visible: true,
     priority: 0,
     shape: baseShape(width, 60),
     align: baseAlign,

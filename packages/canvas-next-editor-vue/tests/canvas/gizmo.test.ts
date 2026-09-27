@@ -32,6 +32,8 @@ function mockCtx() {
 /** 双层最小文档：layer0 (100,200) 100×50、layer1 (300,200) 100×50 */
 const layer = (x: number) => ({
     type: 'TextLayer' as const,
+    name: '',
+    visible: true,
     priority: 10,
     shape: {
         width: 100,
