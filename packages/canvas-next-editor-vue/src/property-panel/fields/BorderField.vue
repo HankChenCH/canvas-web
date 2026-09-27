@@ -1,13 +1,28 @@
 <script setup lang="ts">
 /**
- * BorderField：四边边框控件——每边「启用 + 宽 + 色」一行，禁用 = 置 null
- * （对齐解码语义：width 0 或缺边即无边框）。子输入实时提交整个 Border 对象，
- * change/blur 收口；宽 ≤ 0 视为关闭该边。
+ * BorderField：边框 CSS 风格简写控件（layer-panel-ux 工单 04）——宽+色共享
+ * 同一模式与循环按钮（1 单框 / 2 上下|左右两框 / 4 四框，每框宽+色）。某边
+ * null = 该边关；初始模式由数据推导（四边全 null 或全等→1、上下等且左右等
+ * （含 null 相等）→2、否则→4），数据一变即重推导（不保留上次 UI 态）。展开
+ * 复制代表值（数据不动）；收缩取代表值（上/左）立即写回规整——上为 null 收缩
+ * 到 1 即全 null（无边框），无边框空显示。宽度 0 = 关（对齐解码语义），从空
+ * 输入正宽度即以默认黑开启；提交仍是完整 Border 对象（wire 数据面不变），
+ * 面板按 mergeKey 合步，change/blur 收口。
  */
+import { computed, ref, watch } from 'vue'
+
 import type { Border, BorderSide } from '@hankchen/canvas-next-editor'
 
 import type { FieldDef } from '../fieldSchema'
-import NumberField from './NumberField.vue'
+import {
+    deriveBorderMode,
+    nextShorthandMode,
+    sameBorder,
+    shrinkBorder,
+    type ShorthandMode,
+} from '../shorthand'
+import BorderWidthInput from './BorderWidthInput.vue'
+import ShorthandModeButton from './ShorthandModeButton.vue'
 
 const props = defineProps<{ field: FieldDef; modelValue: Border }>()
 
@@ -15,92 +30,110 @@ const emit = defineEmits<{ input: [value: Border]; change: [value: Border] }>()
 
 type SideKey = keyof Border
 
-// 伪字段描述：key 仅作配置标识（integer/min 供 NumberField 消化），提交按整个
-// Border 对象组装，不按 key 寻址
-const SIDES: readonly { side: SideKey; label: string; field: FieldDef; widthField: FieldDef }[] = (
-    [
-        ['top', '上'],
-        ['bottom', '下'],
-        ['left', '左'],
-        ['right', '右'],
-    ] as const
-).map(([side, label]) => ({
-    side: side as SideKey,
-    label,
-    field: { key: ['border', side, 'enabled'], label, control: 'boolean' },
-    widthField: { key: ['border', side, 'width'], label, control: 'number', integer: true, min: 0 },
-}))
-
-const DEFAULT_SIDE: BorderSide = { width: 1, color: '#000000' }
-
-/** 展示态：null 边显示宽 0（输入框禁用），启用边取实际值 */
-function sideWidth(side: BorderSide | null): number {
-    return side?.width ?? 0
+/** 一框 = 代表边（显示与输入取值）+ 收编边清单（提交时同写代表边值） */
+interface Box {
+    readonly label: string
+    readonly rep: SideKey
+    readonly sides: readonly SideKey[]
 }
 
-function sideColor(side: BorderSide | null): string {
-    return side?.color ?? '#000000'
+const BOXES: Record<ShorthandMode, readonly Box[]> = {
+    1: [{ label: '四边', rep: 'top', sides: ['top', 'bottom', 'left', 'right'] }],
+    2: [
+        { label: '上下', rep: 'top', sides: ['top', 'bottom'] },
+        { label: '左右', rep: 'left', sides: ['left', 'right'] },
+    ],
+    4: [
+        { label: '上', rep: 'top', sides: ['top'] },
+        { label: '下', rep: 'bottom', sides: ['bottom'] },
+        { label: '左', rep: 'left', sides: ['left'] },
+        { label: '右', rep: 'right', sides: ['right'] },
+    ],
 }
 
-function patch(side: SideKey, value: BorderSide | null, final: boolean): void {
-    const next: Border = { ...props.modelValue, [side]: value }
+const DEFAULT_COLOR = '#000000'
+
+/**
+ * 模式 = 数据推导为基，循环点击给会话内覆盖；派生模式一变覆盖即失效——
+ * 纯 UI 循环（不改数据）期间覆盖生效，文档任何变更（含撤销）都回落推导值。
+ */
+const derivedMode = computed(() => deriveBorderMode(props.modelValue))
+const overrideMode = ref<ShorthandMode | null>(null)
+const mode = computed(() => overrideMode.value ?? derivedMode.value)
+watch(derivedMode, () => {
+    overrideMode.value = null
+})
+
+const boxes = computed(() => BOXES[mode.value])
+
+function boxWidth(box: Box): number | null {
+    return props.modelValue[box.rep]?.width ?? null
+}
+
+function boxColor(box: Box): string {
+    return props.modelValue[box.rep]?.color ?? DEFAULT_COLOR
+}
+
+/** 编辑一框：收编边同写代表边值（独立副本，不共享引用） */
+function patch(box: Box, side: BorderSide | null, final: boolean): void {
+    // 领域 Border 逐键 readonly，组装期以可变映射副本折叠
+    const next = { ...props.modelValue } as { -readonly [K in keyof Border]: Border[K] }
+    for (const key of box.sides) next[key] = side === null ? null : { ...side }
     if (final) emit('change', next)
     else emit('input', next)
 }
 
-/** 启停切换：开 = 默认边（宽1黑），关 = null；走 change 收口 */
-function onToggle(side: SideKey, event: Event): void {
-    const checked = (event.target as HTMLInputElement).checked
-    patch(side, checked ? { ...DEFAULT_SIDE } : null, true)
+/** 宽度实时提交；≤ 0 视为关闭（解码 width 0 → null 同语义），正数即默认黑开启 */
+function onWidth(box: Box, value: number, final: boolean): void {
+    const color = props.modelValue[box.rep]?.color ?? DEFAULT_COLOR
+    patch(box, value <= 0 ? null : { width: value, color }, final)
 }
 
-/** 宽度实时提交；≤ 0 视为关闭该边（解码 width 0 → null 同语义） */
-function onWidth(side: SideKey, value: number, final: boolean): void {
-    if (value <= 0) {
-        patch(side, null, final)
-        return
-    }
-    patch(side, { width: value, color: sideColor(props.modelValue[side]) }, final)
-}
-
-/** 颜色实时提交 + change 收口（仅启用边可改；空串不提交） */
-function onColor(side: SideKey, event: Event, final: boolean): void {
-    const current = props.modelValue[side]
+/** 颜色实时提交 + change 收口（仅启用框可改；空串不提交） */
+function onColor(box: Box, event: Event, final: boolean): void {
+    const current = props.modelValue[box.rep]
     if (!current) return
     const color = (event.target as HTMLInputElement).value.trim()
     if (color === '') return
-    patch(side, { width: current.width, color }, final)
+    patch(box, { width: current.width, color }, final)
+}
+
+/** 模式循环：展开不改数据（完整对象已覆盖高模式表达）；收缩立即写回规整 */
+function cycle(): void {
+    const current = mode.value
+    const target = nextShorthandMode(current)
+    overrideMode.value = target
+    if (target < current) {
+        const collapsed = shrinkBorder(props.modelValue, target)
+        if (!sameBorder(collapsed, props.modelValue)) emit('change', collapsed)
+    }
 }
 </script>
 
 <template>
-    <span class="cn-border grid w-full gap-1">
-        <label v-for="entry in SIDES" :key="entry.side" class="cn-border__side flex items-center gap-1.5">
-            <input
-                class="cn-border__toggle size-3 shrink-0 cursor-pointer accent-cn-accent"
-                type="checkbox"
-                title="启用该边"
-                :checked="modelValue[entry.side] !== null"
-                @change="onToggle(entry.side, $event)"
-            />
-            <span class="cn-border__label w-3 shrink-0 select-none text-[10px] text-cn-muted">{{ entry.label }}</span>
-            <NumberField
-                class="cn-border__width min-w-0 flex-1"
-                :field="entry.widthField"
-                :model-value="sideWidth(modelValue[entry.side])"
-                :disabled="modelValue[entry.side] === null"
-                @input="onWidth(entry.side, $event, false)"
-                @change="onWidth(entry.side, $event, true)"
-            />
-            <input
-                class="cn-border__color size-6 shrink-0 cursor-pointer self-center rounded-md border border-cn-field-line bg-cn-field p-0.5 transition-colors hover:border-cn-muted/40 disabled:cursor-not-allowed disabled:opacity-40"
-                type="color"
-                title="边框颜色"
-                :value="sideColor(modelValue[entry.side])"
-                :disabled="modelValue[entry.side] === null"
-                @input="onColor(entry.side, $event, false)"
-                @change="onColor(entry.side, $event, true)"
-            />
-        </label>
+    <span class="cn-border flex w-full min-w-0 items-center gap-1">
+        <ShorthandModeButton :mode="mode" label="边框" @cycle="cycle" />
+        <!-- 边框每框 = 一行宽+色，各模式都是单列纵排 -->
+        <span class="grid min-w-0 flex-1 gap-1 grid-cols-1">
+            <label v-for="box in boxes" :key="box.rep" class="flex items-center gap-1.5">
+                <span class="w-5 shrink-0 select-none text-[10px] leading-none text-cn-muted">{{ box.label }}</span>
+                <BorderWidthInput
+                    class="cn-border__width"
+                    :value="boxWidth(box)"
+                    :label="box.label"
+                    @input="onWidth(box, $event, false)"
+                    @change="onWidth(box, $event, true)"
+                />
+                <input
+                    class="cn-border__color size-6 shrink-0 cursor-pointer self-center rounded-md border border-cn-field-line bg-cn-field p-0.5 transition-colors hover:border-cn-muted/40 disabled:cursor-not-allowed disabled:opacity-40"
+                    type="color"
+                    title="边框颜色"
+                    :value="boxColor(box)"
+                    :disabled="modelValue[box.rep] === null"
+                    @input="onColor(box, $event, false)"
+                    @change="onColor(box, $event, true)"
+                />
+            </label>
+        </span>
     </span>
 </template>

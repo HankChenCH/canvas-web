@@ -109,6 +109,28 @@
     background: var(--cn-accent-soft);
 }
 
+/* 简写控件的模式循环钮（工单 04）：1/2/4 值模式单按钮循环，同 data-toggle /
+   auto-toggle 视觉语言的图标方钮。双类名选择器压过控件上的单类 tailwind
+   border 色，无需 !important */
+.cn-props .cn-props__mode-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border-radius: 4px;
+    border: 1px solid var(--cn-field-line);
+    color: var(--cn-muted);
+    background: transparent;
+    cursor: pointer;
+}
+
+.cn-props .cn-props__mode-toggle:hover {
+    color: var(--cn-fg);
+    border-color: var(--cn-muted);
+}
+
 /* 自适应禁用态的预览值区分展示（工票 03）：模板子树的解析盒非文档权威值，
    斜体 + 弱化提示（悬停有完整说明），与声明值一眼可辨 */
 .cn-props .cn-field--preview {

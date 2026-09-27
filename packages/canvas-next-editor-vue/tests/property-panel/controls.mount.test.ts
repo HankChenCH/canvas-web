@@ -12,6 +12,7 @@ import type { Border, Padding } from '@hankchen/canvas-next-editor'
 import AnchorDisclosureField from '../../src/property-panel/fields/AnchorDisclosureField.vue'
 import BooleanField from '../../src/property-panel/fields/BooleanField.vue'
 import BorderField from '../../src/property-panel/fields/BorderField.vue'
+import BorderWidthInput from '../../src/property-panel/fields/BorderWidthInput.vue'
 import ColorField from '../../src/property-panel/fields/ColorField.vue'
 import NumberField from '../../src/property-panel/fields/NumberField.vue'
 import PaddingField from '../../src/property-panel/fields/PaddingField.vue'
@@ -22,8 +23,10 @@ import TextareaField from '../../src/property-panel/fields/TextareaField.vue'
 import type { FieldDef } from '../../src/property-panel/fieldSchema'
 
 const numField: FieldDef = { key: ['position', 'x'], label: 'X', control: 'number', integer: true }
-const padding = (v: number): Padding => ({ top: v, bottom: v, left: v, right: v })
 const noBorder = (): Border => ({ top: null, bottom: null, left: null, right: null })
+/** 数值输入框计数（简写控件的模式框数 = 1/2/4） */
+const inputCount = (wrapper: { findAll(selector: string): readonly unknown[] }): number =>
+    wrapper.findAll('input[type="number"]').length
 
 describe('NumberField', () => {
     it('挂载渲染当前值；input 实时发出整数化数值', async () => {
@@ -332,81 +335,216 @@ describe('PairField（两列语义行 + 自适应 prefix，layer-panel-ux 工票
     })
 })
 
-describe('PaddingField', () => {
+describe('PaddingField（简写 1/2/4 模式循环，工单 04）', () => {
     const field: FieldDef = { key: ['shape', 'padding'], label: '内边距', control: 'padding' }
-
-    it('渲染四键并回显各边值', () => {
-        const wrapper = mount(PaddingField, { props: { field, modelValue: padding(8) } })
-        const inputs = wrapper.findAll('input[type="number"]')
-        expect(inputs).toHaveLength(4)
-        expect(inputs.every((i) => (i.element as HTMLInputElement).value === '8')).toBe(true)
+    const pad = (top: number, bottom: number, left: number, right: number): Padding => ({
+        top,
+        bottom,
+        left,
+        right,
     })
 
-    it('改一边发出整个 Padding 对象（input 实时 / change 收口）', async () => {
-        const wrapper = mount(PaddingField, { props: { field, modelValue: padding(8) } })
+    it('初始模式由数据推导：全等→1 单框、成对→2 两框、异值→4 四框', () => {
+        expect(inputCount(mount(PaddingField, { props: { field, modelValue: pad(8, 8, 8, 8) } }))).toBe(1)
+        expect(inputCount(mount(PaddingField, { props: { field, modelValue: pad(8, 8, 4, 4) } }))).toBe(2)
+        expect(inputCount(mount(PaddingField, { props: { field, modelValue: pad(8, 3, 5, 7) } }))).toBe(4)
+    })
+
+    it('模式 1 编辑一框发出全等对象（input 实时 / change 收口）', async () => {
+        const wrapper = mount(PaddingField, { props: { field, modelValue: pad(8, 8, 8, 8) } })
+        const input = wrapper.find('input[type="number"]')
+        ;(input.element as HTMLInputElement).value = '12'
+        await input.trigger('input')
+        expect(wrapper.emitted('input')!.at(-1)).toEqual([pad(12, 12, 12, 12)])
+        expect(wrapper.emitted('change')).toBeUndefined() // 实时事件不收口
+
+        await input.trigger('change')
+        expect(wrapper.emitted('change')!.at(-1)).toEqual([pad(12, 12, 12, 12)])
+    })
+
+    it('模式 2 编辑上下只写上下，左右保留现值', async () => {
+        const wrapper = mount(PaddingField, { props: { field, modelValue: pad(8, 8, 4, 4) } })
         const inputs = wrapper.findAll('input[type="number"]')
+        expect(inputs).toHaveLength(2)
 
-        // 直设 DOM 值再发 input（逐键实时语义）；change 收口后按真实接线回填 props
-        // （面板提交后 modelValue 跟随，后续 patch 基于最新值组装）
-        const topInput = inputs[0]!.element as HTMLInputElement
-        topInput.value = '12'
+        ;(inputs[0]!.element as HTMLInputElement).value = '10'
         await inputs[0]!.trigger('input')
-        expect(wrapper.emitted('input')!.at(-1)).toEqual([{ top: 12, bottom: 8, left: 8, right: 8 }])
+        expect(wrapper.emitted('input')!.at(-1)).toEqual([pad(10, 10, 4, 4)])
 
-        topInput.value = '12'
-        await inputs[0]!.trigger('change')
-        const settled = wrapper.emitted('change')!.at(-1)![0] as Padding
-        expect(settled).toEqual({ top: 12, bottom: 8, left: 8, right: 8 })
-        await wrapper.setProps({ modelValue: settled })
+        ;(inputs[1]!.element as HTMLInputElement).value = '6'
+        await inputs[1]!.trigger('input')
+        expect(wrapper.emitted('input')!.at(-1)).toEqual([pad(8, 8, 6, 6)])
+    })
 
-        const leftInput = inputs[2]!.element as HTMLInputElement
-        leftInput.value = '20'
-        await inputs[2]!.trigger('change')
-        expect(wrapper.emitted('change')!.at(-1)).toEqual([{ top: 12, bottom: 8, left: 20, right: 8 }])
+    it('循环钮展开 1→2→4：框数递增、数据不动（无提交），四框回显各边现值', async () => {
+        const wrapper = mount(PaddingField, { props: { field, modelValue: pad(8, 8, 8, 8) } })
+        const cycleButton = wrapper.find('.cn-props__mode-toggle')
+
+        await cycleButton.trigger('click') // 1→2
+        expect(inputCount(wrapper)).toBe(2)
+        expect(wrapper.emitted('input')).toBeUndefined()
+        expect(wrapper.emitted('change')).toBeUndefined()
+
+        await cycleButton.trigger('click') // 2→4
+        expect(inputCount(wrapper)).toBe(4)
+        expect(wrapper.emitted('change')).toBeUndefined()
+        const values = wrapper.findAll('input[type="number"]').map((i) => (i.element as HTMLInputElement).value)
+        expect(values).toEqual(['8', '8', '8', '8'])
+    })
+
+    it('循环收缩 4→1：立即提交规整（全取上），框合为单框回显', async () => {
+        const wrapper = mount(PaddingField, { props: { field, modelValue: pad(8, 3, 5, 7) } })
+        expect(inputCount(wrapper)).toBe(4)
+
+        await wrapper.find('.cn-props__mode-toggle').trigger('click') // 4→1
+        expect(wrapper.emitted('change')!.at(-1)).toEqual([pad(8, 8, 8, 8)])
+        await wrapper.setProps({ modelValue: pad(8, 8, 8, 8) })
+        expect(inputCount(wrapper)).toBe(1)
+        expect((wrapper.find('input[type="number"]').element as HTMLInputElement).value).toBe('8')
+    })
+
+    it('数据变更即重推导模式（循环覆盖失效，不保留上次 UI 态）', async () => {
+        const wrapper = mount(PaddingField, { props: { field, modelValue: pad(8, 8, 8, 8) } })
+        await wrapper.find('.cn-props__mode-toggle').trigger('click') // 1→2（纯 UI，数据不动）
+        expect(inputCount(wrapper)).toBe(2)
+
+        await wrapper.setProps({ modelValue: pad(1, 2, 3, 4) }) // 外部变更（撤销/拖动）
+        expect(inputCount(wrapper)).toBe(4)
     })
 })
 
-describe('BorderField', () => {
+describe('BorderField（简写 1/2/4 模式 + null 语义，工单 04）', () => {
     const field: FieldDef = { key: ['shape', 'border'], label: '边框', control: 'border' }
-    const bordered = (): Border => ({
-        top: { width: 2, color: '#334155' },
-        bottom: null,
-        left: null,
+    const side = (width: number, color: string) => ({ width, color })
+    const borderAll = (s: { width: number; color: string }): Border => ({
+        top: { ...s },
+        bottom: { ...s },
+        left: { ...s },
+        right: { ...s },
+    })
+    const bordered = (): Border => ({ top: side(2, '#334155'), bottom: null, left: null, right: null })
+    const lopsided = (): Border => ({
+        top: null,
+        bottom: side(2, '#000000'),
+        left: side(6, '#0ea5e9'),
         right: null,
     })
 
-    it('四边各渲染启用/宽/色；null 边禁用输入', () => {
-        const wrapper = mount(BorderField, { props: { field, modelValue: bordered() } })
-        expect(wrapper.findAll('input[type="checkbox"]')).toHaveLength(4)
-        const numbers = wrapper.findAll('input[type="number"]')
-        expect((numbers[0]!.element as HTMLInputElement).value).toBe('2')
-        expect((numbers[1]!.element as HTMLInputElement).disabled).toBe(true) // bottom null
+    it('初始模式：全 null→单框空显示、全等→单框显宽、成对→两框、异值→四框', () => {
+        const none = mount(BorderField, { props: { field, modelValue: noBorder() } })
+        expect(inputCount(none)).toBe(1)
+        expect((none.find('input[type="number"]').element as HTMLInputElement).value).toBe('')
+        expect((none.find('input[type="color"]').element as HTMLInputElement).disabled).toBe(true) // 无边框色票禁用
+
+        const uniform = mount(BorderField, { props: { field, modelValue: borderAll(side(2, '#334155')) } })
+        expect(inputCount(uniform)).toBe(1)
+        expect((uniform.find('input[type="number"]').element as HTMLInputElement).value).toBe('2')
+
+        const paired = mount(BorderField, {
+            props: { field, modelValue: { top: side(2, '#a'), bottom: side(2, '#a'), left: null, right: null } },
+        })
+        expect(inputCount(paired)).toBe(2)
+
+        expect(inputCount(mount(BorderField, { props: { field, modelValue: bordered() } }))).toBe(4)
     })
 
-    it('启用边发出完整 Border（width1 黑默认）；禁用置 null', async () => {
+    it('模式 1 空框输入正宽度 = 四边开启（默认黑），input 实时 / change 收口', async () => {
         const wrapper = mount(BorderField, { props: { field, modelValue: noBorder() } })
-        const toggles = wrapper.findAll('input[type="checkbox"]')
+        const width = wrapper.find('input[type="number"]')
 
-        await toggles[0]!.setValue(true)
-        expect(wrapper.emitted('change')!.at(-1)).toEqual([
-            { top: { width: 1, color: '#000000' }, bottom: null, left: null, right: null },
-        ])
+        ;(width.element as HTMLInputElement).value = '3'
+        await width.trigger('input')
+        expect(wrapper.emitted('input')!.at(-1)).toEqual([borderAll({ width: 3, color: '#000000' })])
 
-        await wrapper.setProps({ modelValue: bordered() })
-        await toggles[0]!.setValue(false)
-        expect(wrapper.emitted('change')!.at(-1)).toEqual([noBorder()])
+        await width.trigger('change')
+        expect(wrapper.emitted('change')!.at(-1)).toEqual([borderAll({ width: 3, color: '#000000' })])
     })
 
-    it('宽度实时提交整个对象；宽度 0 视为关闭该边', async () => {
-        const wrapper = mount(BorderField, { props: { field, modelValue: bordered() } })
-        const numbers = wrapper.findAll('input[type="number"]')
-
-        await numbers[0]!.setValue('5')
-        expect(wrapper.emitted('input')!.at(-1)).toEqual([
-            { top: { width: 5, color: '#334155' }, bottom: null, left: null, right: null },
-        ])
-
-        await numbers[0]!.setValue('0')
+    it('模式 1 宽度归 0 = 全部关闭（实时提交全 null）', async () => {
+        const wrapper = mount(BorderField, { props: { field, modelValue: borderAll(side(2, '#334155')) } })
+        const width = wrapper.find('input[type="number"]')
+        ;(width.element as HTMLInputElement).value = '0'
+        await width.trigger('input')
         expect(wrapper.emitted('input')!.at(-1)).toEqual([noBorder()])
+    })
+
+    it('颜色编辑保留宽度（仅启用框可改）', async () => {
+        const wrapper = mount(BorderField, { props: { field, modelValue: borderAll(side(2, '#334155')) } })
+        const color = wrapper.find('input[type="color"]')
+        ;(color.element as HTMLInputElement).value = '#abcdef'
+        await color.trigger('input')
+        expect(wrapper.emitted('input')!.at(-1)).toEqual([borderAll(side(2, '#abcdef'))])
+    })
+
+    it('循环收缩 4→1 且上为 null → 提交全 null（无边框），单框空显示', async () => {
+        const wrapper = mount(BorderField, { props: { field, modelValue: lopsided() } })
+        expect(inputCount(wrapper)).toBe(4)
+
+        await wrapper.find('.cn-props__mode-toggle').trigger('click') // 4→1
+        expect(wrapper.emitted('change')!.at(-1)).toEqual([noBorder()])
+        await wrapper.setProps({ modelValue: noBorder() })
+        expect(inputCount(wrapper)).toBe(1)
+        expect((wrapper.find('input[type="number"]').element as HTMLInputElement).value).toBe('')
+    })
+
+    it('循环收缩 4→1：四边全取上（宽+色）', async () => {
+        const wrapper = mount(BorderField, { props: { field, modelValue: bordered() } }) // 仅上边 {2,#334155}
+        await wrapper.find('.cn-props__mode-toggle').trigger('click') // 4→1
+        expect(wrapper.emitted('change')!.at(-1)).toEqual([borderAll(side(2, '#334155'))])
+    })
+
+    it('循环展开 1→2→4：框数递增、无提交（数据不动）', async () => {
+        const wrapper = mount(BorderField, { props: { field, modelValue: noBorder() } })
+        const cycleButton = wrapper.find('.cn-props__mode-toggle')
+
+        await cycleButton.trigger('click') // 1→2
+        expect(inputCount(wrapper)).toBe(2)
+        expect(wrapper.emitted('input')).toBeUndefined()
+        expect(wrapper.emitted('change')).toBeUndefined()
+
+        await cycleButton.trigger('click') // 2→4
+        expect(inputCount(wrapper)).toBe(4)
+        expect(wrapper.emitted('change')).toBeUndefined()
+        // null 框空显示、值框回显现值
+        const values = wrapper.findAll('input[type="number"]').map((i) => (i.element as HTMLInputElement).value)
+        expect(values).toEqual(['', '', '', ''])
+    })
+})
+
+describe('BorderWidthInput（null 空显示的宽度输入，工单 04）', () => {
+    it('null 显示空串；input 实时发出钳位值（负值→0）', async () => {
+        const wrapper = mount(BorderWidthInput, { props: { value: null, label: '上下' } })
+        const input = wrapper.find('input')
+        expect((input.element as HTMLInputElement).value).toBe('')
+
+        input.element.value = '-4'
+        await input.trigger('input')
+        expect(wrapper.emitted('input')!.at(-1)).toEqual([0])
+    })
+
+    it('change/blur 收口：成形值回显草稿、0 归空显示、非法回显文档值', async () => {
+        const wrapper = mount(BorderWidthInput, { props: { value: 2, label: '上' } })
+        const input = wrapper.find('input')
+
+        input.element.value = '5'
+        await input.trigger('change')
+        expect(wrapper.emitted('change')!.at(-1)).toEqual([5])
+        expect((input.element as HTMLInputElement).value).toBe('5')
+
+        input.element.value = '0'
+        await input.trigger('blur')
+        expect(wrapper.emitted('change')!.at(-1)).toEqual([0])
+        expect((input.element as HTMLInputElement).value).toBe('') // 0 = 关 → 空显示
+
+        await wrapper.setProps({ value: null }) // 面板回声：该边已关
+        input.element.value = 'abc'
+        await input.trigger('blur')
+        expect((input.element as HTMLInputElement).value).toBe('') // 回显文档值（null）
+    })
+
+    it('未聚焦时的外部变更回同步草稿（null → 空）', async () => {
+        const wrapper = mount(BorderWidthInput, { props: { value: 2, label: '上' } })
+        await wrapper.setProps({ value: null })
+        expect((wrapper.find('input').element as HTMLInputElement).value).toBe('')
     })
 })

@@ -388,3 +388,138 @@ describe('数据字段取值方式切换（静态值/表达式，工单 02）', 
         wrapper.unmount()
     })
 })
+
+describe('形状：内边距/边框简写控件（layer-panel-ux 工单 04）', () => {
+    const pad = (top: number, bottom: number, left: number, right: number) => ({ top, bottom, left, right })
+    const shapeWith = (overrides: Record<string, unknown>): Record<string, unknown> => ({
+        width: 100,
+        height: 50,
+        autoWidth: false,
+        autoHeight: false,
+        lineHeight: 1.2,
+        padding: pad(0, 0, 0, 0),
+        border: { top: null, bottom: null, left: null, right: null },
+        backgroundColor: null,
+        ...overrides,
+    })
+    const side = (width: number, color: string) => ({ width, color })
+
+    async function mountWithLayers(layers: readonly Layer[]) {
+        const editor = makeEditor(layers)
+        const wrapper = mount(PropertyPanel, { props: { editor } })
+        editor.setSelection(['layers', 0])
+        await wrapper.vm.$nextTick()
+        return { editor, wrapper }
+    }
+
+    it('内边距初始模式由数据推导；选择切换随层重推导（不保留上次 UI 态）', async () => {
+        const editor = makeEditor([
+            textLayer({ shape: shapeWith({ padding: pad(8, 3, 5, 7) }) as never }),
+            textLayer({ shape: shapeWith({ padding: pad(6, 6, 2, 2) }) as never }),
+        ])
+        const wrapper = mount(PropertyPanel, { props: { editor } })
+        editor.setSelection(['layers', 0])
+        await wrapper.vm.$nextTick()
+        expect(wrapper.find('.cn-padding').findAll('input[type="number"]')).toHaveLength(4)
+
+        editor.setSelection(['layers', 1])
+        await wrapper.vm.$nextTick()
+        expect(wrapper.find('.cn-padding').findAll('input[type="number"]')).toHaveLength(2)
+        wrapper.unmount()
+    })
+
+    it('模式 1 编辑经 updateSpec 写全四边（input 实时生效，一步历史）', async () => {
+        const { editor, wrapper } = await mountWithLayers([textLayer()])
+        const input = wrapper.find('.cn-padding input[type="number"]')
+        ;(input.element as HTMLInputElement).value = '9'
+        await input.trigger('input')
+        const layer = editor.store.doc!.layers[0]!
+        expect(layer.type === 'TextLayer' && layer.shape.padding).toEqual(pad(9, 9, 9, 9))
+        expect(editor.store.history).toHaveLength(1)
+
+        await input.trigger('change')
+        expect(editor.store.history).toHaveLength(1) // 收口不另起步
+        wrapper.unmount()
+    })
+
+    it('循环展开 1→2：纯 UI 不进历史、文档不动', async () => {
+        const { editor, wrapper } = await mountWithLayers([textLayer()])
+        await wrapper.find('.cn-padding .cn-props__mode-toggle').trigger('click')
+        expect(wrapper.find('.cn-padding').findAll('input[type="number"]')).toHaveLength(2)
+        expect(editor.store.history).toHaveLength(0)
+        const layer = editor.store.doc!.layers[0]!
+        expect(layer.type === 'TextLayer' && layer.shape.padding).toEqual(pad(0, 0, 0, 0))
+        wrapper.unmount()
+    })
+
+    it('循环收缩 4→1：立即写回规整一步历史，undo 复原且模式重推导回四框', async () => {
+        const { editor, wrapper } = await mountWithLayers([
+            textLayer({ shape: shapeWith({ padding: pad(8, 3, 5, 7) }) as never }),
+        ])
+        await wrapper.find('.cn-padding .cn-props__mode-toggle').trigger('click') // 4→1
+        const layer = editor.store.doc!.layers[0]!
+        expect(layer.type === 'TextLayer' && layer.shape.padding).toEqual(pad(8, 8, 8, 8))
+        expect(editor.store.history).toHaveLength(1)
+        await wrapper.vm.$nextTick()
+        expect(wrapper.find('.cn-padding').findAll('input[type="number"]')).toHaveLength(1)
+
+        editor.undo()
+        await wrapper.vm.$nextTick()
+        const restored = editor.store.doc!.layers[0]!
+        expect(restored.type === 'TextLayer' && restored.shape.padding).toEqual(pad(8, 3, 5, 7))
+        expect(wrapper.find('.cn-padding').findAll('input[type="number"]')).toHaveLength(4) // 数据变了重推导
+        wrapper.unmount()
+    })
+
+    it('边框收缩 4→1 且上为 null → 全 null（无边框），undo 复原', async () => {
+        const { editor, wrapper } = await mountWithLayers([
+            textLayer({
+                shape: shapeWith({
+                    border: { top: null, bottom: side(2, '#000000'), left: side(6, '#0ea5e9'), right: null },
+                }) as never,
+            }),
+        ])
+        expect(wrapper.find('.cn-border').findAll('input[type="number"]')).toHaveLength(4)
+
+        await wrapper.find('.cn-border .cn-props__mode-toggle').trigger('click') // 4→1
+        const layer = editor.store.doc!.layers[0]!
+        expect(layer.type === 'TextLayer' && layer.shape.border).toEqual({
+            top: null,
+            bottom: null,
+            left: null,
+            right: null,
+        })
+        expect(editor.store.history).toHaveLength(1)
+
+        editor.undo()
+        await wrapper.vm.$nextTick()
+        const restored = editor.store.doc!.layers[0]!
+        expect(restored.type === 'TextLayer' && restored.shape.border).toEqual({
+            top: null,
+            bottom: side(2, '#000000'),
+            left: side(6, '#0ea5e9'),
+            right: null,
+        })
+        expect(wrapper.find('.cn-border').findAll('input[type="number"]')).toHaveLength(4)
+        wrapper.unmount()
+    })
+
+    it('边框模式 1 空框输入正宽度 = 四边开启（默认黑），一步历史', async () => {
+        const { editor, wrapper } = await mountWithLayers([textLayer()])
+        const width = wrapper.find('.cn-border input[type="number"]')
+        expect((width.element as HTMLInputElement).value).toBe('') // 无边框空显示
+
+        ;(width.element as HTMLInputElement).value = '3'
+        await width.trigger('input')
+        await width.trigger('change')
+        const layer = editor.store.doc!.layers[0]!
+        expect(layer.type === 'TextLayer' && layer.shape.border).toEqual({
+            top: side(3, '#000000'),
+            bottom: side(3, '#000000'),
+            left: side(3, '#000000'),
+            right: side(3, '#000000'),
+        })
+        expect(editor.store.history).toHaveLength(1)
+        wrapper.unmount()
+    })
+})
