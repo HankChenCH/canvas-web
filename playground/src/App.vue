@@ -209,7 +209,9 @@ const exporting = ref(false)
 
 async function exportPreview(): Promise<void> {
     const doc = editor.store.doc
-    if (!doc || !contentBackend || !materializer || exporting.value) return
+    // 导出消费预览视图（决策 2026-09）：模板态表格以一行预览行出图，与画布所见一致
+    const view = editor.previewCanvas
+    if (!doc || !view || !contentBackend || !materializer || exporting.value) return
     exporting.value = true
     docNote.value = '导出预览：等待全部资源物化…'
     try {
@@ -217,7 +219,7 @@ async function exportPreview(): Promise<void> {
         const state = await materializer.whenSettled()
         const failed = Object.values(state).filter((e) => e.status === 'failed').length
         // 文本布局策略与编辑会话同一注入值：导出与画布的断行/盒高不分叉
-        const result = await exportPreviewPng(doc, contentBackend, { textPolicies: editor.textPolicies })
+        const result = await exportPreviewPng(view, contentBackend, { textPolicies: editor.textPolicies })
         const base = graphFileName.value.replace(/\.json$/i, '')
         downloadBlob(result.blob, `${base}-preview.png`)
         docNote.value =
