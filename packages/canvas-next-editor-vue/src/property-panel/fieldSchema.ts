@@ -71,6 +71,10 @@ export interface FieldDef {
     readonly auto?: FieldAutoToggle
     /** 数据字段：提交走 updateData（按 type 分派到 text/src/value），其余走 updateSpec */
     readonly data?: boolean
+    /** 输入框占位文案（text 控件透传） */
+    readonly placeholder?: string
+    /** 非空校验（text 控件）：空提交被控件拦截并标错、不落库（spec §2.4 P4） */
+    readonly nonEmpty?: boolean
     /** select 取值域（领域常量原样引用，不自创缩写） */
     readonly domain?: readonly string[]
     readonly min?: number
@@ -198,19 +202,51 @@ const QR_SECTION: FieldSection = {
 }
 
 /**
- * type → 字段组注册表。表/行/格无数据字段；结构编辑（行列增删/重排）在
- * 图层面板（工单 10/12），此处只暴露形状/位置/对齐。
+ * 行模板字段组（spec §2.2 D6）：高 + 高自适应（创作期主操作）；行宽 := 表宽由
+ * canonicalize 重断言（ADR 0006 宽度耦合），宽度字段不渲染——只读说明入组标题。
+ */
+const TEMPLATE_ROW_SECTION: FieldSection = {
+    title: '行模板（行宽由表宽同步）',
+    fields: [
+        { key: ['shape', 'height'], label: '高', control: 'number', integer: true, min: 0 },
+        { key: ['shape', 'autoHeight'], label: '高自适应', control: 'boolean' },
+    ],
+}
+
+/**
+ * 表数据节（spec §2.4）：数据行路径——仅模板态显示（visibleWhen 过滤，V1 无
+ * 消费方；初值由创建/转换表单覆盖，面板只管改）。不走 data 管道（P3：rowsPath
+ * 是结构语义，提交走 updateSpec 透传，canonicalize 零 patch）；非空校验控件层
+ * 拦（P4：空串永不落库——解码 rows_path_missing 硬约束）。
+ */
+const DATA_SECTION: FieldSection = {
+    title: '数据',
+    fields: [
+        {
+            key: ['rowsPath'],
+            label: '数据行路径',
+            control: 'text',
+            placeholder: '如 order.items',
+            nonEmpty: true,
+            visibleWhen: (layer) => layer.type === 'TableLayer' && layer.template !== null,
+        },
+    ],
+}
+
+/**
+ * type → 字段组注册表。结构编辑（行列增删/重排）在图层面板（工单 10/12 与
+ * 模板创作 spec §2.2），此处只暴露形状/位置/对齐与数据。
  */
 export const FIELD_SECTIONS_BY_TYPE: Record<LayerType, readonly FieldSection[]> = {
     ImageLayer: [POSITION_SECTION, ALIGN_SECTION, SHAPE_SECTION, IMAGE_SECTION],
     TextLayer: [POSITION_SECTION, ALIGN_SECTION, SHAPE_SECTION, TEXT_SECTION],
     QrCodeLayer: [POSITION_SECTION, ALIGN_SECTION, SHAPE_SECTION, QR_SECTION],
-    TableLayer: [POSITION_SECTION, ALIGN_SECTION, SHAPE_SECTION],
+    TableLayer: [POSITION_SECTION, ALIGN_SECTION, SHAPE_SECTION, DATA_SECTION],
     TableRowLayer: [POSITION_SECTION, ALIGN_SECTION, SHAPE_SECTION],
     TableCellLayer: [POSITION_SECTION, ALIGN_SECTION, SHAPE_SECTION],
-    // 行模板行本身：无选择身份（预览行命中的是格，决策 2026-09），结构编辑
-    // 经图层面板行列入口且模板态被守卫拒绝
-    TableRowTemplate: [],
+    // 行模板（spec §2.2 D6）：替身路径可选中（推翻决策 2026-09），字段组 = 高/
+    // 高自适应；宽度字段不出现
+    TableRowTemplate: [TEMPLATE_ROW_SECTION],
 }
 
 /** 注册表查找的宽容口：白名单之外的 type 串返回空清单（不抛、不告警） */

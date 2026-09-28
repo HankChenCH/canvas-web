@@ -87,12 +87,13 @@ const fieldKeys = (sections: readonly { title: string; fields: readonly FieldDef
 describe('type 标识 ↔ 注册表映射', () => {
     it('7 种 type 全部有注册表条目，且恰为 LAYER_TYPES 全集（无多余条目）', () => {
         expect(Object.keys(FIELD_SECTIONS_BY_TYPE).sort()).toEqual([...LAYER_TYPES].sort())
-        // 行模板（V2）无编辑字段（绑定面板属 fog）：注册表占位空清单
+        // 行模板字段组（spec §2.2 D6）：高 + 高自适应——宽度由表宽同步不渲染
         for (const type of LAYER_TYPES) {
-            if (type === 'TableRowTemplate') continue
             expect(fieldSectionsForType(type).length).toBeGreaterThan(0)
         }
-        expect(fieldSectionsForType('TableRowTemplate')).toEqual([])
+        const templateSections = fieldSectionsForType('TableRowTemplate')
+        expect(templateSections).toHaveLength(1)
+        expect(fieldKeys(templateSections)).toEqual(['shape.height', 'shape.autoHeight'])
     })
 
     it('每种 type 实际渲染的每个字段 key 都能在该 type 的领域实例上解析（路径与文档模型同步）', () => {
@@ -203,10 +204,11 @@ describe('位置与尺寸组重排（layer-panel-ux 工票 03：两列行 + auto
         expect(height?.min).toBe(0)
     })
 
-    it('autoWidth/autoHeight 独立 BooleanField 行撤销（并入 prefix）', () => {
+    it('autoWidth/autoHeight 独立 BooleanField 行撤销（并入 prefix；行模板组除外——spec §2.2 D6 两字段形态）', () => {
         for (const type of LAYER_TYPES) {
             const keys = fieldKeys(fieldSectionsForType(type))
             expect(keys, type).not.toContain('shape.autoWidth')
+            if (type === 'TableRowTemplate') continue
             expect(keys, type).not.toContain('shape.autoHeight')
         }
     })
@@ -334,5 +336,68 @@ describe('画布级字段（未选中图层时的面板内容）', () => {
             expect(field.integer).toBe(true)
         }
         expect(readField({ width: 2400, height: 1500 }, ['width'])).toEqual({ ok: true, value: 2400 })
+    })
+})
+
+// ---- 模板创作（spec §2.2 D6 / §2.4）：替身字段组与 rowsPath 显隐 ----
+
+describe('fieldSectionsForPath：模板态（模板创作 spec）', () => {
+    const templateTable: Layer = {
+        type: 'TableLayer',
+        name: '',
+        visible: true,
+        priority: 10,
+        shape: {
+            width: 600,
+            height: 200,
+            autoWidth: false,
+            autoHeight: false,
+            lineHeight: 1.2,
+            padding: padding(0),
+            border: noBorder(),
+            backgroundColor: null,
+        },
+        align: { horizontal: 'left', vertical: 'top' } as const,
+        position: { anchor: 'top-left', x: 0, y: 0 } as const,
+        rowsPath: 'order.items',
+        rows: [],
+        template: {
+            type: 'TableRowTemplate',
+            name: '',
+            visible: true,
+            priority: 0,
+            shape: {
+                width: 600,
+                height: 0,
+                autoWidth: false,
+                autoHeight: true,
+                lineHeight: 1.2,
+                padding: padding(0),
+                border: noBorder(),
+                backgroundColor: null,
+            },
+            align: { horizontal: 'left', vertical: 'top' } as const,
+            position: { anchor: 'top-left', x: 0, y: 0 } as const,
+            cells: [],
+        },
+    }
+
+    it('行模板替身路径渲染 height/autoHeight 字段组（宽度不出现）', () => {
+        const sections = fieldSectionsForPath(['layers', 0, 'template'], templateTable.template!)
+        const keys = fieldKeys(sections)
+        expect(keys).toContain('shape.height')
+        expect(keys).toContain('shape.autoHeight')
+        expect(keys).not.toContain('shape.width')
+        expect(keys).not.toContain('shape.autoWidth')
+    })
+
+    it('rowsPath 仅模板态显示：V1 表无数据节，模板态表出现且带 nonEmpty/占位', () => {
+        const v1: Layer = { ...templateTable, template: null, rowsPath: '' }
+        expect(fieldKeys(fieldSectionsForPath(['layers', 0], v1))).not.toContain('rowsPath')
+
+        const dataSection = fieldSectionsForPath(['layers', 0], templateTable).find((s) => s.title === '数据')!
+        const rowsPath = dataSection.fields.find((f) => f.key[0] === 'rowsPath')!
+        expect(rowsPath.nonEmpty).toBe(true)
+        expect(rowsPath.placeholder).toBeTruthy()
     })
 })
