@@ -57,8 +57,9 @@ export interface ExpressionScan {
     parts: readonly ExpressionScanPart[]
 }
 
-/** PHP trim() 默认字符集（JS String.trim 的 Unicode 空白集与之不同，勿用） */
-const PHP_TRIM_CHARS = ' \t\n\r\0\x0B'
+/** PHP trim() 默认字符集（JS String.trim 的 Unicode 空白集与之不同，勿用）；
+ *  编辑器侧补全的接受手术同用此集（导出防按值复刻漂移，工单 04） */
+export const PHP_TRIM_CHARS = ' \t\n\r\0\x0B'
 
 function phpTrim(value: string): string {
     let start = 0

@@ -20,6 +20,7 @@ export {
 
 export {
     expressionFragmentAtCursor,
+    PHP_TRIM_CHARS,
     scanExpressionFragments,
     type ExpressionScan,
     type ExpressionScanFragment,

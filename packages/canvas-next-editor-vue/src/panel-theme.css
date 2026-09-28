@@ -217,3 +217,17 @@
 .cn-props .cn-field--invalid {
     border-color: var(--cn-danger);
 }
+
+/* ---- 表达式补全浮层（content-completion 工单 04）----
+   portal 到 body（躲 288px 面板 overflow 裁剪）后脱离面板 DOM 子树，根元素
+   自带 .cn-props 重建令牌命名空间；此处只收抬升底色/投影与高亮态（option
+   几何以 tailwind utility 留在组件模板）。 */
+.cn-props.cn-completion {
+    background-color: var(--cn-bg-elevated);
+    box-shadow: 0 16px 40px -12px rgba(2, 6, 23, 0.55);
+}
+
+.cn-props .cn-completion__option--active {
+    background-color: var(--cn-accent-soft);
+    color: var(--cn-accent);
+}
