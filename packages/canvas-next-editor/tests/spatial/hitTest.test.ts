@@ -84,6 +84,76 @@ describe('负溢出图层可命中（命中不钳位到画布边界）', () => {
     })
 })
 
+describe('底图命中豁免（工票 16，spec「渲染与交互」2026-09-27）：全幅底层退出画布命中面', () => {
+    const fullBleed = () => imageLayer({ shape: { width: 2400, height: 1500 } })
+
+    it('全幅底层：画布内任意点不再命中（点它 = 取消选中）', () => {
+        expect(hitTest(doc([fullBleed()]), 1200, 1000)).toBeNull()
+    })
+
+    it('其上叠放的普通层照常命中，豁免区仍返回 null', () => {
+        const canvas = doc([
+            fullBleed(),
+            textLayer({ position: { anchor: 'top-left', x: 100, y: 100 }, shape: { width: 100, height: 100 } }),
+        ])
+        expect(hitTest(canvas, 150, 150)).toEqual(['layers', 1])
+        expect(hitTest(canvas, 1200, 1000)).toBeNull()
+    })
+
+    it('非全幅底层照常命中（普通元素可点可拖）', () => {
+        const canvas = doc([
+            textLayer({ position: { anchor: 'top-left', x: 0, y: 0 }, shape: { width: 100, height: 100 } }),
+        ])
+        expect(hitTest(canvas, 50, 50)).toEqual(['layers', 0])
+    })
+
+    it('中叠全幅层照常命中（只豁免数组头，不豁免中叠全幅层）', () => {
+        const canvas = doc([
+            textLayer({ position: { anchor: 'top-left', x: 0, y: 0 }, shape: { width: 100, height: 100 } }),
+            imageLayer({ shape: { width: 2400, height: 1500 } }),
+        ])
+        expect(hitTest(canvas, 1200, 1000)).toEqual(['layers', 1])
+    })
+
+    it('底层负溢出但覆盖画布仍豁免（溢出画布外的部分同层不命中）', () => {
+        const canvas = doc([
+            imageLayer({
+                position: { anchor: 'top-left', x: -50, y: -40 },
+                shape: { width: 2500, height: 1600 },
+            }),
+        ])
+        expect(hitTest(canvas, 1200, 1000)).toBeNull()
+        expect(hitTest(canvas, -30, -20)).toBeNull()
+    })
+
+    it('全幅底表自身豁免，行/格/格内容照常可命中（子树下钻不受影响）', () => {
+        const canvas = doc([
+            tableLayer(
+                [
+                    rowLayer(
+                        [
+                            cellLayer(
+                                textLayer({
+                                    shape: { width: 100, height: 40 },
+                                    position: { anchor: 'top-left', x: 5, y: 5 },
+                                }),
+                                { shape: { width: 150, height: 90 } },
+                            ),
+                            cellLayer(null, { shape: { width: 150, height: 90 } }),
+                        ],
+                        { shape: { width: 600, height: 90 } },
+                    ),
+                ],
+                { shape: { width: 2400, height: 1500 } },
+            ),
+        ])
+        expect(hitTest(canvas, 75, 35)).toEqual(['layers', 0, 'rows', 0, 'cells', 0, 'content'])
+        expect(hitTest(canvas, 200, 35)).toEqual(['layers', 0, 'rows', 0, 'cells', 1])
+        expect(hitTest(canvas, 450, 35)).toEqual(['layers', 0, 'rows', 0])
+        expect(hitTest(canvas, 1200, 1000)).toBeNull()
+    })
+})
+
 describe('隐藏层命中过滤（layer-panel-ux 工单 10）：visible=false 根层整子树退出命中面', () => {
     it('隐藏顶层不被命中：点其区域穿透命中下方可见层', () => {
         const canvas = doc([

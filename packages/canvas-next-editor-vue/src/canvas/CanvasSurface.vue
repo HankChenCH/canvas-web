@@ -4,9 +4,10 @@
  *
  * - 内容层 + gizmo 覆盖层两层 canvas，覆盖层 pointer-events: none；
  *   重绘全部由 editor 会话内部合帧驱动（组件不订阅 store 驱动重绘）。
- * - 事件桥：wheel 三态语义（classifyWheel）→ 会话相机动作；中键/空格+左键拖拽平移；
- *   左键点选与拖动（selectAt/beginDrag/dragTo/endDrag）、hover 跟随、Escape 升级
- *   选择归属链——全部经内核意图级 API，组件只做坐标与指针状态翻译。
+ * - 事件桥：wheel 三态语义（classifyWheel）→ 会话相机动作；中键/空格+左键/左键拖空白
+ *   （全幅底图豁免后未命中，工票 16）拖拽平移；左键点选与拖动（selectAt/beginDrag/
+ *   dragTo/endDrag）、hover 跟随、Escape 升级选择归属链——全部经内核意图级 API，
+ *   组件只做坐标与指针状态翻译。
  * - 文本编辑（工单 11）：宿主内挂 TextEditingOverlay，双击进入（命中 TextLayer）、
  *   编辑中点 textarea 外先提交再点选、textarea 内指针归编辑光标。
  * - 右键菜单（工单 14）：contextmenu → 场景命中即右键选中 → 视口坐标开菜单
@@ -148,11 +149,21 @@ onMounted(() => {
             textEditRef.value.commitEditing()
         }
         e.preventDefault()
-        // 点选：命中即选中（画布与后续面板同源），命中层同时进入拖动会话
+        // 点选：命中即选中（画布与后续面板同源），命中层同时进入拖动会话；
+        // 未命中（全幅底图已在内核 hitTest 豁免，工票 16）= 整段手势转平移——
+        // 手势模式 pointerdown 一次性定死，配合 setPointerCapture 途中扫过图层不变异；
+        // 点击（无位移）空白的取消选中已由 selectAt(null) 即时完成，拖动才动相机
         const scene = sceneAt(e)
         const path = editor.selectAt(scene.x, scene.y)
         if (path && editor.beginDrag(path, scene.x, scene.y)) {
             active = { id: e.pointerId, mode: 'drag' }
+            host.setPointerCapture(e.pointerId)
+            return
+        }
+        if (path === null) {
+            active = { id: e.pointerId, mode: 'pan' }
+            last = { x: e.clientX, y: e.clientY }
+            panning.value = true
             host.setPointerCapture(e.pointerId)
         }
     }

@@ -19,6 +19,19 @@ function contains(box: LayerBox, x: number, y: number): boolean {
         && y < box.y + box.height
 }
 
+/**
+ * 全幅判定：底层自身盒 ⊇ 画布矩形（负溢出照算），与视口/缩放无关。
+ * spec「渲染与交互」2026-09-27 拍板的底图豁免（Fabric backgroundImage 不入命中图、
+ * Konva listening(false) 同构）：只作用于数组头根层——「数组按 priority 降序、
+ * 头先画垫底」的叠放不变量决定了它是唯一的视觉垫底层。
+ */
+function coversCanvas(box: LayerBox, canvasWidth: number, canvasHeight: number): boolean {
+    return box.x <= 0
+        && box.y <= 0
+        && box.x + box.width >= canvasWidth
+        && box.y + box.height >= canvasHeight
+}
+
 function hitWalk(
     layer: Layer,
     path: LayerPath,
@@ -26,8 +39,9 @@ function hitWalk(
     x: number,
     y: number,
     policies?: TextLayoutPolicies,
+    skipOwnBox = false,
 ): LayerPath | null {
-    // 子层后画在上：先下钻（尾→头），都未中再试自身盒
+    // 子层后画在上：先下钻（尾→头），都未中再试自身盒（次序不动——豁免只跳自身盒）
     switch (layer.type) {
         case 'TableLayer':
             for (let i = layer.rows.length - 1; i >= 0; i -= 1) {
@@ -63,7 +77,7 @@ function hitWalk(
             break
     }
 
-    return contains(box, x, y) ? path : null
+    return !skipOwnBox && contains(box, x, y) ? path : null
 }
 
 /**
@@ -81,7 +95,9 @@ export function hitTest(
         const layer = canvas.layers[i]!
         if (layer.visible === false) continue
         const box = resolveLayerBox(layer, 0, 0, canvas.width, canvas.height, policies)
-        const hit = hitWalk(layer, ['layers', i], box, sceneX, sceneY, policies)
+        // 全幅底层豁免只跳过自身盒测试（不能对整层 continue）：全幅底表的行/格/格内容照常可命中
+        const skipOwnBox = i === 0 && coversCanvas(box, canvas.width, canvas.height)
+        const hit = hitWalk(layer, ['layers', i], box, sceneX, sceneY, policies, skipOwnBox)
         if (hit) return hit
     }
     return null
