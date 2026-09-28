@@ -17,6 +17,7 @@ import type { Canvas } from '@hankchen/canvas-next'
 
 import type { Point, Viewport } from '../spatial/camera'
 import { pathsEqual, type LayerPath } from '../shared/layerPath'
+import type { ExpressionSchemaNode } from '../shared/expressionSchema'
 
 enablePatches()
 // 关闭 immer 自动冻结：文档树以「不可变 + 结构共享」语义流转（引用相等即未变），
@@ -63,6 +64,14 @@ export interface EditorUi {
      * （与 viewport 同款的面板偏好——openDocument 换文档不重置，永不进历史）。
      */
     anchorExpanded: boolean
+    /**
+     * 数据源 schema 声明（content-completion 工单 03，D2 宿主随会话注入）：
+     * 归一化节点树或降级 null（声明被拒/形态非法，注入期经
+     * normalizeExpressionSchemaSource 一次性收口 + console 警告）。只住会话态——
+     * 不进 graph、不落 localStorage、不进 wire（红线 3 延伸）；openDocument 换
+     * 文档不重置（声明随会话，重注入/清除走同一入口）。
+     */
+    dataSourceSchema: ExpressionSchemaNode | null
 }
 
 /** 一步历史：一次（或同键合并的多次）文档事务的正向/逆向 patch 组 */
@@ -100,6 +109,7 @@ export class EditorStore {
         editing: null,
         renaming: null,
         anchorExpanded: false,
+        dataSourceSchema: null,
     }
     /** undo 栈：已提交步，栈尾最新 */
     private undoSteps: HistoryStep[] = []
@@ -247,6 +257,17 @@ export class EditorStore {
         if (this.uiValue.anchorExpanded === open) return
         this.uiValue = { ...this.uiValue, anchorExpanded: open }
         this.notify({ scope: 'ui', branch: 'anchorExpanded' })
+    }
+
+    /**
+     * 数据源 schema 声明替换（归一产物或降级 null，校验收口在注入缝不在这里）：
+     * 同引用短路（重复注入同一归一产物不惊动订阅方）；仅 ui 通知，不参与重绘
+     * 脏标（onStoreChange 对该分支短路）。
+     */
+    setDataSourceSchema(schema: ExpressionSchemaNode | null): void {
+        if (this.uiValue.dataSourceSchema === schema) return
+        this.uiValue = { ...this.uiValue, dataSourceSchema: schema }
+        this.notify({ scope: 'ui', branch: 'dataSourceSchema' })
     }
 
     subscribe(listener: Listener): () => void {

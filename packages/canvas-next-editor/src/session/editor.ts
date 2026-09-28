@@ -54,6 +54,7 @@ import {
     selectionParentPath,
     type LayerPath,
 } from '../shared/layerPath'
+import { normalizeExpressionSchemaSource } from '../shared/expressionSchema'
 import {
     PASTE_OFFSET_PX,
     canCopyLayerAt,
@@ -607,6 +608,23 @@ export class EditorSession {
         }, options)
     }
 
+    // ---- 数据源 schema 声明（content-completion 工单 03）：D2 宿主随会话注入 ----
+
+    /**
+     * 注入数据源 schema 声明（载荷形态，D1 钉定：声明即 compile(canvas, dataset)
+     * 收到的 data 载荷形状，根上下文候选 = 载荷顶层键）。声明期校验经
+     * normalizeExpressionSchemaSource 一次性收口——根级保留键（row/$ 前缀，前移
+     * 填充期 reserved_root_key）或形态非法降级为无候选 + console 警告，不抛错不
+     * 弹错（辅助声明不作权威）；null/undefined = 清除声明。声明只住 store ui 分支：
+     * 不进 graph、不落 localStorage、不进 wire；openDocument 换文档不重置，
+     * 重注入/清除走同一入口。
+     */
+    setDataSourceSchema(raw: unknown): void {
+        this.store.setDataSourceSchema(
+            raw === null || raw === undefined ? null : normalizeExpressionSchemaSource(raw),
+        )
+    }
+
     // ---- 上传（工单 13）：本机资源 → 可物化引用，实现经 uploadHandler 注入 ----
 
     /** 上传可用性：未注入 uploadHandler 时为 false（宿主据此隐藏/禁用上传入口） */
@@ -1141,6 +1159,8 @@ export class EditorSession {
         else if (change.branch === 'viewport') this.invalidate('both')
         // 编辑会话开始/结束切换内容层的文本跳绘（textarea 接管该层呈现），双层都要重绘
         else if (change.branch === 'editing') this.invalidate('both')
+        // schema 声明不触达像素（候选消费在绑定层补全面），不参与重绘脏标
+        else if (change.branch === 'dataSourceSchema') return
         // 选择/悬停/拖动会话只影响 gizmo（拖动中的图层位移走 doc 分支另触发双层）
         else this.invalidate('overlay')
     }

@@ -37,6 +37,7 @@ import {
 import { decodeGraph, encodeGraph } from '@hankchen/canvas-next'
 
 import { DEMO_GRAPH_JSON } from './demoGraph'
+import { INVALID_DATASET_SCHEMA, SAMPLE_DATASET_SCHEMA } from './sampleDatasetSchema'
 import { buildVisualCheckGraph } from './visualCheckGraph'
 
 // 缩放范围可配置（缺省即 5%–800%）；适应画布留 48px 呼吸边。
@@ -49,6 +50,22 @@ const editor = new EditorSession({
     uploadHandler: uploadToDataUrl,
     fontCatalog: [{ label: 'Open Sans（演示字体）', ref: '/fonts/open-sans.ttf' }],
 })
+
+// 数据源 schema 声明（content-completion 工单 03，D2 宿主随会话注入）：playground
+// 以宿主身份在会话建立即注入样例载荷 schema。声明只进编辑器会话态（store ui 分支），
+// 不进 graph、不落 localStorage、不动 wire；工具栏三键目验 注入/非法降级/清除。
+const schemaNote = ref('')
+function syncSchemaNote(): void {
+    const schema = editor.store.ui.dataSourceSchema
+    schemaNote.value =
+        schema === null
+            ? '数据源 schema：无候选（未注入或声明被拒，警告见 console）'
+            : `数据源 schema：已注入（顶层 ${schema.properties?.size ?? 0} 键，候选源就绪）`
+}
+const unsubscribeSchema = editor.subscribe((change) => {
+    if (change.scope === 'ui' && change.branch === 'dataSourceSchema') syncSchemaNote()
+})
+editor.setDataSourceSchema(SAMPLE_DATASET_SCHEMA)
 
 /** data URL 兜底上传：本机字节 → 内联引用（物化管线可装载，无需网络） */
 async function uploadToDataUrl(file: UploadFile): Promise<string> {
@@ -201,6 +218,26 @@ function loadVisualCheckGraph(): void {
     materializer?.materialize(doc)
     editor.fitToSurface()
     docNote.value = '已载入目验样图（php visual-check 同场景：中文禁则/表格/QR/priority 叠放）'
+}
+
+// ---- 数据源 schema 注入入口（工单 03 目验）：宿主随会话注入的三态演示 ----
+
+/** 注入样例声明：载荷形态（D1），顶层键 = 根上下文候选（补全浮层呈现归工单 04/05） */
+function injectSampleSchema(): void {
+    editor.setDataSourceSchema(SAMPLE_DATASET_SCHEMA)
+    docNote.value = '已注入样例数据源 schema（载荷顶层键 = 根上下文候选；浮层呈现归工单 04/05）'
+}
+
+/** 注入非法声明（根级保留键 row）：降级无候选 + console 警告，不弹错不抛错 */
+function injectInvalidSchema(): void {
+    editor.setDataSourceSchema(INVALID_DATASET_SCHEMA)
+    docNote.value = '已注入非法声明（根级保留键 row）→ 降级无候选；警告走 console.warn，不弹错'
+}
+
+/** 清除声明：未注入 = 无候选（清除不告警） */
+function clearDataSourceSchema(): void {
+    editor.setDataSourceSchema(null)
+    docNote.value = '已清除数据源 schema 声明（未注入 = 无候选）'
 }
 
 // ---- 导出（工单 13，ADR 0004）：浏览器 PNG 是预览图，非终图 ----
@@ -357,6 +394,7 @@ onBeforeUnmount(() => {
     unsubscribeSelection?.()
     unsubscribeDoc?.()
     unsubscribeCatalog()
+    unsubscribeSchema()
     editor.dispose()
 })
 </script>
@@ -365,8 +403,9 @@ onBeforeUnmount(() => {
     <main class="stage">
         <header class="header">
             <h1>canvas-web playground</h1>
-            <p>工票 03：TableLayer V2 目验样例——模板态表格空壳渲染、表达式标记镜像字面与按字面物化降级（中列）。工单 15：加固与契约——contextlost 可恢复重绘、DPR 变更即时适配、布局快照 fixture 三端契约钉死（v1 + 预期差异白名单 + 同步校验）、点位取样补全（priority 叠加/QR 角点）；工具栏「目验样图」一键载入 php visual-check 同场景。工单 14/13 与更早目验保留</p>
+            <p>工票 03：TableLayer V2 目验样例——模板态表格空壳渲染、表达式标记镜像字面与按字面物化降级（中列）。工单 15：加固与契约——contextlost 可恢复重绘、DPR 变更即时适配、布局快照 fixture 三端契约钉死（v1 + 预期差异白名单 + 同步校验）、点位取样补全（priority 叠加/QR 角点）；工具栏「目验样图」一键载入 php visual-check 同场景。工单 03（content-completion）：数据源 schema 注入缝——工具栏三键目验 注入/非法降级/清除，声明只进会话态。工单 14/13 与更早目验保留</p>
             <p class="assets-note">{{ assetsNote }}</p>
+            <p class="schema-note" data-schema-note>{{ schemaNote }}</p>
             <p class="selection-note" data-selection>{{ selectionNote }}</p>
             <p class="doc-note" data-doc-note>
                 <span class="dirty-dot" data-dirty-mark>{{ isDirty ? '● 未保存' : '○ 已保存' }}</span>
@@ -417,6 +456,31 @@ onBeforeUnmount(() => {
             >
                 目验样图
             </button>
+            <span class="toolbar-divider" aria-hidden="true"></span>
+            <button
+                type="button"
+                data-schema-sample
+                title="注入样例数据源 schema（载荷形态，中文 description；宿主随会话注入，工单 03）"
+                @click="injectSampleSchema"
+            >
+                注入 schema
+            </button>
+            <button
+                type="button"
+                data-schema-invalid
+                title="注入非法声明（根级保留键 row）→ 降级无候选 + console 警告，不弹错"
+                @click="injectInvalidSchema"
+            >
+                注入非法 schema
+            </button>
+            <button
+                type="button"
+                data-schema-clear
+                title="清除数据源 schema 声明（未注入 = 无候选，清除不告警）"
+                @click="clearDataSourceSchema"
+            >
+                清除声明
+            </button>
             <!-- 隐藏文件入口：打开 graph JSON / 本机选图 -->
             <input ref="openInput" type="file" accept=".json,application/json" class="hidden" @change="onOpenGraphFile" />
             <input ref="imageInput" type="file" accept="image/*" class="hidden" @change="onImageFile" />
@@ -457,6 +521,7 @@ onBeforeUnmount(() => {
                 <li>工单 02–04 目验样例保留：priority 叠放 / cover / 中文禁则断行 / 表格 / 失败资源（右上红框）/ QR 固定选项（右下，贴角负边距）</li>
                 <li><b>目验样图（工单 15）</b>：工具栏「目验样图」一键载入 <b>php-canvas-image-renderer visual-check 同场景</b>（400×400）——头图色块 + 居中标题、长中文段落（<b>禁则</b>：行首不出现句号/逗号等收尾标点、英文词边界断行）、三行两列<b>表格</b>（表头底色 + 全边框）、<b>QR</b>（纠错 High/无静区/黑白）、双色图片条与页脚；<b>priority 叠放</b>（白底 11 → 头图 10 → 标题 5 → 内容层 4）。人工核对预览观感：预览断行允许与终图不同（决策 A），位置与盒尺寸应一致</li>
             <li><b>表格模板态与表达式标记（TableLayer V2，工票 03）</b>：中列 V2 目验区自上而下——<b>标记图片</b>（src 为表达式镜像字面 <span v-pre>{{assets.banner}}</span>，按字面引用装载失败 → 占位 + 红叉，不崩渲染）、<b>标记二维码</b>（内容为字面 <span v-pre>{{orderNo}}</span>，按字面出码）、<b>标记文本</b>（显示镜像字面 <span v-pre>订单 {{orderNo}} · 共 {{$count}} 件</span>，编辑器不求值——终图由服务端展开求值）、<b>模板态表格</b>（<b>空壳渲染</b>：表壳 bg/border 照画、行区零高——rows 为空、模板行不实例化）；模板子树不进大纲/不可选中/不参与物化，双击或面板编辑标记文本即解除标记回字面（保存后需重打标，spec §3.7）</li>
+            <li><b>数据源 schema 注入缝（content-completion 工单 03）</b>：<b>宿主随会话注入</b>（D2）——本页建立会话即注入样例载荷 schema，工具栏三键可重演：<b>注入 schema</b>（载荷形态，D1：声明即 <code>compile(canvas, dataset)</code> 的 data 载荷形状，顶层键 = 根上下文候选；键树与演示 graph 表达式对齐，description 全中文供浮层元信息目验）、<b>注入非法 schema</b>（根级保留键 <code>row</code> → 声明被拒：<b>降级无候选 + console.warn 警告，不弹错不抛错</b>，前移填充期 reserved_root_key 硬错误）、<b>清除声明</b>（未注入 = 无候选，清除不告警）；声明只进编辑器会话态（store ui 分支）——<b>不进 graph、不落 localStorage、不动 wire</b>，换文档不重置；页头读数显示声明态（已注入键数 / 无候选）。补全候选的浮层呈现与三字段接线归工单 04/05</li>
             </ul>
         </section>
     </main>
@@ -495,6 +560,13 @@ onBeforeUnmount(() => {
     margin-top: 2px;
     font-size: 12px;
     color: #94a3b8;
+}
+
+/* 工单 03：数据源 schema 声明态读数（注入/降级/清除随 ui 分支订阅联动） */
+.schema-note {
+    margin-top: 2px;
+    font-size: 12px;
+    color: #0d9488;
 }
 
 .selection-note {
