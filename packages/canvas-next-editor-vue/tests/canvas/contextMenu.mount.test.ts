@@ -103,7 +103,7 @@ describe('ContextMenu：可用态裁剪（v1 单选 + 根层语义）', () => {
         wrapper.unmount()
     })
 
-    it('表格行：删除可用，显示/隐藏/副本/置顶/置底禁用（容器内数组序语义）', async () => {
+    it('表格行：删除可用，显示/隐藏/副本/置顶/置底禁用；转换项按所属表出现（spec §2.3）', async () => {
         const editor = makeEditor([
             tableLayer(
                 [rowLayer([cellLayer(null, { shape: { width: 200, height: 60 } })], { shape: { width: 200, height: 60 } })],
@@ -114,7 +114,10 @@ describe('ContextMenu：可用态裁剪（v1 单选 + 根层语义）', () => {
         const wrapper = mountMenu(editor)
         await wrapper.vm.openAt(10, 10)
         const disabled = itemButtons(wrapper).map((b) => b.attributes('disabled') !== undefined)
-        expect(disabled).toEqual([true, true, true, true, false])
+        // [隐藏, 副本, 置顶, 置底, 转为模板表…（所属 V1 表末行有格 → 可用）, 删除]
+        expect(disabled).toEqual([true, true, true, true, false, false])
+        const labels = itemButtons(wrapper).map((b) => b.text())
+        expect(labels).toContain('转为模板表…')
         wrapper.unmount()
     })
 
@@ -129,7 +132,8 @@ describe('ContextMenu：可用态裁剪（v1 单选 + 根层语义）', () => {
         const wrapper = mountMenu(editor)
         await wrapper.vm.openAt(10, 10)
         const disabled = itemButtons(wrapper).map((b) => b.attributes('disabled') !== undefined)
-        expect(disabled).toEqual([true, false, true, true, false])
+        // [隐藏, 副本, 置顶, 置底, 转为模板表…（所属表判定，spec §2.3）, 删除]
+        expect(disabled).toEqual([true, false, true, true, false, false])
         wrapper.unmount()
     })
 

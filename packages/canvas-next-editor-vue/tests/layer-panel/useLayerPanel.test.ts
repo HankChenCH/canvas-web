@@ -159,7 +159,7 @@ const emptyRowLayer = (): TableRowLayer => ({
 })
 
 describe('useLayerPanel：模板态表格的大纲边界（工票 03）', () => {
-    it('模板态表格节点无 children：模板子树不进大纲（不可选中 = 预期）', () => {
+    it('模板态表格进大纲：行模板子节点走替身路径 + templated 标记（spec §2.2，推翻不进大纲）', () => {
         const editor = makeEditor([templateTableLayer()])
         const scope = effectScope()
         let binding: ReturnType<typeof useLayerPanel> | null = null
@@ -170,7 +170,29 @@ describe('useLayerPanel：模板态表格的大纲边界（工票 03）', () => 
         const tableNode = binding!.outline.value[0]!
         expect(tableNode.type).toBe('TableLayer')
         expect(tableNode.path).toEqual(['layers', 0])
-        expect(tableNode.children).toEqual([])
+        expect(tableNode.templated).toBe(true)
+        expect(tableNode.children).toHaveLength(1)
+        const templateNode = tableNode.children[0]!
+        expect(templateNode.role).toBe('templateRow')
+        expect(templateNode.path).toEqual(['layers', 0, 'template'])
+        scope.stop()
+    })
+
+    it('模板格/内容照旧 cell/content 角色，路径含 template 段（spec §2.2 D1）', () => {
+        const editor = makeEditor([templateTableLayer()])
+        const scope = effectScope()
+        let binding: ReturnType<typeof useLayerPanel> | null = null
+        scope.run(() => {
+            binding = useLayerPanel(editor)
+        })
+
+        const templateNode = binding!.outline.value[0]!.children[0]!
+        expect(templateNode.children).toHaveLength(1)
+        const cellNode = templateNode.children[0]!
+        expect(cellNode.role).toBe('cell')
+        expect(cellNode.path).toEqual(['layers', 0, 'template', 'cells', 0])
+        expect(cellNode.children[0]!.role).toBe('content')
+        expect(cellNode.children[0]!.path).toEqual(['layers', 0, 'template', 'cells', 0, 'content'])
         scope.stop()
     })
 

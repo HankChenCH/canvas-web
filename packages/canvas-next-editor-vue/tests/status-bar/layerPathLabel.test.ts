@@ -18,4 +18,10 @@ describe('formatLayerPath：路径展示格式化', () => {
             '图层 1 · 行 2 · 格 3 · 格内容',
         )
     })
+
+    it('模板子树（spec §2.2）：template 段无下标 → 行模板；替身收尾即止', () => {
+        expect(formatLayerPath(['layers', 8, 'template'])).toBe('图层 8 · 行模板')
+        expect(formatLayerPath(['layers', 8, 'template', 'cells', 0])).toBe('图层 8 · 行模板 · 格 0')
+        expect(formatLayerPath(['layers', 8, 'template', 'cells', 0, 'content'])).toBe('图层 8 · 行模板 · 格 0 · 格内容')
+    })
 })

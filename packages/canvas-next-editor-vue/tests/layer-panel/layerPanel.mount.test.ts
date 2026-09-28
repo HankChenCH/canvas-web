@@ -141,7 +141,8 @@ describe('LayerPanel：渲染与联动', () => {
         const editor = makeEditor([textLayer(30, '底'), textLayer(10, '顶')])
         const wrapper = mount(LayerPanel, { props: { editor } })
 
-        await wrapper.find('[data-add="TextLayer"]').trigger('click')
+        await wrapper.find('[data-add-menu]').trigger('click')
+        await wrapper.find('[data-add-layer="TextLayer"]').trigger('click')
         const layers = editor.store.doc!.layers
         expect(layers).toHaveLength(3)
         expect(layers[2]!.priority).toBe(9)
@@ -273,16 +274,18 @@ describe('LayerPanel：表格容器结构编辑（工单 12）', () => {
 })
 
 describe('LayerPanel：V2 绑定面（工票 03）', () => {
-    it('新增菜单四入口锁死：不含 TableRowTemplate（模板不可新建，硬编码清单不得扩张）', async () => {
+    it('新增菜单五入口（spec §2.1）：四类图层 + 模板表（行模板不单卖，template-table 是表的创建形态）', async () => {
         const editor = makeEditor([])
         const wrapper = mount(LayerPanel, { props: { editor } })
 
-        const adds = wrapper.findAll('[data-add]')
-        expect(adds.map((button) => button.attributes('data-add'))).toEqual([
+        await wrapper.find('[data-add-menu]').trigger('click')
+        const adds = wrapper.findAll('[data-add-layer]')
+        expect(adds.map((button) => button.attributes('data-add-layer'))).toEqual([
             'TextLayer',
             'ImageLayer',
             'QrCodeLayer',
             'TableLayer',
+            'template-table',
         ])
         wrapper.unmount()
     })
@@ -528,6 +531,122 @@ describe('LayerPanel：显示/隐藏（工单 10）', () => {
 
         await wrapper.find('[data-visibility]').trigger('click')
         expect(editor.store.ui.selection).toBeNull()
+        wrapper.unmount()
+    })
+})
+
+// ---- 模板创作（spec §2.1/§2.2/§2.5）：菜单建模板表 + 模板态大纲操作面 ----
+
+describe('LayerPanel：模板表创建菜单（spec §2.1）', () => {
+    it('模板表经菜单表单创建：rowsPath 必填（空串就地拦）→ 创建 + 自动选中', async () => {
+        const editor = makeEditor([])
+        const wrapper = mount(LayerPanel, { props: { editor } })
+
+        await wrapper.find('[data-add-menu]').trigger('click')
+        await wrapper.find('[data-add-layer="template-table"]').trigger('click')
+        expect(wrapper.find('[data-template-rows-path]').exists()).toBe(true)
+
+        // 空串确认 → 就地标错、文档零变化
+        await wrapper.find('[data-template-rows-path]').setValue('  ')
+        await wrapper.find('[data-template-confirm]').trigger('click')
+        expect(editor.store.doc!.layers).toHaveLength(0)
+        expect(wrapper.find('[data-template-rows-path]').classes().some((c) => c.includes('border-cn-danger'))).toBe(true)
+
+        // 非空确认 → 建表 + 选中（缺省格带文本内容）
+        await wrapper.find('[data-template-rows-path]').setValue('order.items')
+        await wrapper.find('[data-template-confirm]').trigger('click')
+        const layers = editor.store.doc!.layers
+        expect(layers).toHaveLength(1)
+        const table = layers[0]!
+        if (table.type !== 'TableLayer') throw new Error('expected TableLayer')
+        expect(table.rowsPath).toBe('order.items')
+        expect(table.template).not.toBeNull()
+        expect(table.template!.cells).toHaveLength(1)
+        expect(table.template!.cells[0]!.content?.type).toBe('TextLayer')
+        expect(editor.store.ui.selection).toEqual(['layers', 0])
+        wrapper.unmount()
+    })
+})
+
+describe('LayerPanel：模板态大纲与操作面（spec §2.2/§2.5）', () => {
+    /** 模板态表 + 一格（无内容）的最小文档 */
+    function templateTableDoc(): Layer[] {
+        const table: Layer = {
+            type: 'TableLayer',
+            name: '',
+            visible: true,
+            priority: 5,
+            shape: baseShape(600, 200),
+            align: baseAlign,
+            position: basePosition,
+            rowsPath: 'order.items',
+            rows: [],
+            template: {
+                type: 'TableRowTemplate',
+                name: '',
+                visible: true,
+                priority: 0,
+                shape: baseShape(600, 0),
+                align: baseAlign,
+                position: basePosition,
+                cells: [
+                    {
+                        type: 'TableCellLayer',
+                        name: '',
+                        visible: true,
+                        priority: 0,
+                        shape: baseShape(300, 0),
+                        align: baseAlign,
+                        position: basePosition,
+                        content: null,
+                    },
+                ],
+            },
+        }
+        return [table]
+    }
+
+    it('大纲渲染行模板节点；+行 置灰；行模板 ✕ 置灰（spec §2.5 反馈规范）', async () => {
+        const editor = makeEditor(templateTableDoc())
+        const wrapper = mount(LayerPanel, { props: { editor } })
+
+        const labels = wrapper.findAll('.cn-layers__label').map((node) => node.text())
+        expect(labels).toContain('⌗ 行模板')
+
+        const addRow = wrapper.find('[data-add-row]')
+        expect(addRow.attributes('disabled')).toBeDefined()
+        expect(addRow.attributes('title')).toBe('模板态不可加行——行由数据展开')
+
+        const templateRowEl = wrapper.findAll('li').find((li) => li.text().includes('行模板'))!
+        const removeButton = templateRowEl.findAll('button').find((button) => button.text() === '✕')!
+        expect(removeButton.attributes('disabled')).toBeDefined()
+        expect(removeButton.attributes('title')).toContain('行模板由表持有')
+        wrapper.unmount()
+    })
+
+    it('行模板 +格 走 addTemplateCell：零高度耦合加格 + 自动选中新格（spec §3.1）', async () => {
+        const editor = makeEditor(templateTableDoc())
+        const wrapper = mount(LayerPanel, { props: { editor } })
+
+        const templateRowEl = wrapper.findAll('li').find((li) => li.text().includes('行模板'))!
+        await templateRowEl.find('[data-add-template-cell]').trigger('click')
+
+        const table = editor.store.doc!.layers[0]!
+        if (table.type !== 'TableLayer') throw new Error('expected TableLayer')
+        expect(table.template!.cells).toHaveLength(2)
+        expect(table.template!.shape.height).toBe(0)
+        expect(table.template!.cells[1]!.content?.type).toBe('TextLayer')
+        expect(editor.store.ui.selection).toEqual(['layers', 0, 'template', 'cells', 1])
+        wrapper.unmount()
+    })
+
+    it('模板格同行拖拽放行（canDrop 同容器）；格点选走替身路径（spec §2.2 D3）', async () => {
+        const editor = makeEditor(templateTableDoc())
+        const wrapper = mount(LayerPanel, { props: { editor } })
+
+        const cellEl = wrapper.findAll('li').find((li) => li.text().includes('格 1'))!
+        await cellEl.trigger('click')
+        expect(editor.store.ui.selection).toEqual(['layers', 0, 'template', 'cells', 0])
         wrapper.unmount()
     })
 })

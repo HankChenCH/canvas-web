@@ -21,6 +21,7 @@ import { computed, nextTick, ref, watch, type ComponentPublicInstance } from 'vu
 import { Eye, EyeOff, GripVertical, Pencil } from '@lucide/vue'
 
 import {
+    isTemplateSubtreePath,
     pathsEqual,
     type EditorSession,
     type LayerOutlineNode,
@@ -44,15 +45,63 @@ interface FlatRow {
     indexInGroup: number
     /** 行节点的宿主表路径（行拖放落点折算 + moveTableRow 入参）；非行 null */
     tablePath: LayerPath | null
+    /** 是否落在行模板子树（视觉区分 + 格拖放裁剪，spec §2.2） */
+    inTemplate: boolean
     draggable: boolean
 }
 
-const ADD_TYPES: readonly { type: LayerType; label: string; title: string }[] = [
-    { type: 'TextLayer', label: '文', title: '新增文本层' },
-    { type: 'ImageLayer', label: '图', title: '新增图片层' },
-    { type: 'QrCodeLayer', label: '码', title: '新增二维码层' },
-    { type: 'TableLayer', label: '表', title: '新增表格层' },
+/** 新增菜单项（spec §2.1）：四类图层直建；模板表带 rowsPath 必填表单 */
+type AddMenuKind =
+    | { kind: 'layer'; type: LayerType; label: string; title: string }
+    | { kind: 'template-table'; label: string; title: string }
+
+const ADD_MENU: readonly AddMenuKind[] = [
+    { kind: 'layer', type: 'TextLayer', label: '文本层', title: '新增文本层' },
+    { kind: 'layer', type: 'ImageLayer', label: '图片层', title: '新增图片层' },
+    { kind: 'layer', type: 'QrCodeLayer', label: '二维码层', title: '新增二维码层' },
+    { kind: 'layer', type: 'TableLayer', label: '表格', title: '新增表格层' },
+    { kind: 'template-table', label: '模板表', title: '新增模板表（行模板 + 数据行展开）' },
 ]
+
+/** 新增菜单态：菜单开合 + 模板表 rowsPath 表单（必填校验就地拦，spec §2.1 N1） */
+const addMenuOpen = ref(false)
+const templateFormOpen = ref(false)
+const templateRowsPath = ref('')
+const templateRowsPathInvalid = ref(false)
+
+function toggleAddMenu(): void {
+    if (addMenuOpen.value) {
+        resetAddMenu()
+        return
+    }
+    addMenuOpen.value = true
+}
+
+function resetAddMenu(): void {
+    addMenuOpen.value = false
+    templateFormOpen.value = false
+    templateRowsPath.value = ''
+    templateRowsPathInvalid.value = false
+}
+
+function addLayer(kind: AddMenuKind): void {
+    if (kind.kind === 'template-table') {
+        templateFormOpen.value = true
+        return
+    }
+    props.editor.addRootLayer(kind.type)
+    resetAddMenu()
+}
+
+function addTemplateTable(): void {
+    const rowsPath = templateRowsPath.value.trim()
+    if (rowsPath === '') {
+        templateRowsPathInvalid.value = true
+        return
+    }
+    props.editor.addTemplateTable(rowsPath)
+    resetAddMenu()
+}
 
 /**
  * 显示名（工单 09）：根层 name 非空上屏、空串回退派生标签（`TextLayer 1` 式，
@@ -65,6 +114,9 @@ function labelFor(node: LayerOutlineNode, typeOrdinal: number): string {
             return node.name !== '' ? node.name : `${node.type} ${typeOrdinal}`
         case 'row':
             return `行 ${Number(node.path[node.path.length - 1]) + 1}`
+        case 'templateRow':
+            // 前缀图标 + 正式名词（术语红线：行模板；spec §2.2 D1）
+            return '⌗ 行模板'
         case 'cell':
             return `格 ${Number(node.path[node.path.length - 1]) + 1}`
         case 'content':
@@ -76,8 +128,14 @@ const flatRows = computed<readonly FlatRow[]>(() => {
     const rows: FlatRow[] = []
     const typeCount = new Map<string, number>()
     function walk(node: LayerOutlineNode, indentLevel: number, indexInGroup: number, tablePath: LayerPath | null): void {
-        // 行节点的宿主表 = 去掉尾段 (key, index) 的路径；格/内容继承传入的表路径
-        const rowTablePath = node.role === 'row' ? (node.path.slice(0, -2) as LayerPath) : tablePath
+        // 行节点的宿主表 = 去掉尾段 (key, index) 的路径；行模板节点 template 段无
+        // 下标（去掉尾段一段）；格/内容继承传入的表路径
+        const rowTablePath =
+            node.role === 'row'
+                ? (node.path.slice(0, -2) as LayerPath)
+                : node.role === 'templateRow'
+                    ? (node.path.slice(0, -1) as LayerPath)
+                    : tablePath
         let ordinal = 0
         if (node.role === 'root') {
             ordinal = (typeCount.get(node.type) ?? 0) + 1
@@ -90,6 +148,7 @@ const flatRows = computed<readonly FlatRow[]>(() => {
             label: labelFor(node, ordinal),
             indexInGroup,
             tablePath: rowTablePath,
+            inTemplate: isTemplateSubtreePath(node.path),
             draggable: node.role === 'root' || node.role === 'row' || node.role === 'cell',
         })
         node.children.forEach((child, i) => walk(child, indentLevel + 1, i, rowTablePath))
@@ -110,11 +169,7 @@ function hover(row: FlatRow | null): void {
     props.editor.setHovered(row === null ? null : row.node.path)
 }
 
-// ---- 增删（内核 action：根层新增置顶 min−1；行/格新增走重建路径；删除含子树） ----
-
-function add(type: LayerType): void {
-    props.editor.addRootLayer(type)
-}
+// ---- 增删（内核 action：根层新增置顶 min−1；行/格/模板格新增走重建路径；删除含子树） ----
 
 /** 表节点的「加行」：缺省行 + 缺省格（带文本内容），行宽=表宽 */
 function addRow(row: FlatRow): void {
@@ -124,6 +179,12 @@ function addRow(row: FlatRow): void {
 /** 行节点的「加格」：缺省格 + 文本内容，行高取最高格 */
 function addCell(row: FlatRow): void {
     props.editor.addTableCell(row.node.path)
+}
+
+/** 行模板节点的「加格」（spec §3.1）：缺省格 + 文本内容，零高度耦合 */
+function addTemplateCell(row: FlatRow): void {
+    // 行模板节点路径 ['layers', i, 'template'] → 宿主表路径去掉尾段
+    props.editor.addTemplateCell(row.node.path.slice(0, -1) as LayerPath)
 }
 
 function remove(row: FlatRow): void {
@@ -146,13 +207,24 @@ type DragSource =
 const dragSource = ref<DragSource | null>(null)
 const dropHint = ref<{ key: string; edge: 'before' | 'after' } | null>(null)
 
-/** 同类才可落：根层 ↔ 根层；行 ↔ 任意表的行节点（跨表内核分流）；格 ↔ 任意行的格节点 */
+/**
+ * 同类才可落：根层 ↔ 根层；行 ↔ 任意表的行节点（跨表内核分流；行模板节点不是
+ * row 角色，天然不在落点集）；格落点按模板归属裁剪（spec §2.2 D3 + §3.2）——
+ * 模板格只接受同一模板行内的格（跨容器对模板态不可达，内核原语 no-op），V1 格
+ * 与模板格互不落。
+ */
 function canDrop(row: FlatRow): boolean {
     const source = dragSource.value
     if (!source) return false
     if (source.kind === 'root') return row.node.role === 'root'
     if (source.kind === 'row') return row.node.role === 'row'
-    return row.node.role === 'cell'
+    if (row.node.role !== 'cell') return false
+    const sourceInTemplate = isTemplateSubtreePath(source.cellPath)
+    if (sourceInTemplate !== row.inTemplate) return false
+    if (sourceInTemplate) {
+        return pathsEqual(source.cellPath.slice(0, -2), row.node.path.slice(0, -2))
+    }
+    return true
 }
 
 /** 把手行判定：仅根层有把手、仅根层从把手发起拖拽（行/格不加把手，I2=A 行/格不动） */
@@ -305,17 +377,73 @@ watch(panel.renaming, async (path) => {
         <header class="sticky top-0 z-10 flex items-center justify-between border-b border-cn-line bg-cn-bg-elevated/95 px-3.5 py-2.5 backdrop-blur-sm">
             <span class="text-[12px] font-medium tracking-wide text-cn-fg/90">图层</span>
             <div class="flex items-center gap-1">
-                <button
-                    v-for="item in ADD_TYPES"
-                    :key="item.type"
-                    type="button"
-                    :data-add="item.type"
-                    :title="item.title"
-                    class="size-6 rounded border border-cn-field-line bg-cn-field text-[11px] leading-none text-cn-fg/80 hover:border-cn-accent/40 hover:text-cn-accent"
-                    @click="add(item.type)"
-                >
-                    {{ item.label }}
-                </button>
+                <!-- 点击遮罩收菜单（透明层垫在弹层下） -->
+                <div
+                    v-if="addMenuOpen"
+                    class="fixed inset-0 z-10"
+                    data-add-backdrop
+                    @pointerdown="resetAddMenu"
+                ></div>
+                <div class="relative z-20">
+                    <button
+                        type="button"
+                        data-add-menu
+                        :aria-expanded="addMenuOpen"
+                        title="新增图层"
+                        class="flex size-6 items-center justify-center rounded border border-cn-field-line bg-cn-field text-[13px] leading-none text-cn-fg/80 hover:border-cn-accent/40 hover:text-cn-accent"
+                        @click="toggleAddMenu"
+                    >
+                        +
+                    </button>
+                    <div
+                        v-if="addMenuOpen"
+                        class="absolute left-0 top-7 flex w-40 flex-col rounded-lg border border-cn-line bg-cn-bg-elevated p-1 shadow-[0_12px_32px_rgba(2,6,23,0.55)]"
+                    >
+                        <template v-if="!templateFormOpen">
+                            <button
+                                v-for="kind in ADD_MENU"
+                                :key="kind.label"
+                                type="button"
+                                :data-add-layer="kind.kind === 'layer' ? kind.type : 'template-table'"
+                                :title="kind.title"
+                                class="rounded px-2 py-1.5 text-left text-[12px] text-cn-fg/90 hover:bg-cn-accent/15 hover:text-cn-accent"
+                                @click="addLayer(kind)"
+                            >
+                                {{ kind.label }}
+                            </button>
+                        </template>
+                        <template v-else>
+                            <p class="px-2 pt-1 text-[11px] leading-4 text-cn-muted">模板行按数据行路径展开成表</p>
+                            <input
+                                v-model="templateRowsPath"
+                                data-template-rows-path
+                                type="text"
+                                placeholder="如 order.items"
+                                class="mx-1 my-1 w-[calc(100%-8px)] rounded border bg-cn-field px-2 py-1 text-[12px] text-cn-fg outline-none focus:border-cn-accent/60"
+                                :class="templateRowsPathInvalid ? 'border-cn-danger' : 'border-cn-field-line'"
+                                @keydown.enter.prevent="addTemplateTable"
+                            />
+                            <p v-if="templateRowsPathInvalid" class="px-2 pb-1 text-[11px] text-cn-danger">rowsPath 必填</p>
+                            <div class="flex gap-1 p-1">
+                                <button
+                                    type="button"
+                                    data-template-confirm
+                                    class="flex-1 rounded bg-cn-accent/20 px-2 py-1 text-[12px] text-cn-accent hover:bg-cn-accent/30"
+                                    @click="addTemplateTable"
+                                >
+                                    创建
+                                </button>
+                                <button
+                                    type="button"
+                                    class="flex-1 rounded px-2 py-1 text-[12px] text-cn-muted hover:text-cn-fg"
+                                    @click="resetAddMenu"
+                                >
+                                    取消
+                                </button>
+                            </div>
+                        </template>
+                    </div>
+                </div>
             </div>
         </header>
 
@@ -337,6 +465,7 @@ watch(panel.renaming, async (path) => {
                     'cn-layers__row--selected': isSelected(row),
                     'cn-layers__row--hovered': isHovered(row) && !isSelected(row),
                     'cn-layers__row--hidden': isRootRow(row) && !row.node.visible,
+                    'cn-layers__row--template': row.inTemplate,
                     'cursor-grab': row.draggable && !isRootRow(row),
                     'cn-layers__row--drop-before': dropHint?.key === row.key && dropHint?.edge === 'before',
                     'cn-layers__row--drop-after': dropHint?.key === row.key && dropHint?.edge === 'after',
@@ -405,8 +534,9 @@ watch(panel.renaming, async (path) => {
                     v-if="row.node.role === 'root' && row.node.type === 'TableLayer'"
                     type="button"
                     data-add-row
-                    class="cn-layers__delete hidden size-5 shrink-0 items-center justify-center rounded text-[10px] leading-none text-cn-muted hover:bg-cn-accent/15 hover:text-cn-accent group-hover:flex"
-                    title="加行（缺省行 + 缺省格与文本，行宽=表宽）"
+                    class="cn-layers__delete hidden size-5 shrink-0 items-center justify-center rounded text-[10px] leading-none text-cn-muted hover:bg-cn-accent/15 hover:text-cn-accent group-hover:flex disabled:cursor-not-allowed disabled:text-cn-muted/50 disabled:hover:bg-transparent"
+                    :disabled="row.node.templated === true"
+                    :title="row.node.templated === true ? '模板态不可加行——行由数据展开' : '加行（缺省行 + 缺省格与文本，行宽=表宽）'"
                     @click.stop="addRow(row)"
                 >
                     +行
@@ -422,9 +552,20 @@ watch(panel.renaming, async (path) => {
                     +格
                 </button>
                 <button
+                    v-if="row.node.role === 'templateRow'"
                     type="button"
-                    class="cn-layers__delete hidden size-5 shrink-0 items-center justify-center rounded text-[10px] leading-none text-cn-muted hover:bg-cn-danger/15 hover:text-cn-danger group-hover:flex"
-                    title="删除（含子层）"
+                    data-add-template-cell
+                    class="cn-layers__delete hidden size-5 shrink-0 items-center justify-center rounded text-[10px] leading-none text-cn-muted hover:bg-cn-accent/15 hover:text-cn-accent group-hover:flex"
+                    title="加格（缺省格 + 文本内容，零高度耦合——行高由数据展开定稿）"
+                    @click.stop="addTemplateCell(row)"
+                >
+                    +格
+                </button>
+                <button
+                    type="button"
+                    class="cn-layers__delete hidden size-5 shrink-0 items-center justify-center rounded text-[10px] leading-none text-cn-muted hover:bg-cn-danger/15 hover:text-cn-danger group-hover:flex disabled:cursor-not-allowed disabled:text-cn-muted/50 disabled:hover:bg-transparent disabled:hover:text-cn-muted/50"
+                    :disabled="row.node.role === 'templateRow'"
+                    :title="row.node.role === 'templateRow' ? '行模板由表持有——转换回普通表请用 V2 转换入口' : '删除（含子层）'"
                     @click.stop="remove(row)"
                 >
                     ✕

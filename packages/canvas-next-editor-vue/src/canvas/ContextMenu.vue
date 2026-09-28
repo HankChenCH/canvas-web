@@ -17,7 +17,7 @@
  */
 import { computed, nextTick, ref } from 'vue'
 
-import { isRootLayerPath, rootLayerOf, type EditorSession } from '@hankchen/canvas-next-editor'
+import { isRootLayerPath, rootLayerOf, type EditorSession, type LayerPath } from '@hankchen/canvas-next-editor'
 
 import { useSelection } from '../shared/useSelection'
 
@@ -40,10 +40,77 @@ const selectedRootVisible = computed(() => {
     return rootLayerOf(doc, path)?.visible ?? true
 })
 
+/**
+ * 选中路径所属的根层（任意深度解析）：画布右键按命中重选（点表体选中的是格），
+ * 转换项按「所属表」判定——格/行上右键 = 转换它所在的表（spec §2.3 入口语义的
+ * 画布落地面；隐藏/置顶等其余项维持根层语义不变）。
+ */
+const selectedRootLayer = computed(() => {
+    const path = selection.value
+    const doc = props.editor.store.doc
+    if (!path || !doc) return null
+    return rootLayerOf(doc, path)
+})
+
+/** 转换目标的表根路径：选中路径的第 2 段即根层下标（转换 action 吃表路径） */
+function selectionTablePath(): LayerPath | null {
+    const path = selection.value
+    if (!path || typeof path[1] !== 'number') return null
+    return ['layers', path[1]]
+}
+
+const isTemplateTableSelection = computed(
+    () => selectedRootLayer.value?.type === 'TableLayer' && selectedRootLayer.value.template !== null,
+)
+
+/** 行模板替身选中（替身路径收尾段）：删除项置灰（spec §2.5） */
+const isTemplateRowSelection = computed(() => selection.value?.[selection.value.length - 1] === 'template')
+
+/** 转换可用态（spec §2.3 C2）：末行存在且非空——空表/空末行置灰 + title 说明 */
+const canConvertToTemplate = computed(() => {
+    const layer = selectedRootLayer.value
+    if (!layer || layer.type !== 'TableLayer' || layer.template !== null) return false
+    const last = layer.rows[layer.rows.length - 1]
+    return last !== undefined && last.cells.length > 0
+})
+
+const convertHint = computed(() => {
+    const layer = selectedRootLayer.value
+    if (!layer || layer.type !== 'TableLayer') return ''
+    return `模板取自末行，其余 ${Math.max(layer.rows.length - 1, 0)} 行将移除（可撤销）`
+})
+
+// ---- 转为模板表的轻表单态（spec §2.3 C1：确认与 rowsPath 输入一个交互点） ----
+
+const convertFormOpen = ref(false)
+const convertRowsPath = ref('')
+const convertRowsPathInvalid = ref(false)
+
+function openConvertForm(): void {
+    convertFormOpen.value = true
+    convertRowsPath.value = ''
+    convertRowsPathInvalid.value = false
+}
+
+function confirmConvert(): void {
+    const tablePath = selectionTablePath()
+    const rowsPath = convertRowsPath.value.trim()
+    if (!tablePath || rowsPath === '') {
+        convertRowsPathInvalid.value = true
+        return
+    }
+    props.editor.convertTableToTemplate(tablePath, rowsPath)
+    close()
+}
+
 interface MenuItem {
-    key: 'visibility' | 'duplicate' | 'front' | 'back' | 'delete'
+    key: 'visibility' | 'duplicate' | 'front' | 'back' | 'delete' | 'to-template' | 'to-rows'
     label: string
     enabled: boolean
+    /** 禁用/说明文案（spec §2.5 反馈规范：置灰 + title 统一） */
+    title?: string
+    /** 执行后保持菜单开（转为模板表切表单视图用） */
+    keepsOpen?: boolean
     run: () => void
 }
 
@@ -52,6 +119,7 @@ const items = computed<MenuItem[]>(() => [
         key: 'visibility',
         label: selectedRootVisible.value ? '隐藏' : '显示',
         enabled: isRoot.value,
+        title: isRoot.value ? undefined : '显示/隐藏仅作用于根图层',
         run: () => {
             const path = selection.value
             if (path) props.editor.toggleLayerVisibility(path)
@@ -61,14 +129,59 @@ const items = computed<MenuItem[]>(() => [
         key: 'duplicate',
         label: '创建副本',
         enabled: canDuplicate.value,
+        title: canDuplicate.value ? undefined : '行/格/行模板是容器内结构，不可复制',
         run: () => props.editor.duplicateSelection(),
     },
-    { key: 'front', label: '置顶', enabled: isRoot.value, run: () => props.editor.bringToFront() },
-    { key: 'back', label: '置底', enabled: isRoot.value, run: () => props.editor.sendToBack() },
+    {
+        key: 'front',
+        label: '置顶',
+        enabled: isRoot.value,
+        title: isRoot.value ? undefined : '置顶/置底仅对根图层生效',
+        run: () => props.editor.bringToFront(),
+    },
+    {
+        key: 'back',
+        label: '置底',
+        enabled: isRoot.value,
+        title: isRoot.value ? undefined : '置顶/置底仅对根图层生效',
+        run: () => props.editor.sendToBack(),
+    },
+    // 转换项（spec §2.3 C3）：状态互斥动作用显隐不是禁用——模板态显示「转回」，
+    // V1 表显示「转为…」，其余类型不出现
+    ...(isTemplateTableSelection.value
+        ? [
+              {
+                  key: 'to-rows',
+                  label: '转回普通表',
+                  enabled: true,
+                  title: '行模板实例化为单行，恢复普通表格编辑',
+                  run: () => {
+                      const tablePath = selectionTablePath()
+                      if (tablePath) props.editor.convertTableToRows(tablePath)
+                  },
+              } satisfies MenuItem,
+          ]
+        : selectedRootLayer.value?.type === 'TableLayer'
+          ? [
+                {
+                    key: 'to-template',
+                    label: '转为模板表…',
+                    enabled: canConvertToTemplate.value,
+                    title: canConvertToTemplate.value
+                        ? convertHint.value
+                        : (selectedRootLayer.value.rows.length === 0
+                            ? '空表无可转换行'
+                            : '末行为空——先为末行加格'),
+                    keepsOpen: true,
+                    run: () => openConvertForm(),
+                } satisfies MenuItem,
+            ]
+          : []),
     {
         key: 'delete',
         label: '删除',
-        enabled: selection.value !== null,
+        enabled: selection.value !== null && !isTemplateRowSelection.value,
+        title: isTemplateRowSelection.value ? '行模板由表持有——转换回普通表请用 V2 转换入口' : undefined,
         run: () => {
             const path = selection.value
             if (path) props.editor.deleteLayer(path)
@@ -95,10 +208,15 @@ async function openAt(x: number, y: number): Promise<void> {
 
 function close(): void {
     open.value = false
+    convertFormOpen.value = false
+    convertRowsPath.value = ''
+    convertRowsPathInvalid.value = false
 }
 
 function run(item: MenuItem): void {
     item.run()
+    // 转为模板表不关菜单——切换到轻表单视图（spec §2.3 C1）
+    if (item.keepsOpen === true) return
     close()
 }
 
@@ -116,18 +234,43 @@ defineExpose({ openAt, close })
         @pointerdown.stop
         @contextmenu.prevent
     >
-        <button
-            v-for="item in items"
-            :key="item.key"
-            type="button"
-            role="menuitem"
-            class="cn-context-menu__item"
-            :class="[`cn-context-menu__item--${item.key}`]"
-            :disabled="!item.enabled"
-            @click="run(item)"
-        >
-            {{ item.label }}
-        </button>
+        <!-- 转为模板表的轻表单视图（spec §2.3 C1）：rowsPath 必填 + 确认/取消 -->
+        <div v-if="convertFormOpen" class="cn-context-menu__form">
+            <p class="cn-context-menu__hint">{{ convertHint }}</p>
+            <input
+                v-model="convertRowsPath"
+                data-convert-rows-path
+                type="text"
+                placeholder="数据行路径，如 order.items"
+                class="cn-context-menu__input"
+                :class="{ 'cn-context-menu__input--invalid': convertRowsPathInvalid }"
+                @keydown.enter.prevent="confirmConvert"
+            />
+            <p v-if="convertRowsPathInvalid" class="cn-context-menu__hint cn-context-menu__hint--error">
+                rowsPath 必填
+            </p>
+            <div class="cn-context-menu__form-actions">
+                <button type="button" class="cn-context-menu__item cn-context-menu__item--confirm" @click="confirmConvert">
+                    确认转换
+                </button>
+                <button type="button" class="cn-context-menu__item" @click="close">取消</button>
+            </div>
+        </div>
+        <template v-else>
+            <button
+                v-for="item in items"
+                :key="item.key"
+                type="button"
+                role="menuitem"
+                class="cn-context-menu__item"
+                :class="[`cn-context-menu__item--${item.key}`]"
+                :disabled="!item.enabled"
+                :title="item.title"
+                @click="run(item)"
+            >
+                {{ item.label }}
+            </button>
+        </template>
     </div>
 </template>
 
@@ -182,5 +325,60 @@ defineExpose({ openAt, close })
 .cn-context-menu__item--delete:hover:not(:disabled) {
     background: rgba(248, 113, 113, 0.12);
     color: var(--cn-danger);
+}
+
+/* 转为模板表的轻表单（spec §2.3 C1）：说明行 + 必填输入 + 确认/取消 */
+.cn-context-menu__form {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 4px;
+    min-width: 180px;
+}
+
+.cn-context-menu__hint {
+    margin: 0;
+    padding: 0 4px;
+    color: var(--cn-muted);
+    font-size: 11px;
+    line-height: 1.5;
+}
+
+.cn-context-menu__hint--error {
+    color: var(--cn-danger);
+}
+
+.cn-context-menu__input {
+    padding: 5px 8px;
+    border: 1px solid var(--cn-line);
+    border-radius: 6px;
+    background: var(--cn-field);
+    color: var(--cn-fg);
+    font-size: 12px;
+    line-height: 1.4;
+    outline: none;
+}
+
+.cn-context-menu__input:focus {
+    border-color: var(--cn-accent);
+}
+
+.cn-context-menu__input--invalid {
+    border-color: var(--cn-danger);
+}
+
+.cn-context-menu__form-actions {
+    display: flex;
+    gap: 4px;
+}
+
+.cn-context-menu__form-actions .cn-context-menu__item {
+    flex: 1;
+    text-align: center;
+}
+
+.cn-context-menu__item--confirm {
+    background: var(--cn-accent-soft);
+    color: var(--cn-accent);
 }
 </style>

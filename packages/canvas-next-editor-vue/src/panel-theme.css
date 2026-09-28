@@ -194,3 +194,26 @@
 .cn-props .cn-layers__row--hidden {
     opacity: 0.5;
 }
+
+/* 模板子树行（模板创作 spec §2.2 D1）：虚线描边卡片区分「声明态结构」与实体
+   行/格——选中/悬停态换 accent 虚线（意图锁定，具体令牌与 layer-panel-ux 协调） */
+.cn-props .cn-layers__row--template {
+    border-style: dashed;
+    border-color: var(--cn-field-line);
+}
+
+.cn-props .cn-layers__row--template.cn-layers__row--hovered {
+    border-color: var(--cn-accent);
+    border-style: dashed;
+    background-color: var(--cn-field);
+}
+
+.cn-props .cn-layers__row--template.cn-layers__row--selected {
+    border-color: var(--cn-accent);
+    border-style: dashed;
+}
+
+/* 非空校验标错（模板创作 spec §2.4 P4）：拦截期红框——空串永不落库 */
+.cn-props .cn-field--invalid {
+    border-color: var(--cn-danger);
+}
