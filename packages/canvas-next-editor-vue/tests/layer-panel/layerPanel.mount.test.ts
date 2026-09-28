@@ -477,3 +477,57 @@ describe('LayerPanel：行内重命名（工单 09）', () => {
         wrapper.unmount()
     })
 })
+
+describe('LayerPanel：显示/隐藏（工单 10）', () => {
+    it('眼睛钮仅根层行：行/格/内容行不加', () => {
+        const editor = makeEditor([textLayer(30, '底'), tableLayer([rowLayer(30), rowLayer(20)])])
+        const wrapper = mount(LayerPanel, { props: { editor } })
+        const rows = wrapper.findAll('.cn-layers__row')
+        // 面板序：表（根）、行1、行2、文本（根）——眼睛只落在两个根层行
+        expect(wrapper.findAll('[data-visibility]')).toHaveLength(2)
+        expect(rows[0]!.find('[data-visibility]').exists()).toBe(true)
+        expect(rows[1]!.find('[data-visibility]').exists()).toBe(false)
+        expect(rows[2]!.find('[data-visibility]').exists()).toBe(false)
+        expect(rows[3]!.find('[data-visibility]').exists()).toBe(true)
+        wrapper.unmount()
+    })
+
+    it('点击眼睛走 toggleLayerVisibility：翻转 visible、一步历史可撤销', async () => {
+        const editor = makeEditor([textLayer(10, '顶')])
+        const wrapper = mount(LayerPanel, { props: { editor } })
+
+        await wrapper.find('[data-visibility]').trigger('click')
+        expect(editor.store.doc!.layers[0]!.visible).toBe(false)
+        expect(editor.store.history).toHaveLength(1)
+        // 隐藏行降不透明度（--hidden 类）+ 闭眼态（aria-pressed）
+        await wrapper.vm.$nextTick()
+        expect(wrapper.find('.cn-layers__row').classes()).toContain('cn-layers__row--hidden')
+        expect(wrapper.find('[data-visibility]').attributes('aria-pressed')).toBe('true')
+
+        editor.undo()
+        await wrapper.vm.$nextTick()
+        expect(editor.store.doc!.layers[0]!.visible).toBe(true)
+        expect(wrapper.find('.cn-layers__row').classes()).not.toContain('cn-layers__row--hidden')
+        expect(wrapper.find('[data-visibility]').attributes('aria-pressed')).toBe('false')
+        wrapper.unmount()
+    })
+
+    it('可见行眼睛 hover 门控（hidden 类等待 group-hover），隐藏行闭眼常显（无 hidden 类）', () => {
+        const editor = makeEditor([textLayer(30, '底'), { ...textLayer(10, '顶'), visible: false }])
+        const wrapper = mount(LayerPanel, { props: { editor } })
+        const eyes = wrapper.findAll('[data-visibility]')
+        // 面板顶 = 数组尾 = 隐藏层：常显；面板底 = 可见层：hover 门控
+        expect(eyes[0]!.classes()).not.toContain('hidden')
+        expect(eyes[1]!.classes()).toContain('hidden')
+        wrapper.unmount()
+    })
+
+    it('点击眼睛不触发行选中（@click.stop，显隐不改选择）', async () => {
+        const editor = makeEditor([textLayer(10, '顶')])
+        const wrapper = mount(LayerPanel, { props: { editor } })
+
+        await wrapper.find('[data-visibility]').trigger('click')
+        expect(editor.store.ui.selection).toBeNull()
+        wrapper.unmount()
+    })
+})

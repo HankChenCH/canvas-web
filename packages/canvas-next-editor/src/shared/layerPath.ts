@@ -99,6 +99,18 @@ export function resolveLayer(doc: Canvas, path: LayerPath): Layer | null {
     return layer as Layer
 }
 
+
+/**
+ * 路径所属根层（layer-panel-ux 工单 10）：LayerBase 面字段（visible 等）只作用
+ * 根层，任意深度的路径第 2 段即根层下标——gizmo 隐藏过滤与右键菜单显隐标签等
+ * 绑定层读取位共用，收口「path[1] 是根层」的路径结构知识。越界返回 null。
+ */
+export function rootLayerOf(doc: Canvas, path: LayerPath): Layer | null {
+    const index = path[1]
+    if (typeof index !== 'number' || !Number.isSafeInteger(index) || index < 0) return null
+    return doc.layers[index] ?? null
+}
+
 /**
  * 级联归属链（结构纯函数，无需文档）：格内容 → 格 → 行 → 表；根层无父级。
  * Escape 升级沿此链逐级取父，链尽即清空选择。

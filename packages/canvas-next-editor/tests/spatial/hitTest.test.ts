@@ -83,3 +83,59 @@ describe('负溢出图层可命中（命中不钳位到画布边界）', () => {
         expect(hitTest(canvas, 2470, 1520)).toEqual(['layers', 1])
     })
 })
+
+describe('隐藏层命中过滤（layer-panel-ux 工单 10）：visible=false 根层整子树退出命中面', () => {
+    it('隐藏顶层不被命中：点其区域穿透命中下方可见层', () => {
+        const canvas = doc([
+            textLayer({ position: { anchor: 'top-left', x: 0, y: 0 }, shape: { width: 100, height: 100 } }),
+            textLayer({
+                visible: false,
+                position: { anchor: 'top-left', x: 50, y: 0 },
+                shape: { width: 100, height: 100 },
+            }),
+        ])
+        expect(hitTest(canvas, 75, 50)).toEqual(['layers', 0]) // 重叠区穿透到底层
+        expect(hitTest(canvas, 120, 50)).toBeNull() // 仅隐藏层覆盖处无命中
+    })
+
+    it('隐藏表格整子树不可命中：行/格/格内容随根层一起退出', () => {
+        const canvas = doc([
+            tableLayer(
+                [
+                    rowLayer(
+                        [
+                            cellLayer(
+                                textLayer({
+                                    shape: { width: 100, height: 40 },
+                                    position: { anchor: 'top-left', x: 5, y: 5 },
+                                }),
+                                { shape: { width: 150, height: 90 } },
+                            ),
+                        ],
+                        { shape: { width: 300, height: 90 } },
+                    ),
+                ],
+                { visible: false, shape: { width: 300, height: 200 }, position: { anchor: 'top-left', x: 96, y: 1120 } },
+            ),
+        ])
+        expect(hitTest(canvas, 75, 35 + 1120)).toBeNull() // 格内容
+        expect(hitTest(canvas, 200, 35 + 1120)).toBeNull() // 格
+        expect(hitTest(canvas, 200, 150 + 1120)).toBeNull() // 表自留区
+    })
+
+    it('隐藏的全幅底层不命中（整层跳过含垫底层，与可见性语义一致返回 null）', () => {
+        const canvas = doc([imageLayer({ visible: false, shape: { width: 2400, height: 1500 } })])
+        expect(hitTest(canvas, 1200, 1000)).toBeNull()
+    })
+
+    it('中叠隐藏层不遮挡：上下可见层各自照常命中', () => {
+        const canvas = doc([
+            textLayer({ position: { anchor: 'top-left', x: 0, y: 0 }, shape: { width: 100, height: 100 } }),
+            imageLayer({ visible: false, position: { anchor: 'top-left', x: 0, y: 0 }, shape: { width: 2400, height: 1500 } }),
+            textLayer({ position: { anchor: 'top-left', x: 50, y: 0 }, shape: { width: 100, height: 100 } }),
+        ])
+        expect(hitTest(canvas, 25, 50)).toEqual(['layers', 0])
+        expect(hitTest(canvas, 75, 50)).toEqual(['layers', 2])
+        expect(hitTest(canvas, 1200, 1000)).toBeNull()
+    })
+})

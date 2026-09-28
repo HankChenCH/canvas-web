@@ -115,6 +115,19 @@ describe('buildLayerOutline：面板大纲（面板顶部 = 视觉最上层 = �
         // 面板序 = 数组逆序：尾层（封面标题）在先
         expect(outline.map((node) => node.name)).toEqual(['封面标题', ''])
     })
+
+    it('节点携带文档 visible 原文（工单 10 眼睛钮投影）：隐藏根层为 false', () => {
+        const doc = {
+            width: 800,
+            height: 600,
+            layers: [
+                textLayer({ priority: 20 }),
+                textLayer({ priority: 10, visible: false }),
+            ],
+        }
+        const outline = buildLayerOutline(doc)
+        expect(outline.map((node) => node.visible)).toEqual([false, true])
+    })
 })
 
 describe('createDefaultLayer：编辑器新增图层的缺省形态', () => {

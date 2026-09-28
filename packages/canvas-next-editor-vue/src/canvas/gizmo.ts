@@ -10,7 +10,7 @@
  * 五原语后端与文档模型零感知（gizmo 不污染渲染契约）。
  */
 import type { EditorSession, OverlayPaintArgs, OverlayPainter } from '@hankchen/canvas-next-editor'
-import { pathsEqual } from '@hankchen/canvas-next-editor'
+import { pathsEqual, rootLayerOf, type LayerPath } from '@hankchen/canvas-next-editor'
 
 export interface GizmoOptions {
     /** 选中框颜色（缺省蓝 #2563eb） */
@@ -28,6 +28,15 @@ const DEFAULT_OPTIONS: Required<GizmoOptions> = {
 }
 
 /**
+ * 路径的根层是否隐藏（layer-panel-ux 工单 10 的 gizmo 过滤）：visible 住 LayerBase
+ * 面，经内核 rootLayerOf 寻址原语取根层。隐藏层已退出命中面（hitTest 同门），这里
+ * 兜住「面板隐藏了选中/悬停层」的 ui 态残留——框悬空画在不可见层上即是误导。
+ */
+function isRootHidden(doc: NonNullable<OverlayPaintArgs['doc']>, path: LayerPath): boolean {
+    return rootLayerOf(doc, path)?.visible === false
+}
+
+/**
  * 场景空间绘制选区 gizmo（供组合画笔复用：调用的前提是 ctx 已施加呈现变换）。
  * 先 hover 后选中，选中框压在 hover 之上；hover 与选中同层不重复画。
  */
@@ -42,7 +51,7 @@ export function drawSelectionGizmo(
     const doc = args.doc
     if (!doc) return
 
-    if (hovered && !pathsEqual(hovered, selection)) {
+    if (hovered && !pathsEqual(hovered, selection) && !isRootHidden(doc, hovered)) {
         const box = editor.layerBoxAt(hovered)
         if (box) {
             ctx.strokeStyle = opts.hoverColor
@@ -50,7 +59,7 @@ export function drawSelectionGizmo(
             ctx.strokeRect(box.x, box.y, box.width, box.height)
         }
     }
-    if (selection) {
+    if (selection && !isRootHidden(doc, selection)) {
         const box = editor.layerBoxAt(selection)
         if (box) {
             ctx.strokeStyle = opts.selectionColor

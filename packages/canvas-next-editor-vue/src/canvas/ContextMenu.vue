@@ -1,22 +1,23 @@
 <script setup lang="ts">
 /**
- * ContextMenu：最小右键菜单（工单 14）——删除/副本/置顶/置底。
+ * ContextMenu：最小右键菜单（工单 14；显示/隐藏项 layer-panel-ux 工单 10）。
  *
  * - 渲染在 CanvasSurface 宿主内（与两层 canvas 同一定位上下文）；openAt 用
  *   **视口坐标**（表面本地 css 像素）定位——菜单是屏幕空间弹出层，定位换算只在
  *   打开时发生一次，pan/zoom 不跟随；越界钳位（打开后量实际尺寸）保证画布边缘
  *   完整可见。
- * - 动作全部经内核 action（duplicateSelection/bringToFront/sendToBack/
- *   deleteLayer），组件零文档写语义；可用态按选中路径裁剪（内核语义，v1 单选）：
- *   删除 = 有选择；副本 = 可复制（可落根层的类型，见 canCopySelection）；
- *   置顶/置底 = 根层选择（isRootLayerPath——容器内行/格是数组序语义，无此操作）。
+ * - 动作全部经内核 action（toggleLayerVisibility/duplicateSelection/bringToFront/
+ *   sendToBack/deleteLayer），组件零文档写语义；可用态按选中路径裁剪（内核语义，
+ *   v1 单选）：显示/隐藏 = 根层选择（visible 住 LayerBase 面）；删除 = 有选择；
+ *   副本 = 可复制（可落根层的类型，见 canCopySelection）；置顶/置底 = 根层选择
+ *   （isRootLayerPath——容器内行/格是数组序语义，无此操作）。
  * - 关闭时机：执行任一动作、画布 pointerdown（表面组件转发 close）、Escape
  *   （表面组件转发）。菜单根拦截 pointerdown 冒泡（点菜单项不触发画布点选）与
  *   contextmenu（菜单上右键不换目标重开）。
  */
 import { computed, nextTick, ref } from 'vue'
 
-import { isRootLayerPath, type EditorSession } from '@hankchen/canvas-next-editor'
+import { isRootLayerPath, rootLayerOf, type EditorSession } from '@hankchen/canvas-next-editor'
 
 import { useSelection } from '../shared/useSelection'
 
@@ -31,14 +32,31 @@ const selection = useSelection(props.editor)
 const isRoot = computed(() => selection.value !== null && isRootLayerPath(selection.value))
 const canDuplicate = computed(() => selection.value !== null && props.editor.canCopySelection)
 
+/** 选中根层的当前可见态（只读解析，标签翻转用；非根/无选择按可见兜底） */
+const selectedRootVisible = computed(() => {
+    const path = selection.value
+    const doc = props.editor.store.doc
+    if (!path || !doc || !isRootLayerPath(path)) return true
+    return rootLayerOf(doc, path)?.visible ?? true
+})
+
 interface MenuItem {
-    key: 'duplicate' | 'front' | 'back' | 'delete'
+    key: 'visibility' | 'duplicate' | 'front' | 'back' | 'delete'
     label: string
     enabled: boolean
     run: () => void
 }
 
 const items = computed<MenuItem[]>(() => [
+    {
+        key: 'visibility',
+        label: selectedRootVisible.value ? '隐藏' : '显示',
+        enabled: isRoot.value,
+        run: () => {
+            const path = selection.value
+            if (path) props.editor.toggleLayerVisibility(path)
+        },
+    },
     {
         key: 'duplicate',
         label: '创建副本',

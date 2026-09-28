@@ -66,7 +66,11 @@ function hitWalk(
     return contains(box, x, y) ? path : null
 }
 
-/** 场景坐标命中：返回视觉最上被中图层的路径（未中返回 null） */
+/**
+ * 场景坐标命中：返回视觉最上被中图层的路径（未中返回 null）。
+ * 隐藏根层（layer-panel-ux 工单 10）整子树退出命中面——渲染端整层跳过
+ * （render.ts 同门），不可见即不可点选，命中穿透其下方的可见层。
+ */
 export function hitTest(
     canvas: Canvas,
     sceneX: number,
@@ -75,6 +79,7 @@ export function hitTest(
 ): LayerPath | null {
     for (let i = canvas.layers.length - 1; i >= 0; i -= 1) {
         const layer = canvas.layers[i]!
+        if (layer.visible === false) continue
         const box = resolveLayerBox(layer, 0, 0, canvas.width, canvas.height, policies)
         const hit = hitWalk(layer, ['layers', i], box, sceneX, sceneY, policies)
         if (hit) return hit

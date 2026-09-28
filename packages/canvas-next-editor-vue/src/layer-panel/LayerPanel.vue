@@ -18,7 +18,7 @@
  */
 import { computed, nextTick, ref, watch, type ComponentPublicInstance } from 'vue'
 
-import { GripVertical, Pencil } from '@lucide/vue'
+import { Eye, EyeOff, GripVertical, Pencil } from '@lucide/vue'
 
 import {
     pathsEqual,
@@ -128,6 +128,13 @@ function addCell(row: FlatRow): void {
 
 function remove(row: FlatRow): void {
     props.editor.deleteLayer(row.node.path)
+}
+
+// ---- 显示/隐藏（工单 10：仅根层；经内核 action，组件零文档写语义） ----
+
+/** 切换根层可见性：隐藏 = 渲染跳过 + 画布不可点选（内核/契约层语义），一步历史 */
+function toggleVisibility(row: FlatRow): void {
+    props.editor.toggleLayerVisibility(row.node.path)
 }
 
 // ---- 拖放重排（根层/行/格三套落点，坐标折算与同步全在内核） ----
@@ -329,6 +336,7 @@ watch(panel.renaming, async (path) => {
                 :class="{
                     'cn-layers__row--selected': isSelected(row),
                     'cn-layers__row--hovered': isHovered(row) && !isSelected(row),
+                    'cn-layers__row--hidden': isRootRow(row) && !row.node.visible,
                     'cursor-grab': row.draggable && !isRootRow(row),
                     'cn-layers__row--drop-before': dropHint?.key === row.key && dropHint?.edge === 'before',
                     'cn-layers__row--drop-after': dropHint?.key === row.key && dropHint?.edge === 'after',
@@ -371,6 +379,18 @@ watch(panel.renaming, async (path) => {
                 >
                     {{ row.label }}
                 </span>
+                <button
+                    v-if="isRootRow(row)"
+                    type="button"
+                    data-visibility
+                    class="cn-layers__eye size-5 shrink-0 items-center justify-center rounded text-cn-muted hover:bg-cn-accent/15 hover:text-cn-accent"
+                    :class="row.node.visible ? 'hidden group-hover:flex' : 'flex'"
+                    :title="row.node.visible ? '隐藏图层（最终输出不含该层）' : '显示图层'"
+                    :aria-pressed="!row.node.visible"
+                    @click.stop="toggleVisibility(row)"
+                >
+                    <PanelIcon :icon="row.node.visible ? Eye : EyeOff" :size="11" :stroke-width="2" />
+                </button>
                 <button
                     v-if="isRootRow(row)"
                     type="button"

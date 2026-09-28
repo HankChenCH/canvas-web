@@ -7,6 +7,7 @@ import {
     layerBoxByPath,
     pathsEqual,
     resolveLayer,
+    rootLayerOf,
     selectionParentPath,
 } from '../../src/shared/layerPath'
 import { cellLayer, qrLayer, rowLayer, tableLayer, textLayer } from '../support/fixtures'
@@ -142,5 +143,25 @@ describe('layerBoxByPath（绝对盒：与渲染模板同一几何，供 gizmo/�
     it('非法/越界路径返回 null', () => {
         expect(layerBoxByPath(tableDoc(), ['layers', 9])).toBeNull()
         expect(layerBoxByPath(tableDoc(), ['layers', 1, 'rows', 9])).toBeNull()
+    })
+})
+
+describe('rootLayerOf：路径所属根层（layer-panel-ux 工单 10，LayerBase 面字段读取位）', () => {
+    it('任意深度路径都落到第 2 段指向的根层', () => {
+        const canvas = doc([
+            textLayer({ text: '甲' }),
+            tableLayer([rowLayer([cellLayer(textLayer({ text: '乙' }))])]),
+        ])
+        expect(rootLayerOf(canvas, ['layers', 0])?.type).toBe('TextLayer')
+        expect(rootLayerOf(canvas, ['layers', 1, 'rows', 0])?.type).toBe('TableLayer')
+        expect(rootLayerOf(canvas, ['layers', 1, 'rows', 0, 'cells', 0, 'content'])?.type).toBe('TableLayer')
+    })
+
+    it('越界/怪形态路径返回 null（不下钻、不抛错）', () => {
+        const canvas = doc([textLayer()])
+        expect(rootLayerOf(canvas, ['layers', 9])).toBeNull()
+        expect(rootLayerOf(canvas, ['layers'])).toBeNull()
+        expect(rootLayerOf(canvas, [])).toBeNull()
+        expect(rootLayerOf(canvas, ['layers', -1])).toBeNull()
     })
 })

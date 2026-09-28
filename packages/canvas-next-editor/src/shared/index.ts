@@ -11,6 +11,7 @@ export {
     pathsEqual,
     remapPathAfterSplice,
     resolveLayer,
+    rootLayerOf,
     selectionParentPath,
     type LayerPath,
 } from './layerPath'

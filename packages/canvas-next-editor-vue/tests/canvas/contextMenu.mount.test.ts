@@ -91,19 +91,19 @@ describe('ContextMenu：定位与钳位', () => {
 })
 
 describe('ContextMenu：可用态裁剪（v1 单选 + 根层语义）', () => {
-    it('根层文本层：四项全可用', async () => {
+    it('根层文本层：五项全可用（显示/隐藏按当前态出标签）', async () => {
         const editor = makeEditor([textLayer({ priority: 10 })])
         editor.setSelection(['layers', 0])
         const wrapper = mountMenu(editor)
         await wrapper.vm.openAt(10, 10)
         const buttons = itemButtons(wrapper)
-        expect(buttons).toHaveLength(4)
-        expect(buttons.map((b) => b.text())).toEqual(['创建副本', '置顶', '置底', '删除'])
+        expect(buttons).toHaveLength(5)
+        expect(buttons.map((b) => b.text())).toEqual(['隐藏', '创建副本', '置顶', '置底', '删除'])
         expect(buttons.every((b) => !b.attributes('disabled'))).toBe(true)
         wrapper.unmount()
     })
 
-    it('表格行：删除可用，副本/置顶/置底禁用（容器内数组序语义）', async () => {
+    it('表格行：删除可用，显示/隐藏/副本/置顶/置底禁用（容器内数组序语义）', async () => {
         const editor = makeEditor([
             tableLayer(
                 [rowLayer([cellLayer(null, { shape: { width: 200, height: 60 } })], { shape: { width: 200, height: 60 } })],
@@ -114,11 +114,11 @@ describe('ContextMenu：可用态裁剪（v1 单选 + 根层语义）', () => {
         const wrapper = mountMenu(editor)
         await wrapper.vm.openAt(10, 10)
         const disabled = itemButtons(wrapper).map((b) => b.attributes('disabled') !== undefined)
-        expect(disabled).toEqual([true, true, true, false])
+        expect(disabled).toEqual([true, true, true, true, false])
         wrapper.unmount()
     })
 
-    it('格内容（文本层）：删除/副本可用，置顶/置底禁用', async () => {
+    it('格内容（文本层）：删除/副本可用，显示/隐藏/置顶/置底禁用', async () => {
         const editor = makeEditor([
             tableLayer(
                 [rowLayer([cellLayer(textLayer({ text: '甲' }), { shape: { width: 200, height: 60 } })], { shape: { width: 200, height: 60 } })],
@@ -129,7 +129,7 @@ describe('ContextMenu：可用态裁剪（v1 单选 + 根层语义）', () => {
         const wrapper = mountMenu(editor)
         await wrapper.vm.openAt(10, 10)
         const disabled = itemButtons(wrapper).map((b) => b.attributes('disabled') !== undefined)
-        expect(disabled).toEqual([false, true, true, false])
+        expect(disabled).toEqual([true, false, true, true, false])
         wrapper.unmount()
     })
 
@@ -200,6 +200,50 @@ describe('ContextMenu：动作执行', () => {
         await wrapper.vm.openAt(10, 10)
         await itemButtons(wrapper).find((b) => b.text() === '置顶')!.trigger('click')
         expect(editor.store.doc!.layers).toHaveLength(1)
+        expect(editor.canUndo).toBe(false)
+        wrapper.unmount()
+    })
+})
+
+describe('ContextMenu：显示/隐藏（工单 10）', () => {
+    it('可见根层：菜单项「隐藏」→ 点击 toggleLayerVisibility（visible=false、一步历史）并关闭', async () => {
+        const editor = makeEditor([textLayer({ priority: 10 })])
+        editor.setSelection(['layers', 0])
+        const wrapper = mountMenu(editor)
+        await wrapper.vm.openAt(10, 10)
+        await itemButtons(wrapper).find((b) => b.text() === '隐藏')!.trigger('click')
+
+        expect(editor.store.doc!.layers[0]!.visible).toBe(false)
+        expect(editor.store.history).toHaveLength(1)
+        expect(wrapper.find('.cn-context-menu').exists()).toBe(false)
+        wrapper.unmount()
+    })
+
+    it('隐藏根层：重开菜单项标签翻转为「显示」→ 点击恢复 visible=true', async () => {
+        const editor = makeEditor([textLayer({ priority: 10 })])
+        editor.toggleLayerVisibility(['layers', 0])
+        editor.setSelection(['layers', 0])
+        const wrapper = mountMenu(editor)
+        await wrapper.vm.openAt(10, 10)
+        expect(itemButtons(wrapper)[0]!.text()).toBe('显示')
+
+        await itemButtons(wrapper)[0]!.trigger('click')
+        expect(editor.store.doc!.layers[0]!.visible).toBe(true)
+        expect(editor.store.history).toHaveLength(2) // 预置隐藏 1 步 + 恢复 1 步
+        wrapper.unmount()
+    })
+
+    it('行选择时菜单项禁用：点击不产生历史步', async () => {
+        const editor = makeEditor([
+            tableLayer(
+                [rowLayer([cellLayer(null, { shape: { width: 200, height: 60 } })], { shape: { width: 200, height: 60 } })],
+                { shape: { width: 200, height: 60 } },
+            ),
+        ])
+        editor.setSelection(['layers', 0, 'rows', 0])
+        const wrapper = mountMenu(editor)
+        await wrapper.vm.openAt(10, 10)
+        await itemButtons(wrapper).find((b) => b.text() === '隐藏')!.trigger('click')
         expect(editor.canUndo).toBe(false)
         wrapper.unmount()
     })

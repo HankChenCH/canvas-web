@@ -188,3 +188,9 @@
     border-radius: 3px;
     outline: none;
 }
+
+/* 隐藏行（layer-panel-ux 工单 10）：降不透明度示意不可见态（与闭眼钮常显同源），
+   约 50%——选中/悬停描边保持可辨（隐藏 ≠ 不可操作，显隐/属性编辑照常） */
+.cn-props .cn-layers__row--hidden {
+    opacity: 0.5;
+}

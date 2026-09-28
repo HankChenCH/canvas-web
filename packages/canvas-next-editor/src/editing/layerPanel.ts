@@ -34,6 +34,12 @@ export interface LayerOutlineNode {
      * 上屏），空串 = 未命名，显示层回落派生标签。行/格/内容同字段照带（不消费）。
      */
     readonly name: string
+    /**
+     * 可见性（layer-panel-ux 工单 10）：原样携带文档 visible，根层面板行的眼睛
+     * 钮状态与隐藏行降不透明度据此投影。行/格/内容同字段照带（不消费——显隐
+     * 语义只在 LayerBase 面）。
+     */
+    readonly visible: boolean
     readonly children: readonly LayerOutlineNode[]
 }
 
@@ -65,7 +71,7 @@ function outlineWalk(layer: Layer, path: LayerPath, role: LayerOutlineRole): Lay
             children.push(outlineWalk(layers[i]!, childPath, roleOfChild))
         }
     }
-    return { type: layer.type, path, role, name: layer.name, children }
+    return { type: layer.type, path, role, name: layer.name, visible: layer.visible, children }
 }
 
 /**

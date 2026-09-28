@@ -714,6 +714,23 @@ export class EditorSession {
         this.store.setRenaming(null)
     }
 
+    /**
+     * 切换根图层显示/隐藏（layer-panel-ux 工单 10）：一次调用 = 一步历史（可撤销）。
+     * 仅根图层——visible 在 LayerBase 面（渲染端整层跳过，行/格是容器内结构无独立
+     * 可见性），路径非根或不可解析一律空转（无历史步），与 renameLayer 同门。
+     * 隐藏的下游语义：渲染跳过（工单 01 契约）+ 命中/gizmo 过滤（spatial/hitTest、
+     * 绑定层 gizmo），编辑器 UI 只消费这里的写入口。
+     */
+    toggleLayerVisibility(path: LayerPath): void {
+        if (!this.store.doc || !isRootLayerPath(path)) return
+        this.store.transact((draft) => {
+            const layer = resolveLayer(draft, path) as Draft<Layer> | null
+            if (!layer) return
+            layer.visible = !layer.visible
+        })
+    }
+
+
     // ---- 剪贴板与置顶/置底（工单 14）：子树深拷贝语义见 clipboard.ts ----
 
     /**

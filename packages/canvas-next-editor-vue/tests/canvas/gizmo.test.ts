@@ -111,4 +111,32 @@ describe('createGizmoOverlayPainter（gizmo 覆盖层画笔：选择框 + hover�
         createGizmoOverlayPainter(session, ctx2)({ ...args, doc: null })
         expect(ctx2.calls).toEqual(['transform:1,0,0,1,0,0', 'clear:0,0,600,400', 'transform:4,0,0,4,-40,-80'])
     })
+
+    it('隐藏层 gizmo 过滤（工单 10）：选中/悬停落在 hidden 根层不画框', () => {
+        session.setHovered(null)
+        session.setSelection(['layers', 0])
+        session.toggleLayerVisibility(['layers', 0])
+        const ctx = mockCtx()
+        createGizmoOverlayPainter(session, ctx)({ ...args, doc: session.store.doc })
+        expect(strokes(ctx)).toEqual([]) // 选中框被过滤，其余照旧（清屏 + 变换）
+
+        // 恢复可见即恢复选中框
+        session.toggleLayerVisibility(['layers', 0])
+        const ctx2 = mockCtx()
+        createGizmoOverlayPainter(session, ctx2)({ ...args, doc: session.store.doc })
+        expect(strokes(ctx2)).toEqual(['stroke:100,200,100,50'])
+        session.setSelection(null)
+    })
+
+    it('隐藏层 gizmo 过滤（工单 10）：隐藏层上的悬停框同样不画，可见选中照画', () => {
+        session.setSelection(['layers', 0])
+        session.setHovered(['layers', 1])
+        session.toggleLayerVisibility(['layers', 1])
+        const ctx = mockCtx()
+        createGizmoOverlayPainter(session, ctx)({ ...args, doc: session.store.doc })
+        expect(strokes(ctx)).toEqual(['stroke:100,200,100,50']) // 只剩选中框
+        session.toggleLayerVisibility(['layers', 1])
+        session.setSelection(null)
+        session.setHovered(null)
+    })
 })
