@@ -12,11 +12,20 @@
  * 替代原 `{{ }}` 徽章钮）：表达式态输入框带 cn-field--expression 视觉标识，
  * 编辑保持标记（镜像字面）。模式由面板按图层 expression 标记派生传入，本组件
  * 零本地状态；切换语义仍上抛 toggle-mode 归面板 toggleDataMode（管线不动）。
+ *
+ * 表达式路径补全（content-completion 工单 05）：仅三个数据字段（textarea/text
+ * 控件）在表达式态接入浮层控件（工单 04 的 useExpressionCompletion +
+ * ExpressionCompletionPopup）——target 取控件根元素（textarea/input 双形态），
+ * 候选源由面板按选中路径下发（completionSource：根层 = 根候选集 / 模板格内容层
+ * = 行候选集）。静态态/未注入 schema 时 enabled 恒假，事件入口全短路零补全。
  */
-import { computed } from 'vue'
+import { computed, ref, type ComponentPublicInstance } from 'vue'
 
 import { controlRegistry } from './controls'
 import type { FieldDef, FieldDisplay } from './fieldSchema'
+import ExpressionCompletionPopup from './fields/ExpressionCompletionPopup.vue'
+import { useExpressionCompletion } from './fields/useExpressionCompletion'
+import type { CompletionSource } from './fields/completion'
 import ValueTypeSegmented from './fields/ValueTypeSegmented.vue'
 
 const props = defineProps<{
@@ -25,6 +34,8 @@ const props = defineProps<{
     value: unknown
     /** 数据字段取值方式；undefined = 非 data 字段（无切换钮） */
     dataMode?: 'static' | 'expression'
+    /** 补全候选源（面板按选中路径构造）；null = 未注入/无接线（浮层恒闭）。 */
+    completion?: CompletionSource | null
     /** pair 子字段的禁用态替代显示（键 = 子字段绝对键）；其他控件不传 */
     displays?: Record<string, FieldDisplay>
 }>()
@@ -39,6 +50,30 @@ const emit = defineEmits<{
 
 const control = computed(() => controlRegistry[props.field.control])
 const isExpression = computed(() => props.dataMode === 'expression')
+
+/**
+ * 补全接线面：数据文本字段（fieldSchema 中 data:true 且 textarea/text 控件——
+ * 现状即 text/src/value 三个内容字段；rowsPath 的 text 控件无 data 门不入）。
+ * 其余字段零接线。
+ */
+const wiresCompletion = computed(
+    () => props.field.data === true && (props.field.control === 'textarea' || props.field.control === 'text'),
+)
+
+/** 控件根元素（组件实例 $el；textarea/input 双形态，其余控件给 null 不绑） */
+const controlRef = ref<ComponentPublicInstance | null>(null)
+const completionTarget = computed<HTMLTextAreaElement | HTMLInputElement | null>(() => {
+    if (!wiresCompletion.value) return null
+    const el: unknown = controlRef.value?.$el
+    return el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement ? el : null
+})
+
+const { popup, accept } = useExpressionCompletion({
+    target: completionTarget,
+    // 表达式态且声明在场才开事件入口（静态态不生效；未注入 schema = 无候选态）
+    enabled: () => wiresCompletion.value && isExpression.value && props.completion != null,
+    resolve: (expr) => props.completion?.(expr) ?? null,
+})
 
 /** 复合控件的子字段提交转发（模板内联箭头的参数标注不便，收口到脚本） */
 function relaySubCommit(field: FieldDef, value: unknown, final: boolean): void {
@@ -70,6 +105,7 @@ function relaySubCommit(field: FieldDef, value: unknown, final: boolean): void {
         <!-- 宽度由各控件自持：输入类自带 flex-1 撑满，定宽类（锚点九宫/开关）保持固有尺寸 -->
         <component
             :is="control"
+            ref="controlRef"
             class="cn-prop-field__control"
             :class="{ 'cn-field--expression': isExpression }"
             :field="field"
@@ -80,4 +116,7 @@ function relaySubCommit(field: FieldDef, value: unknown, final: boolean): void {
             @sub-commit="relaySubCommit"
         />
     </component>
+    <!-- 补全浮层（工单 04/05）：portal 到 body，仅数据文本字段渲染；面板不给本
+         组件下发 attrs，多根无 fallthrough 断点 -->
+    <ExpressionCompletionPopup v-if="wiresCompletion" :state="popup" @select="accept" />
 </template>

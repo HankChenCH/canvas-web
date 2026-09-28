@@ -30,6 +30,11 @@ import {
     type FieldDef,
     type FieldSection,
 } from './fieldSchema'
+import {
+    expressionCompletionSource,
+    expressionFieldContext,
+} from './expressionContext'
+import type { CompletionSource } from './fields/completion'
 
 export type { FieldDef, FieldSection } from './fieldSchema'
 
@@ -50,6 +55,11 @@ export interface PropertyPanelBinding {
     readonly layerBox: ComputedRef<LayerBox | null>
     /** 选中路径是否落在模板子树（layerBoxAt 届时返回预览盒而非文档盒） */
     readonly isPreviewBox: ComputedRef<boolean>
+    /**
+     * 当前目标的补全候选源（content-completion 工单 05）：随选中路径切换上下文
+     * （根层 = 根候选集 / 模板格内容层 = 行候选集）；未注入声明为 null。
+     */
+    readonly completionSource: ComputedRef<CompletionSource | null>
     /** 锚点折叠区开合（store ui 分支投影，会话内记忆；工票 03） */
     readonly anchorExpanded: ComputedRef<boolean>
     /** 面板唯一提交口：final = 收口提交（change/blur），否则按 mergeKey 合并累积 */
@@ -68,6 +78,8 @@ export function usePropertyPanel(editor: EditorSession): PropertyPanelBinding {
     const doc = shallowRef<Canvas | null>(editor.store.doc)
     const selection = shallowRef<LayerPath | null>(editor.store.ui.selection)
     const anchorExpanded = shallowRef(editor.store.ui.anchorExpanded)
+    /** 数据源 schema 声明（工单 03 注入缝，会话态）：补全候选源的唯一来源 */
+    const dataSourceSchema = shallowRef(editor.store.ui.dataSourceSchema)
 
     const unsubscribe = editor.subscribe((change) => {
         if (change.scope === 'doc') {
@@ -80,6 +92,8 @@ export function usePropertyPanel(editor: EditorSession): PropertyPanelBinding {
                 editor.store.closeMerge()
             } else if (change.branch === 'anchorExpanded') {
                 anchorExpanded.value = editor.store.ui.anchorExpanded
+            } else if (change.branch === 'dataSourceSchema') {
+                dataSourceSchema.value = editor.store.ui.dataSourceSchema
             }
         }
     })
@@ -104,6 +118,18 @@ export function usePropertyPanel(editor: EditorSession): PropertyPanelBinding {
     const layerBox = computed<LayerBox | null>(() => {
         const path = selection.value
         return path && doc.value ? editor.layerBoxAt(path) : null
+    })
+
+    /**
+     * 当前选中目标的补全候选源（content-completion 工单 05 接线）：按选中路径
+     * 判定上下文（根层 = 根候选集；模板格内容层 = 行候选集，expressionContext
+     * 对齐 PHP 行上下文注入面），包裹内核枚举器成工单 04 浮层的 CompletionSource。
+     * schema 未注入/被拒（null）= null 源，字段侧浮层恒闭。
+     */
+    const completionSource = computed<CompletionSource | null>(() => {
+        const schema = dataSourceSchema.value
+        if (schema === null) return null
+        return expressionCompletionSource(schema, expressionFieldContext(schema, doc.value, selection.value))
     })
 
     // 与内核 isTemplateSubtreePath 同义（path 含 template 段）；内核符号落地前
@@ -181,6 +207,7 @@ export function usePropertyPanel(editor: EditorSession): PropertyPanelBinding {
         sections,
         layerBox,
         isPreviewBox,
+        completionSource,
         anchorExpanded: computed(() => anchorExpanded.value),
         commit,
         toggleDataMode,

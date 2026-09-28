@@ -161,6 +161,7 @@ function toggleAnchorExpanded(): void {
                         :field="item.field"
                         :value="item.value"
                         :data-mode="item.dataMode"
+                        :completion="panel.completionSource.value"
                         :displays="pairDisplays"
                         @input="panel.commit(item.field, $event, false)"
                         @change="panel.commit(item.field, $event, true)"
