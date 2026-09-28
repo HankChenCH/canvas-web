@@ -6,6 +6,7 @@
 export {
     isLayerPath,
     isRootLayerPath,
+    isTemplateSubtreePath,
     layerBoxByPath,
     pathStartsWith,
     pathsEqual,

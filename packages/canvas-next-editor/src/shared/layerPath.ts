@@ -8,6 +8,7 @@
  *   ['layers', i, 'rows', j]                          表行
  *   ['layers', i, 'rows', j, 'cells', k]              单元格
  *   ['layers', i, 'rows', j, 'cells', k, 'content']   格内容层
+ *   ['layers', i, 'template', 'cells', k]             行模板格（无下标的 template 段）
  *
  * 于是「对选中层改字段」= path 拼上字段段（如 + ['position', 'x']）直接得到
  * patch path；选择态住 ui 分支（不进历史），文档写入一律经路径导航。
@@ -28,15 +29,33 @@ export function isLayerPath(value: unknown): value is LayerPath {
     if (!Array.isArray(value) || value.length < 2) return false
     if (value[0] !== 'layers' || !isIndexSegment(value[1])) return false
 
-    // 下降序列固定：rows → cells → content（可省前段，不可乱序/重复）
+    // 下降序列固定：rows → cells → content（可省前段，不可乱序/重复）。行模板
+    // 子树以无下标的 'template' 段替代 rows 段（预览行选中，决策 2026-09）：
+    // template 后必须紧跟 cells——模板行本身无选择身份，不可作路径收尾。
     const descent = ['rows', 'cells', 'content']
-    for (let i = 2; i < value.length; i += 2) {
-        const expected = descent[(i - 2) / 2]
-        if (value[i] !== expected) return false
+    let stage = 0
+    let i = 2
+    while (i < value.length) {
+        const key = value[i]
+        if (stage === 0 && key === 'template') {
+            if (value[i + 1] !== 'cells') return false
+            stage = 1
+            i += 1
+            continue
+        }
+        const expected = descent[stage]
+        if (key !== expected) return false
         if (expected === 'content') return i === value.length - 1
         if (!isIndexSegment(value[i + 1])) return false
+        stage += 1
+        i += 2
     }
     return true
+}
+
+/** 路径是否落在行模板子树内（含 'template' 段；选中/属性写入的模板态分流用） */
+export function isTemplateSubtreePath(path: LayerPath): boolean {
+    return path.includes('template')
 }
 
 /**
@@ -71,22 +90,27 @@ export function pathStartsWith(path: LayerPath, prefix: LayerPath): boolean {
 
 /** 沿路径导航（根可为 immer draft：同一套下降逻辑同时服务只读解析与事务写入） */
 function navigate(root: unknown, path: LayerPath): unknown {
-    // (属性名, 索引) 成对推进；尾段 'content' 无索引，落到内容层本身
+    // (属性名, 索引) 成对推进；'template' 与尾段 'content' 无索引，落到节点本身
     let current: unknown = root
-    for (let i = 0; i < path.length; i += 2) {
+    let i = 0
+    while (i < path.length) {
         const container = current as Record<string, unknown> | null
         if (container === null || typeof container !== 'object') return null
         const key = path[i]
         if (typeof key !== 'string') return null
         current = container[key]
         if (current === null || current === undefined) return null
-        if (i + 1 < path.length) {
-            const list = current as readonly unknown[]
-            const index = path[i + 1]
-            if (!Array.isArray(list) || typeof index !== 'number') return null
-            current = list[index]
-            if (current === null || current === undefined) return null
+        if (key === 'template') {
+            i += 1
+            continue
         }
+        if (i + 1 >= path.length) break
+        const list = current as readonly unknown[]
+        const index = path[i + 1]
+        if (!Array.isArray(list) || typeof index !== 'number') return null
+        current = list[index]
+        if (current === null || current === undefined) return null
+        i += 2
     }
     return current
 }
@@ -98,7 +122,6 @@ export function resolveLayer(doc: Canvas, path: LayerPath): Layer | null {
     if (layer === null || typeof layer !== 'object' || !('type' in layer)) return null
     return layer as Layer
 }
-
 
 /**
  * 路径所属根层（layer-panel-ux 工单 10）：LayerBase 面字段（visible 等）只作用
@@ -113,12 +136,17 @@ export function rootLayerOf(doc: Canvas, path: LayerPath): Layer | null {
 
 /**
  * 级联归属链（结构纯函数，无需文档）：格内容 → 格 → 行 → 表；根层无父级。
- * Escape 升级沿此链逐级取父，链尽即清空选择。
+ * Escape 升级沿此链逐级取父，链尽即清空选择。模板子树内同理：模板格内容 →
+ * 模板格 → 表——'template' 段无选择身份，父级计算越过它落到表本身。
  */
 export function selectionParentPath(path: LayerPath): LayerPath | null {
     if (path.length < 2) return null
     if (path[path.length - 1] === 'content') return path.slice(0, -1)
-    return path.length > 2 ? path.slice(0, -2) : null
+    if (path.length > 2) {
+        const parent = path.slice(0, -2)
+        return parent[parent.length - 1] === 'template' ? parent.slice(0, -1) : parent
+    }
+    return null
 }
 
 /**
@@ -139,14 +167,25 @@ export function layerBoxByPath(
     let layer: Layer = root
     let box = resolveLayerBox(root, 0, 0, doc.width, doc.height, policies)
 
-    // 逐段下钻：每段经共享几何解析目标孩子（越界/形态不符返回 null）
-    for (let i = 2; i < path.length; i += 2) {
-        const key = path[i] as 'rows' | 'cells' | 'content'
+    // 逐段下钻：每段经共享几何解析目标孩子（越界/形态不符返回 null）；
+    // 'template' 段无下标，盒与首行同位（resolveChildAt 同一推进公式）
+    let i = 2
+    while (i < path.length) {
+        const key = path[i] as 'rows' | 'cells' | 'content' | 'template'
+        if (key === 'template') {
+            const child = resolveChildAt(layer, box, 'template', 0, policies)
+            if (!child) return null
+            layer = child.layer
+            box = child.box
+            i += 1
+            continue
+        }
         const index = path[i + 1] as number
         const child = resolveChildAt(layer, box, key, index, policies)
         if (!child) return null
         layer = child.layer
         box = child.box
+        i += 2
     }
     return box
 }

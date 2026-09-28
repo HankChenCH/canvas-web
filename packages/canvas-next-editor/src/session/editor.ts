@@ -11,9 +11,12 @@
  * - 相机动作全部经 camera.ts 纯函数落到 store.ui.viewport（不进历史）。
  */
 import {
+    docPathToViewPath,
     lineHeightPx,
     renderCanvas,
     textOrigin,
+    viewPathToDocPath,
+    withTemplatePreview,
     type Canvas,
     type HorizontalAlign,
     type Padding,
@@ -41,6 +44,7 @@ import {
 import type { LayerBox, Layer, LayerType, ImageLayer } from '@hankchen/canvas-next'
 import { hitTest as hitTestAt } from '../spatial/hitTest'
 import {
+    isTemplateSubtreePath,
     layerBoxByPath,
     isRootLayerPath,
     pathStartsWith,
@@ -182,6 +186,13 @@ export class EditorSession {
     private cancelFrame: (() => void) | null = null
     private readonly unsubscribeStore: () => void
     /**
+     * 预览视图 memo（决策 2026-09）：模板态表格实例化一行预览行的文档衍生画布，
+     * 画布渲染/命中/导出消费，永不写回 graph（红线 3 延伸）。Canvas 不可变 +
+     * 结构共享，doc 引用相等即视图仍有效（与 skipContent 的引用比较同纪律）。
+     */
+    private previewSource: Canvas | null = null
+    private previewValue: Canvas | null = null
+    /**
      * 会话级剪贴板（工单 14）：复制源的子树深拷贝快照 + 复制时点绝对盒（粘贴落位
      * 基准，格内容的格内相对 position 据此换算画布绝对落位）+ 连续粘贴计数。
      * 不跨会话、不碰 OS 剪贴板；openDocument 不清空——粘贴进另一份文档是合法用法
@@ -242,6 +253,21 @@ export class EditorSession {
         this.store.openDocument(canvas)
     }
 
+    /**
+     * 预览视图（只读衍生）：模板态表格在视图中获得一行预览行（文本格 = 表达式
+     * 原文、标记图片/二维码格走占位盒），渲染/命中/导出据此呈现「一行输出效果」；
+     * 文档本身不被改写。宿主（如导出）与内核内部共用同一 memo。
+     */
+    get previewCanvas(): Canvas | null {
+        const doc = this.store.doc
+        if (doc === null) return null
+        if (doc !== this.previewSource) {
+            this.previewValue = withTemplatePreview(doc, this.textPolicies)
+            this.previewSource = doc
+        }
+        return this.previewValue
+    }
+
     /** 平移：屏幕位移按 zoom 折算 */
     panBy(deltaScreenX: number, deltaScreenY: number): void {
         this.store.setViewport(panBy(this.store.ui.viewport, deltaScreenX, deltaScreenY))
@@ -266,12 +292,28 @@ export class EditorSession {
         this.store.setViewport(fitViewport(doc, this.surfaceSize, this.zoomBounds, this.fitMargin))
     }
 
+    /**
+     * 路径处图层盒：模板子树路径经预览视图解析（auto 高在视图里合成，文档侧
+     * 声明高为零），其余路径直接解析文档——非模板子树结构共享，两棵树同盒。
+     * gizmo/命中/适应选区/文本编辑 overlay 共用，与绘制不漂移。
+     */
+    private boxByPath(path: LayerPath): LayerBox | null {
+        const doc = this.store.doc
+        if (!doc) return null
+        if (isTemplateSubtreePath(path)) {
+            const view = this.previewCanvas
+            const viewPath = view ? docPathToViewPath(doc, path) : null
+            return view && viewPath ? layerBoxByPath(view, viewPath as LayerPath, this.textPolicies) : null
+        }
+        return layerBoxByPath(doc, path, this.textPolicies)
+    }
+
     /** 自适应选区视图：视口适配选中盒；无选择/退化盒回落适应画布 */
     fitToSelection(): void {
         const doc = this.store.doc
         if (!doc) return
         const selection = this.store.ui.selection
-        const box = selection ? layerBoxByPath(doc, selection, this.textPolicies) : null
+        const box = selection ? this.boxByPath(selection) : null
         if (!box || box.width <= 0 || box.height <= 0 || this.surfaceSize.width <= 0 || this.surfaceSize.height <= 0) {
             this.fitToSurface()
             return
@@ -286,16 +328,22 @@ export class EditorSession {
         return screenToScene(this.store.ui.viewport, screenX, screenY)
     }
 
-    /** 场景点命中查询（不产生副作用） */
+    /**
+     * 场景点命中查询（不产生副作用）：在预览视图上执行——模板态表格的预览行
+     * 可命中，命中路径经视图→文档映射落回模板子树身份（选中/属性编辑写文档）。
+     */
     hitTest(sceneX: number, sceneY: number): LayerPath | null {
-        const doc = this.store.doc
-        return doc ? hitTestAt(doc, sceneX, sceneY, this.textPolicies) : null
+        const view = this.previewCanvas
+        if (!view) return null
+        const hit = hitTestAt(view, sceneX, sceneY, this.textPolicies)
+        if (hit === null) return null
+        const docPath = viewPathToDocPath(view, hit)
+        return docPath ? (docPath as LayerPath) : null
     }
 
     /** 路径处图层的绝对盒（gizmo 选择框与后续面板共用；与命中同一布局策略） */
     layerBoxAt(path: LayerPath): LayerBox | null {
-        const doc = this.store.doc
-        return doc ? layerBoxByPath(doc, path, this.textPolicies) : null
+        return this.boxByPath(path)
     }
 
     /** 点选：命中即选中并返回路径，未中清空选择（画布与后续面板同源） */
@@ -420,7 +468,7 @@ export class EditorSession {
         const layer = this.textLayerAt(path)
         const doc = this.store.doc
         if (!layer || !doc) return null
-        const box = layerBoxByPath(doc, path, this.textPolicies)
+        const box = this.boxByPath(path)
         if (!box) return null
         return {
             box,
@@ -460,7 +508,16 @@ export class EditorSession {
         this.store.transact((draft) => {
             const layer = resolveLayer(draft, path)
             if (!layer) return
-            if (layer.type === 'TableCellLayer' && key.length === 2 && key[0] === 'shape' && key[1] === 'autoHeight') {
+            // 模板格跳过采纳语义（决策 2026-09）：模板态高度耦合全豁免（ADR 0006，
+            // 解码对声明高/autoHeight 原样保留、仅 auto 标志清零声明高），下方裸写 +
+            // 归一即解码同门；非模板格的带重算切换不适用
+            if (
+                layer.type === 'TableCellLayer'
+                && !isTemplateSubtreePath(path)
+                && key.length === 2
+                && key[0] === 'shape'
+                && key[1] === 'autoHeight'
+            ) {
                 setCellAutoHeightInDraft(draft, path, Boolean(value), this.textPolicies)
                 return
             }
@@ -648,9 +705,11 @@ export class EditorSession {
      * 删除图层（含子树）：根层整删、行/格 splice、格内容置 null（语义见
      * layerPanel.deleteLayerInDraft）；选中/悬停落在被删子树内即清空，其余路径
      * 平移重映射。一次调用 = 一步历史。
+     * 模板子树空转（决策 2026-09）：预览行选中只开放属性编辑，行列结构编辑
+     * （含模板格删除）维持工票 02 的推迟决策，另立 effort。
      */
     deleteLayer(path: LayerPath): void {
-        if (!this.store.doc) return
+        if (!this.store.doc || isTemplateSubtreePath(path)) return
         const removed: TxOut<DeletedLayerRef | null> = { v: null }
         this.store.transact((draft) => {
             removed.v = deleteLayerInDraft(draft, path)
@@ -730,7 +789,6 @@ export class EditorSession {
         })
     }
 
-
     // ---- 剪贴板与置顶/置底（工单 14）：子树深拷贝语义见 clipboard.ts ----
 
     /**
@@ -742,7 +800,7 @@ export class EditorSession {
         if (!this.canCopySelection) return false
         const path = this.store.ui.selection!
         const doc = this.store.doc!
-        const box = layerBoxByPath(doc, path, this.textPolicies)
+        const box = this.boxByPath(path)
         if (!box) return false
         this.clipboardEntry = {
             layer: cloneLayerSubtree(resolveLayer(doc, path)!),
@@ -792,7 +850,7 @@ export class EditorSession {
         const path = this.store.ui.selection
         const doc = this.store.doc
         if (!path || !doc || !canCopyLayerAt(doc, path)) return null
-        const box = layerBoxByPath(doc, path, this.textPolicies)
+        const box = this.boxByPath(path)
         if (!box) return null
         const prepared = prepareRootPaste(
             resolveLayer(doc, path)!,
@@ -1108,7 +1166,8 @@ export class EditorSession {
 
     private repaintContent(): void {
         const doc = this.store.doc
-        if (!doc || !this.backend) return
+        const view = this.previewCanvas
+        if (!doc || !view || !this.backend) return
         const viewport = this.presentedViewport()
         const transform: PreviewViewportTransform = {
             dpr: this.dpr,
@@ -1119,11 +1178,16 @@ export class EditorSession {
         // 视口变换是 Canvas2D 后端的可选能力；后端契约本身保持五原语不变
         ;(this.backend as Partial<ViewportAwareBackend>).setViewportTransform?.(transform)
         // 编辑中的文本层跳绘内容（textarea 接管该层文字呈现，防两侧断行叠加重影）；
-        // 盒（背景/边框）照常绘制，进出编辑视觉连续。图层引用来自同一棵不可变
-        // 文档树，引用比较即精确判定，无需逐层比对路径。
+        // 盒（背景/边框）照常绘制，进出编辑视觉连续。跳绘判定按预览视图中的图层
+        // 引用：模板子树在视图里是新实例，经路径映射取视图侧对象才能命中同一引用
+        // （非模板子树结构共享，两棵树同引用）。
         const editing = this.store.ui.editing
-        const editingLayer = editing ? resolveLayer(doc, editing.path) : null
-        renderCanvas(doc, this.backend, this.textPolicies, editingLayer
+        let editingLayer: Layer | null = null
+        if (editing) {
+            const viewPath = docPathToViewPath(doc, editing.path)
+            editingLayer = viewPath ? resolveLayer(view, viewPath as LayerPath) : null
+        }
+        renderCanvas(view, this.backend, this.textPolicies, editingLayer
             ? { skipContent: (layer) => layer === editingLayer }
             : undefined)
     }

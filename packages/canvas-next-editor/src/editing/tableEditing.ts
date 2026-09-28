@@ -23,14 +23,15 @@
  * 模板态（工票 02，TableLayer V2）：行模板与 rows XOR，行级结构编辑在模板态
  * 拒绝（镜像 PHP addRow 抛 InvalidArgumentException，编辑器取 no-op 返回 null）；
  * 表宽写入对行模板做同款宽度重同步（镜像解码 setTemplate→setWidth）。行模板
- * 子树不可寻址（路径语法不含 template 段、不进大纲），其余函数在模板态不可达。
+ * 子树的画布选中/属性编辑经预览行开放（决策 2026-09，路径语法含 template 段），
+ * 结构编辑（行列增删重排）仍拒绝；不进大纲维持不变。
  *
  * 全模块纯 draft 变换、无 DOM；与 layerPanel.ts（工单 10 根层/行重排）分立。
  */
 import { layerHeight, lineHeightPx, textLines, type Canvas, type Layer, type TableCellLayer, type TableRowLayer, type TableRowTemplateLayer, type TextLayoutPolicies } from '@hankchen/canvas-next'
 import type { Draft } from 'immer'
 
-import { pathsEqual, resolveLayer, type LayerPath } from '../shared/layerPath'
+import { pathsEqual, resolveLayer, isTemplateSubtreePath, type LayerPath } from '../shared/layerPath'
 import { createDefaultLayer, moveGuard } from './layerPanel'
 
 type DraftRow = Draft<TableRowLayer>
@@ -73,6 +74,16 @@ function contentDynamicHeight(content: DraftContent, policies?: TextLayoutPolici
 export function syncRowWidthInDraft(row: DraftRowOrTemplate, tableWidth: number): void {
     row.shape.width = tableWidth
     row.shape.autoWidth = false
+}
+
+/**
+ * 模板格内容的宽度同步（addTemplateContentLayer 镜像）：只有宽度耦合，格与内容
+ * 的声明高/autoHeight 原样保留（ADR 0006 高度耦合全豁免，decodeTemplateCellLayer
+ * 同门）——与 V1 的压平/采纳语义分立。
+ */
+function syncTemplateContentWidthInDraft(content: DraftContent, cell: DraftCell): void {
+    content.shape.width = cell.shape.width
+    content.shape.autoWidth = false
 }
 
 /** addCell 副作用：行高取最高单元格（只增长不收缩），增长时固化（关 autoHeight） */
@@ -341,6 +352,12 @@ export function canonicalizeTableSyncInDraft(
         const cellPath = path.slice(0, -1)
         const cell = resolveDraft(draft, cellPath)
         if (!cell || cell.type !== 'TableCellLayer' || cell.content === null) return
+        // 模板格内容（决策 2026-09）：宽度耦合沿用、高度耦合全豁免（行高定稿
+        // 留给展开，无「行高取最高格」可重断言）
+        if (isTemplateSubtreePath(path)) {
+            syncTemplateContentWidthInDraft(cell.content, cell)
+            return
+        }
         syncContentIntoCellInDraft(cell.content, cell, policies)
         growRowOfCellInDraft(cellPath, cell.shape.height, draft)
         return
@@ -361,6 +378,11 @@ export function canonicalizeTableSyncInDraft(
     if (containerKey === 'cells') {
         const cell = resolveDraft(draft, path)
         if (!cell || cell.type !== 'TableCellLayer') return
+        // 模板格（决策 2026-09）：内容宽度同步照做，行高耦合全豁免
+        if (isTemplateSubtreePath(path)) {
+            if (cell.content !== null) syncTemplateContentWidthInDraft(cell.content, cell)
+            return
+        }
         if (cell.content !== null) syncContentIntoCellInDraft(cell.content, cell, policies)
         else if (cell.shape.autoHeight) cell.shape.height = 0
         growRowOfCellInDraft(path, cell.shape.height, draft)

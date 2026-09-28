@@ -4,7 +4,7 @@ import type { Canvas } from '@hankchen/canvas-next'
 
 import type { FrameScheduler, OverlayPainter } from '../../src/session/editor'
 import { EditorSession } from '../../src/session/editor'
-import { cellLayer, rowLayer, tableLayer, textLayer } from '../support/fixtures'
+import { cellLayer, imageLayer, rowLayer, tableLayer, textLayer } from '../support/fixtures'
 
 const nullScheduler: FrameScheduler = () => () => {}
 
@@ -107,6 +107,39 @@ describe('命中与选择（ui 分支，画布与后续面板同源）', () => {
         expect(session.store.ui.selection).toEqual(['layers', 0])
         session.escapeSelection()
         expect(session.store.ui.selection).toBeNull()
+    })
+})
+
+describe('底图豁免（工票 16）：面板路径语义不经画布命中，不受影响', () => {
+    /** 全幅底图（数组头）+ 叠在其上的普通层 */
+    const fullBleedDoc = () => [
+        imageLayer({ shape: { width: 2400, height: 1500 } }),
+        textLayer({ position: { anchor: 'top-left', x: 100, y: 100 }, shape: { width: 100, height: 100 } }),
+    ]
+
+    it('hoverAt 在全幅底图上为 null（豁免经 hitTest 一条缝自动生效）', () => {
+        const session = makeSession(fullBleedDoc())
+        session.hoverAt(1200, 1000)
+        expect(session.store.ui.hovered).toBeNull()
+        session.hoverAt(150, 150)
+        expect(session.store.ui.hovered).toEqual(['layers', 1])
+    })
+
+    it('setSelection 底图路径照常选中；拖动改位一步历史可撤销', () => {
+        const session = makeSession(fullBleedDoc())
+        session.setSelection(['layers', 0])
+        expect(session.store.ui.selection).toEqual(['layers', 0])
+
+        expect(session.beginDrag(['layers', 0], 1200, 1000)).toBe(true)
+        session.dragTo(1300, 1050)
+        session.endDrag()
+        const layer = session.store.doc!.layers[0]!
+        expect(layer.position.x).toBe(100)
+        expect(layer.position.y).toBe(50)
+        expect(session.store.history).toHaveLength(1)
+
+        session.undo()
+        expect(session.store.doc!.layers[0]!.position.x).toBe(0)
     })
 })
 

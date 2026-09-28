@@ -274,6 +274,24 @@ describe('容器角色的权威过滤（解码强同步字段不渲染：改了�
         expect(keys).toContain('shape.height')
     })
 
+    it('模板格内容（templateContent）：宽度同步隐藏、高度豁免放行（决策 2026-09）', () => {
+        const content = layerByType('TextLayer')
+        expect(layerRoleAt(['layers', 0, 'template', 'cells', 0, 'content'])).toBe('templateContent')
+        const sections = fieldSectionsForPath(['layers', 0, 'template', 'cells', 0, 'content'], content)
+        const keys = fieldKeys(sections)
+        expect(keys).not.toContain('shape.width')
+        expect(keys).not.toContain('shape.autoWidth')
+        expect(keys).toContain('shape.height')
+        // 高度豁免 = 尺寸行只剩高子字段、且带 autoHeight prefix（独立布尔行已撤销）
+        const size = flatFields(sections).find((f) => f.key.join('.') === 'shape')
+        expect(size?.items?.map((i) => i.key.join('.'))).toEqual(['height'])
+        expect(size?.items?.[0]?.auto?.key).toEqual(['autoHeight'])
+        // 模板格本身 = cell 角色，尺寸全放行
+        const cellKeys = fieldKeys(fieldSectionsForPath(['layers', 0, 'template', 'cells', 0], layerByType('TableCellLayer')))
+        expect(cellKeys).toContain('shape.width')
+        expect(cellKeys).toContain('shape.height')
+    })
+
     it('同一 type 在根层与容器内呈现不同字段集（过滤按 path+layer 联合判定）', () => {
         const text = layerByType('TextLayer')
         const rootKeys = fieldKeys(fieldSectionsForPath(['layers', 2], text))

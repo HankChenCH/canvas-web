@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { Canvas } from '@hankchen/canvas-next'
+import { decodeGraph, type Canvas } from '@hankchen/canvas-next'
 
 import {
     isLayerPath,
@@ -10,7 +10,7 @@ import {
     rootLayerOf,
     selectionParentPath,
 } from '../../src/shared/layerPath'
-import { cellLayer, qrLayer, rowLayer, tableLayer, textLayer } from '../support/fixtures'
+import { cellLayer, qrLayer, rowLayer, tableLayer, templateTableWire, textLayer } from '../support/fixtures'
 
 const doc = (layers: Canvas['layers']): Canvas => ({ width: 2400, height: 1500, layers })
 
@@ -143,6 +143,45 @@ describe('layerBoxByPath（绝对盒：与渲染模板同一几何，供 gizmo/�
     it('非法/越界路径返回 null', () => {
         expect(layerBoxByPath(tableDoc(), ['layers', 9])).toBeNull()
         expect(layerBoxByPath(tableDoc(), ['layers', 1, 'rows', 9])).toBeNull()
+    })
+})
+
+// ---- 行模板子树路径（预览行选中，决策 2026-09）----
+
+describe('isLayerPath：template 段（无下标，替代 rows，后必须紧跟 cells）', () => {
+    it('模板格/格内容路径合法；模板行本身（template 收尾）非法', () => {
+        expect(isLayerPath(['layers', 0, 'template', 'cells', 1])).toBe(true)
+        expect(isLayerPath(['layers', 0, 'template', 'cells', 1, 'content'])).toBe(true)
+        expect(isLayerPath(['layers', 0, 'template'])).toBe(false)
+        expect(isLayerPath(['layers', 0, 'template', 'rows', 0])).toBe(false)
+        expect(isLayerPath(['layers', 0, 'template', 'cells', 1, 'cells', 2])).toBe(false)
+    })
+
+    it('template 与 rows 不可混用：template 之后不得再出 rows', () => {
+        expect(isLayerPath(['layers', 0, 'template', 'cells', 1, 'rows', 0])).toBe(false)
+    })
+})
+
+describe('resolveLayer / selectionParentPath：模板子树', () => {
+    it('模板格路径解析到格；template 收尾解析为 null（模板行无选择身份）', () => {
+        const canvas = decodeGraph({ canvas: { width: 100, height: 100 }, layers: [templateTableWire()] })
+        const cell = resolveLayer(canvas, ['layers', 0, 'template', 'cells', 0])
+        expect(cell?.type).toBe('TableCellLayer')
+        expect(resolveLayer(canvas, ['layers', 0, 'template'])).toBeNull()
+    })
+
+    it('Escape 链：模板格 → 表（跳过无身份的 template 段）', () => {
+        expect(selectionParentPath(['layers', 0, 'template', 'cells', 1])).toEqual(['layers', 0])
+        expect(selectionParentPath(['layers', 0, 'template', 'cells', 1, 'content'])).toEqual(['layers', 0, 'template', 'cells', 1])
+    })
+})
+
+describe('layerBoxByPath：模板段几何与预览视图行同位（表原点首行位）', () => {
+    it('模板格盒 = 表原点 + 前序格宽累加', () => {
+        const canvas = decodeGraph({ canvas: { width: 400, height: 300 }, layers: [templateTableWire()] })
+        // 表在原点 320×120；模板格宽 160，两格横向累加
+        expect(layerBoxByPath(canvas, ['layers', 0, 'template', 'cells', 0])).toMatchObject({ x: 0, y: 0, width: 160 })
+        expect(layerBoxByPath(canvas, ['layers', 0, 'template', 'cells', 1])).toMatchObject({ x: 160, y: 0, width: 160 })
     })
 })
 

@@ -16,6 +16,7 @@
 import {
     HORIZONTAL_ALIGNS,
     VERTICAL_ALIGNS,
+    isTemplateSubtreePath,
     type Layer,
     type LayerPath,
     type LayerType,
@@ -207,7 +208,8 @@ export const FIELD_SECTIONS_BY_TYPE: Record<LayerType, readonly FieldSection[]> 
     TableLayer: [POSITION_SECTION, ALIGN_SECTION, SHAPE_SECTION],
     TableRowLayer: [POSITION_SECTION, ALIGN_SECTION, SHAPE_SECTION],
     TableCellLayer: [POSITION_SECTION, ALIGN_SECTION, SHAPE_SECTION],
-    // 行模板（V2）：无编辑字段（绑定编辑面板属 fog，工票 02 后另立 effort）
+    // 行模板行本身：无选择身份（预览行命中的是格，决策 2026-09），结构编辑
+    // 经图层面板行列入口且模板态被守卫拒绝
     TableRowTemplate: [],
 }
 
@@ -219,10 +221,14 @@ export function fieldSectionsForType(type: string): readonly FieldSection[] {
 // ---- 容器角色权威过滤：解码强同步字段不渲染 ----
 
 /** 图层在容器树里的角色（由路径尾段判定，纯函数） */
-export type LayerRole = 'root' | 'row' | 'cell' | 'content'
+export type LayerRole = 'root' | 'row' | 'cell' | 'content' | 'templateContent'
 
 export function layerRoleAt(path: LayerPath): LayerRole {
-    if (path[path.length - 1] === 'content') return 'content'
+    if (path[path.length - 1] === 'content') {
+        // 模板格内容（决策 2026-09）：宽度耦合与 V1 同款，高度耦合全豁免——
+        // 声明高/autoHeight 是有效声明，面板放行编辑
+        return isTemplateSubtreePath(path) ? 'templateContent' : 'content'
+    }
     const key = path[path.length - 2]
     if (key === 'rows') return 'row'
     if (key === 'cells') return 'cell'
@@ -240,6 +246,8 @@ const ROLE_HIDDEN_KEYS: Record<LayerRole, readonly string[]> = {
     cell: [],
     row: ['shape.width', 'shape.autoWidth'],
     content: ['shape.width', 'shape.autoWidth', 'shape.height', 'shape.autoHeight'],
+    // 模板格内容：宽度强同步隐藏；高度豁免放行（decodeTemplateCellLayer 同门）
+    templateContent: ['shape.width', 'shape.autoWidth'],
 }
 
 /**
