@@ -9,6 +9,7 @@
  *   ['layers', i, 'rows', j, 'cells', k]              单元格
  *   ['layers', i, 'rows', j, 'cells', k, 'content']   格内容层
  *   ['layers', i, 'template', 'cells', k]             行模板格（无下标的 template 段）
+ *   ['layers', i, 'template']                         行模板替身（表级，spec §2.2）
  *
  * 于是「对选中层改字段」= path 拼上字段段（如 + ['position', 'x']）直接得到
  * patch path；选择态住 ui 分支（不进历史），文档写入一律经路径导航。
@@ -30,14 +31,16 @@ export function isLayerPath(value: unknown): value is LayerPath {
     if (value[0] !== 'layers' || !isIndexSegment(value[1])) return false
 
     // 下降序列固定：rows → cells → content（可省前段，不可乱序/重复）。行模板
-    // 子树以无下标的 'template' 段替代 rows 段（预览行选中，决策 2026-09）：
-    // template 后必须紧跟 cells——模板行本身无选择身份，不可作路径收尾。
+    // 子树以无下标的 'template' 段替代 rows 段（spec §2.2）：template 可后接
+    // cells 下钻（预览行选中），也可作路径收尾——收尾形态是**行模板替身路径**
+    // （大纲模板子树选中/容器解析用），不是普通选择身份。
     const descent = ['rows', 'cells', 'content']
     let stage = 0
     let i = 2
     while (i < value.length) {
         const key = value[i]
         if (stage === 0 && key === 'template') {
+            if (i === value.length - 1) return true
             if (value[i + 1] !== 'cells') return false
             stage = 1
             i += 1
@@ -136,15 +139,17 @@ export function rootLayerOf(doc: Canvas, path: LayerPath): Layer | null {
 
 /**
  * 级联归属链（结构纯函数，无需文档）：格内容 → 格 → 行 → 表；根层无父级。
- * Escape 升级沿此链逐级取父，链尽即清空选择。模板子树内同理：模板格内容 →
- * 模板格 → 表——'template' 段无选择身份，父级计算越过它落到表本身。
+ * Escape 升级沿此链逐级取父，链尽即清空选择。模板子树链（spec §2.2）：模板格
+ * 内容 → 模板格 → 行模板（替身路径，可选中）→ 表——行模板是链上正式一级。
  */
 export function selectionParentPath(path: LayerPath): LayerPath | null {
     if (path.length < 2) return null
     if (path[path.length - 1] === 'content') return path.slice(0, -1)
+    // 行模板替身收尾：template 段无下标容器对，父级 = 表
+    if (path[path.length - 1] === 'template') return path.slice(0, -1)
     if (path.length > 2) {
-        const parent = path.slice(0, -2)
-        return parent[parent.length - 1] === 'template' ? parent.slice(0, -1) : parent
+        // 模板格的父级 = 行模板替身路径（保留 template 段，不再跳过）
+        return path.slice(0, -2)
     }
     return null
 }

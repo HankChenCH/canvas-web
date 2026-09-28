@@ -8,6 +8,7 @@ export {
     addRootLayerInDraft,
     buildLayerOutline,
     createDefaultLayer,
+    createTemplateTable,
     deleteLayerInDraft,
     insertRootLayerInDraft,
     moveGuard,
@@ -28,7 +29,10 @@ export {
 export {
     addTableCellInDraft,
     addTableRowInDraft,
+    addTemplateCellInDraft,
     canonicalizeTableSyncInDraft,
+    convertTableToRowsInDraft,
+    convertTableToTemplateInDraft,
     growRowToCellInDraft,
     moveTableCellInDraft,
     moveTableCellToRowInDraft,

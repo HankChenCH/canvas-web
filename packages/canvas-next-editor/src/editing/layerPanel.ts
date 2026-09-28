@@ -16,13 +16,13 @@
  *
  * 全模块纯函数、无 DOM；draft 侧变换经 immer 事务落库，查询侧只读。
  */
-import type { Canvas, Layer, LayerType, TableCellLayer, TableRowLayer } from '@hankchen/canvas-next'
+import type { Canvas, Layer, LayerType, TableLayer, TableCellLayer, TextLayer, TableRowLayer, TableRowTemplateLayer } from '@hankchen/canvas-next'
 import type { Draft } from 'immer'
 
 import { isLayerPath, resolveLayer, type LayerPath } from '../shared/layerPath'
 
-/** 图层在容器树里的角色（决定面板缩进与可拖动性） */
-export type LayerOutlineRole = 'root' | 'row' | 'cell' | 'content'
+/** 图层在容器树里的角色（决定面板缩进与可拖动性）；templateRow = 行模板替身节点 */
+export type LayerOutlineRole = 'root' | 'row' | 'cell' | 'content' | 'templateRow'
 
 /** 面板大纲节点：领域子树的纯投影（无文档写语义） */
 export interface LayerOutlineNode {
@@ -40,14 +40,18 @@ export interface LayerOutlineNode {
      * 语义只在 LayerBase 面）。
      */
     readonly visible: boolean
+    /** TableLayer 专属：是否模板态（+行按钮置灰与 title 的判定面，spec §2.5） */
+    readonly templated?: boolean
     readonly children: readonly LayerOutlineNode[]
 }
 
-/** 容器子层清单：type → (key, 孩子取法)；content 单叶 */
-function childLists(layer: Layer): { key: 'rows' | 'cells' | 'content'; layers: readonly Layer[] }[] {
+/** 容器子层清单：type → (key, 孩子取法)；content 单叶；template 段无下标 */
+function childLists(layer: Layer): { key: 'rows' | 'cells' | 'content' | 'template'; layers: readonly Layer[] }[] {
     switch (layer.type) {
         case 'TableLayer':
-            // 模板态表格：模板子树不在 rows 内，不进大纲（工票 02 扩展编辑语义）
+            // 模板态表格：大纲进模板子树（spec §2.2，推翻决策 2026-09）——行模板
+            // 节点走无下标 template 段；V1 表照旧 rows
+            if (layer.template !== null) return [{ key: 'template', layers: [layer.template] }]
             return [{ key: 'rows', layers: layer.rows }]
         case 'TableRowLayer':
             return [{ key: 'cells', layers: layer.cells }]
@@ -56,22 +60,38 @@ function childLists(layer: Layer): { key: 'rows' | 'cells' | 'content'; layers: 
         case 'ImageLayer':
         case 'TextLayer':
         case 'QrCodeLayer':
-        case 'TableRowTemplate':
             return []
+        case 'TableRowTemplate':
+            // 行模板的格进大纲（spec §2.2）：模板行是链上正式一级，格操作与 V1 同心智
+            return [{ key: 'cells', layers: layer.cells }]
     }
 }
 
 function outlineWalk(layer: Layer, path: LayerPath, role: LayerOutlineRole): LayerOutlineNode {
     const children: LayerOutlineNode[] = []
     for (const { key, layers } of childLists(layer)) {
-        // content 段无索引（路径语法 [..., 'cells', k, 'content']），其余 (key, index) 成对
         for (let i = 0; i < layers.length; i += 1) {
-            const roleOfChild: LayerOutlineRole = key === 'rows' ? 'row' : key === 'cells' ? 'cell' : 'content'
-            const childPath: LayerPath = key === 'content' ? [...path, 'content'] : [...path, key, i]
+            const roleOfChild: LayerOutlineRole =
+                key === 'rows' ? 'row' : key === 'cells' ? 'cell' : key === 'template' ? 'templateRow' : 'content'
+            // content 与 template 段无下标（路径语法 [..., 'template'] / [..., 'cells', k, 'content']）
+            const childPath: LayerPath =
+                key === 'content'
+                    ? [...path, 'content']
+                    : key === 'template'
+                        ? [...path, 'template']
+                        : [...path, key, i]
             children.push(outlineWalk(layers[i]!, childPath, roleOfChild))
         }
     }
-    return { type: layer.type, path, role, name: layer.name, visible: layer.visible, children }
+    return {
+        type: layer.type,
+        path,
+        role,
+        name: layer.name,
+        visible: layer.visible,
+        ...(layer.type === 'TableLayer' ? { templated: layer.template !== null } : null),
+        children,
+    }
 }
 
 /**
@@ -135,12 +155,38 @@ export function createDefaultLayer(type: LayerType): Layer {
         case 'TableRowLayer':
             return { ...base, type, shape: { ...base.shape, width: 400, height: 60 }, cells: [] }
         case 'TableRowTemplate':
-            // 行模板不提供编辑器新建入口（ADD_TYPES 不含，spec §8.3 UX 不在本 effort）；
-            // 工厂臂只为穷举完整性兜底
+            // 行模板不单卖（不进新建菜单）——只随 createTemplateTable 装配；工厂臂
+            // 为穷举完整性兜底
             return { ...base, type, shape: { ...base.shape, width: 400, height: 60 }, cells: [] }
         case 'TableCellLayer':
             return { ...base, type, shape: { ...base.shape, width: 200, height: 60 }, content: null }
     }
+}
+
+/**
+ * 模板表工厂（spec §2.1）：V1 表缺省形态（400×120）+ 行模板装配——auto 行（声明
+ * 高按解码归一为 0、宽 := 表宽关 autoWidth）+ 满宽 60 高缺省格带缺省文本内容
+ * （内容宽度同步、零高度耦合，ADR 0006）。rowsPath 由调用方必填（解码
+ * rows_path_missing 硬约束，创建表单校验前置）；缺省格 60 高保证空态预览行可见
+ * 可点（合成高 = 最高格，03 票 E1 机制）。
+ */
+export function createTemplateTable(options: { rowsPath: string }): TableLayer {
+    const table = createDefaultLayer('TableLayer') as TableLayer
+    const templateBase = createDefaultLayer('TableRowTemplate') as TableRowTemplateLayer
+    const cellBase = createDefaultLayer('TableCellLayer') as TableCellLayer
+    const contentBase = createDefaultLayer('TextLayer') as TextLayer
+
+    const cell: TableCellLayer = {
+        ...cellBase,
+        shape: { ...cellBase.shape, width: table.shape.width },
+        content: { ...contentBase, shape: { ...contentBase.shape, width: table.shape.width, autoWidth: false } },
+    }
+    const template: TableRowTemplateLayer = {
+        ...templateBase,
+        shape: { ...templateBase.shape, width: table.shape.width, autoWidth: false, autoHeight: true, height: 0 },
+        cells: [cell],
+    }
+    return { ...table, template, rows: [], rowsPath: options.rowsPath }
 }
 
 // ---- draft 侧结构变换（EditorSession 的 action 在 transact 内调用） ----
@@ -308,7 +354,11 @@ export function deleteLayerInDraft(draft: Draft<Canvas>, path: LayerPath): Delet
         return { kind: 'list', containerPath: path.slice(0, -2), key: 'rows', index }
     }
     const row = resolveLayer(draft, path.slice(0, -2))
-    if (!row || row.type !== 'TableRowLayer' || index >= row.cells.length) return null
+    // 两型 union（spec §3.2）：模板格删除与 V1 格同走 cells splice；行模板替身
+    // （template 收尾路径）尾段非数字在上方守卫天然拒绝
+    if (!row || (row.type !== 'TableRowLayer' && row.type !== 'TableRowTemplate') || index >= row.cells.length) {
+        return null
+    }
     ;(row.cells as Draft<TableCellLayer>[]).splice(index, 1)
     return { kind: 'list', containerPath: path.slice(0, -2), key: 'cells', index }
 }

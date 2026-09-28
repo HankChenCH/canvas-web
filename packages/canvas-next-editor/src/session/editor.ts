@@ -63,6 +63,7 @@ import {
 } from '../editing/clipboard'
 import {
     addRootLayerInDraft,
+    createTemplateTable,
     deleteLayerInDraft,
     insertRootLayerInDraft,
     moveRootLayerInDraft,
@@ -72,7 +73,10 @@ import {
 import {
     addTableCellInDraft,
     addTableRowInDraft,
+    addTemplateCellInDraft,
     canonicalizeTableSyncInDraft,
+    convertTableToRowsInDraft,
+    convertTableToTemplateInDraft,
     moveTableCellInDraft,
     moveTableCellToRowInDraft,
     moveTableRowToTableInDraft,
@@ -723,11 +727,12 @@ export class EditorSession {
      * 删除图层（含子树）：根层整删、行/格 splice、格内容置 null（语义见
      * layerPanel.deleteLayerInDraft）；选中/悬停落在被删子树内即清空，其余路径
      * 平移重映射。一次调用 = 一步历史。
-     * 模板子树空转（决策 2026-09）：预览行选中只开放属性编辑，行列结构编辑
-     * （含模板格删除）维持工票 02 的推迟决策，另立 effort。
+     * 模板子树删除面（spec §3.2）：cells/content 两级放行（内核两型 union），
+     * 仅行模板替身（template 收尾路径）拦截——删行模板 = 表退出模板态，归转换
+     * 入口（convertTableToRows），不混入删除。
      */
     deleteLayer(path: LayerPath): void {
-        if (!this.store.doc || isTemplateSubtreePath(path)) return
+        if (!this.store.doc || path[path.length - 1] === 'template') return
         const removed: TxOut<DeletedLayerRef | null> = { v: null }
         this.store.transact((draft) => {
             removed.v = deleteLayerInDraft(draft, path)
@@ -981,6 +986,72 @@ export class EditorSession {
             index.v = addTableCellInDraft(draft, rowPath) ?? -1
         })
         if (index.v >= 0) this.store.setSelection([...rowPath, 'cells', index.v])
+    }
+
+    /**
+     * 新增模板表（「+」选择器入口，spec §2.1）：createTemplateTable 缺省形态 +
+     * 置顶 + 自动选中；一次调用 = 一步历史。rowsPath 必填（解码 rows_path_missing
+     * 硬约束的对齐兜底，表单校验前置），空串 no-op。
+     */
+    addTemplateTable(rowsPath: string): void {
+        if (!this.store.doc || rowsPath === '') return
+        const index: TxOut<number> = { v: -1 }
+        this.store.transact((draft) => {
+            index.v = insertRootLayerInDraft(draft, createTemplateTable({ rowsPath }) as Draft<Layer>)
+        })
+        if (index.v >= 0) this.store.setSelection(['layers', index.v])
+    }
+
+    /**
+     * 模板行加格（spec §3.1）：addTemplateCellInDraft 重建路径（末格宽/首格行宽、
+     * 零高度耦合），自动选中新格；一次调用 = 一步历史。非模板态 no-op。
+     */
+    addTemplateCell(tablePath: LayerPath): void {
+        if (!this.store.doc) return
+        const index: TxOut<number> = { v: -1 }
+        this.store.transact((draft) => {
+            index.v = addTemplateCellInDraft(draft, tablePath) ?? -1
+        })
+        if (index.v >= 0) this.store.setSelection([...tablePath, 'template', 'cells', index.v])
+    }
+
+    /**
+     * V1→V2 转换（spec §2.3）：rowsPath 必填（空串 no-op，表单校验前置）；rows
+     * 子树内的选择/悬停回落表路径（rows 已清空不悬空）。一次调用 = 一步历史。
+     */
+    convertTableToTemplate(tablePath: LayerPath, rowsPath: string): void {
+        if (!this.store.doc || rowsPath === '') return
+        const done: TxOut<boolean> = { v: false }
+        this.store.transact((draft) => {
+            done.v = convertTableToTemplateInDraft(draft, tablePath, rowsPath) === true
+        })
+        if (done.v) this.clampSubtreeSelection(tablePath)
+    }
+
+    /**
+     * V2→V1 逆向转换（spec §2.3）：模板实例化为单行（V1 归一重断言——auto 格
+     * 采纳/固化、行高取最高格）；模板子树内的选择/悬停回落表路径。一次调用 =
+     * 一步历史。
+     */
+    convertTableToRows(tablePath: LayerPath): void {
+        if (!this.store.doc) return
+        const done: TxOut<boolean> = { v: false }
+        this.store.transact((draft) => {
+            done.v = convertTableToRowsInDraft(draft, tablePath, this.textPolicies) === true
+        })
+        if (done.v) this.clampSubtreeSelection(tablePath)
+    }
+
+    /** 子树内选择/悬停回落到子树根（容器清空后不悬空）；子树外原样不动 */
+    private clampSubtreeSelection(rootPath: LayerPath): void {
+        const selection = this.store.ui.selection
+        if (selection !== null && selection.length > rootPath.length && pathStartsWith(selection, rootPath)) {
+            this.store.setSelection(rootPath)
+        }
+        const hovered = this.store.ui.hovered
+        if (hovered !== null && hovered.length > rootPath.length && pathStartsWith(hovered, rootPath)) {
+            this.store.setHovered(rootPath)
+        }
     }
 
     /**

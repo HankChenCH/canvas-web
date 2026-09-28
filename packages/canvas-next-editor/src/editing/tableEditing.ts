@@ -20,11 +20,13 @@
  * 切换不是裸标志写：开 = 采纳内容动态高（autowrap 文本即「行数×行高+padding」）
  * 并固化，空格 = 置标志（解码对无内容的格保留该标志，往返恒等不受影响）。
  *
- * 模板态（工票 02，TableLayer V2）：行模板与 rows XOR，行级结构编辑在模板态
- * 拒绝（镜像 PHP addRow 抛 InvalidArgumentException，编辑器取 no-op 返回 null）；
- * 表宽写入对行模板做同款宽度重同步（镜像解码 setTemplate→setWidth）。行模板
- * 子树的画布选中/属性编辑经预览行开放（决策 2026-09，路径语法含 template 段），
- * 结构编辑（行列增删重排）仍拒绝；不进大纲维持不变。
+ * 模板态（TableLayer V2）：行模板与 rows XOR，行级结构编辑在模板态拒绝（镜像
+ * PHP addRow 抛 InvalidArgumentException，编辑器取 no-op 返回 null）；表宽写入
+ * 对行模板做同款宽度重同步（镜像解码 setTemplate→setWidth）。模板创作 UX（spec
+ * `.scratch/canvas-web-template-authoring/`）：模板格的增删重排开放——加格镜像
+ * PHP TableRowTemplate::addCell 的零高度耦合（ADR 0006），行模板本身不可增删，
+ * 双向转换原语是唯一合法的模板态进出门；模板子树进大纲、替身路径可选中（推翻
+ * 决策 2026-09，勘误见 canvas-web-table-v2 issues/02 Comments）。
  *
  * 全模块纯 draft 变换、无 DOM；与 layerPanel.ts（工单 10 根层/行重排）分立。
  */
@@ -176,6 +178,99 @@ export function addTableCellInDraft(draft: Draft<Canvas>, rowPath: LayerPath): n
     return cells.length - 1
 }
 
+/**
+ * 模板行加格（draft 原位变换，spec §3.1）：缺省格 + 缺省文本内容——格宽取末格
+ * 宽（无格取模板行宽）、内容只做宽度同步（addTemplateContentLayer 镜像）；格与
+ * 内容的声明高/autoHeight 原样、模板行 shape 零触碰（ADR 0006 高度耦合全豁免，
+ * 无任何行高耦合）。返回新格下标；路径非表/非模板态返回 null。
+ */
+export function addTemplateCellInDraft(draft: Draft<Canvas>, tablePath: LayerPath): number | null {
+    const table = resolveDraft(draft, tablePath)
+    if (!table || table.type !== 'TableLayer' || table.template === null) return null
+    const template = table.template as Draft<TableRowTemplateLayer>
+    const cells = template.cells as DraftCell[]
+    const cell = createDefaultLayer('TableCellLayer') as DraftCell
+    cell.shape.width = cells.length > 0 ? cells[cells.length - 1]!.shape.width : template.shape.width
+    const content = createDefaultLayer('TextLayer') as DraftContent
+    syncTemplateContentWidthInDraft(content, cell)
+    cell.content = content
+    cells.push(cell)
+    return cells.length - 1
+}
+
+/**
+ * V1→V2 转换（draft 原位变换，spec §2.3）：末行深拷贝重标定为行模板——搬运规则
+ * 为行宽 := 表宽关 autoWidth（解码 setTemplate 同门重断言，V1 行宽恒等表宽，数值
+ * 不变），格宽/格高/内容 data 全部原样（V1 带内容格恒固定高，无 auto 标志残留，
+ * 零特判）；rows 清空（XOR）、rowsPath 落 data 域。rowsPath 空串拒绝（解码
+ * rows_path_missing 硬约束的对齐兜底——创建表单校验前置，此处双保险）。返回
+ * true；no-op（路径非表/已是模板态/空表/末行零格/rowsPath 空）返回 null。
+ */
+export function convertTableToTemplateInDraft(
+    draft: Draft<Canvas>,
+    tablePath: LayerPath,
+    rowsPath: string,
+): boolean | null {
+    const table = resolveDraft(draft, tablePath)
+    if (!table || table.type !== 'TableLayer' || table.template !== null) return null
+    if (rowsPath === '') return null
+    const rows = table.rows as DraftRow[]
+    const last = rows[rows.length - 1]
+    if (last === undefined || last.cells.length === 0) return null
+
+    // JSON 往返深拷贝（与剪贴板 cloneLayerSubtree 同式，draft 节点落为普通对象）
+    const template = JSON.parse(JSON.stringify(last)) as Draft<TableRowTemplateLayer>
+    template.type = 'TableRowTemplate'
+    syncRowWidthInDraft(template, table.shape.width)
+
+    table.rows = []
+    table.template = template
+    table.rowsPath = rowsPath
+    return true
+}
+
+/**
+ * V2→V1 逆向转换（draft 原位变换，spec §2.3）：模板深拷贝重标定为单行——内容
+ * data 原样（expression 标记保留，V1 字面渲染既有行为），随后按解码副作用重断言
+ * V1 归一（decodeTableRowLayer/decodeTableCellLayer 同门，往返恒等要求）：带内容
+ * 格 auto → 采纳内容动态高并固化、固定格压平内容高（addContentLayer 语义）；空
+ * auto 格声明高归零（auto 标志解码归一）；行高取最高格增长固化（addCell 语义，
+ * 只增长不收缩）。template 置 null、rowsPath 清空（V1 不消费）。返回 true；
+ * no-op（路径非表/非模板态）返回 null。
+ */
+export function convertTableToRowsInDraft(
+    draft: Draft<Canvas>,
+    tablePath: LayerPath,
+    policies?: TextLayoutPolicies,
+): boolean | null {
+    const table = resolveDraft(draft, tablePath)
+    if (!table || table.type !== 'TableLayer' || table.template === null) return null
+
+    const row = JSON.parse(JSON.stringify(table.template)) as DraftRow
+    row.type = 'TableRowLayer'
+    syncRowWidthInDraft(row, table.shape.width)
+    for (const cell of row.cells as DraftCell[]) {
+        if (cell.content !== null) {
+            // 镜像 setCellAutoHeightInDraft 的两步归一：auto 格先采纳内容动态高并
+            // 固化，再按固定格压平内容高（解码对 V1 带内容格恒归一，往返恒等要求）
+            if (cell.shape.autoHeight) {
+                cell.shape.height = contentDynamicHeight(cell.content, policies)
+                cell.shape.autoHeight = false
+            }
+            syncContentIntoCellInDraft(cell.content, cell, policies)
+        } else if (cell.shape.autoHeight) {
+            cell.shape.height = 0
+        }
+    }
+    if (row.shape.autoHeight) row.shape.height = 0
+    growRowToCellInDraft(row, maxCellHeight(row, policies))
+
+    table.template = null
+    table.rowsPath = ''
+    table.rows = [row]
+    return true
+}
+
 /** 跨容器移动的重映射凭据：源容器纯删除 + 目标容器纯插入（from = 原长、to = 落点） */
 export interface MovedSubtreeRef {
     /** 移动前子树根路径（选择/悬停重挂基准） */
@@ -199,7 +294,8 @@ export function moveTableCellInDraft(
     toCell: number,
 ): { from: number; to: number } | null {
     const row = resolveDraft(draft, rowPath)
-    if (!row || row.type !== 'TableRowLayer') return null
+    // 两型 union（spec §3.2）：模板格同行重排复用同一原语（模板仅一行，跨行不可达）
+    if (!row || (row.type !== 'TableRowLayer' && row.type !== 'TableRowTemplate')) return null
     const cells = row.cells as DraftCell[]
     const reduced = moveGuard(cells.length, fromCell, toCell)
     if (reduced === null) return null

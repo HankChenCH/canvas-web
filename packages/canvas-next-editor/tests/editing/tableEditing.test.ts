@@ -13,7 +13,7 @@ import { describe, expect, it } from 'vitest'
 import { decodeGraph, encodeGraph, type TableLayer, type WireLayerNode } from '@hankchen/canvas-next'
 
 import { EditorSession, type FrameScheduler } from '../../src/session/editor'
-import { ALIGN_TOP_LEFT, POSITION_ORIGIN, shapeWire, templateTableWire } from '../support/fixtures'
+import { ALIGN_TOP_LEFT, POSITION_ORIGIN, shapeWire, templateTableWire, wireNode } from '../support/fixtures'
 
 const nullScheduler: FrameScheduler = () => () => {}
 
@@ -640,6 +640,264 @@ describe('单元格内容层编辑复用 09/11 能力', () => {
         const content = table.rows[0]!.cells[0]!.content
         expect(content?.type === 'TextLayer' && content.fontSize).toBe(20)
         expect(content?.shape.height).toBe(60) // 压平保持
+        roundtrips(session)
+    })
+})
+
+// ---- 模板创作内核（canvas-web-template-authoring spec §2/§3）：加格 / 转换 / 守卫放宽 ----
+
+/** 空模板表（零格模板，rowsPath 非空——解码硬约束形态） */
+const emptyTemplateTable = (): WireLayerNode => ({
+    type: 'TableLayer',
+    priority: 10,
+    spec: { shape: shapeWire(400, 120), align: ALIGN_TOP_LEFT, position: POSITION_ORIGIN },
+    data: { rowsPath: 'order.items' },
+    template: wireNode('TableRowTemplate', shapeWire(400, 0, { autoHeight: true }), { cells: [] }),
+})
+
+describe('addTemplateTable：新建空模板表（缺省形态，spec §2.1）', () => {
+    it('缺省形态：表壳 400×120 + auto 行模板（宽=表宽、声明高归零）+ 满宽 60 高缺省格带文本；rowsPath 落域', () => {
+        const session = openTableDoc(basicTable())
+        session.addTemplateTable('order.items')
+
+        expect(session.store.doc!.layers).toHaveLength(2)
+        const table = tableAt(session, 1)
+        expect(table.shape.width).toBe(400)
+        expect(table.shape.height).toBe(120)
+        expect(table.rowsPath).toBe('order.items')
+        expect(table.rows).toEqual([])
+
+        const template = table.template!
+        expect(template.type).toBe('TableRowTemplate')
+        expect(template.shape.width).toBe(400)
+        expect(template.shape.autoWidth).toBe(false)
+        expect(template.shape.autoHeight).toBe(true)
+        expect(template.shape.height).toBe(0)
+
+        expect(template.cells).toHaveLength(1)
+        const cell = template.cells[0]!
+        expect(cell.shape.width).toBe(400)
+        expect(cell.shape.height).toBe(60)
+        expect(cell.shape.autoHeight).toBe(false)
+        expect(cell.content?.type).toBe('TextLayer')
+        expect(cell.content?.shape.width).toBe(400)
+        expect(cell.content?.shape.autoWidth).toBe(false)
+        roundtrips(session)
+    })
+
+    it('置顶 + 自动选中 + 一步历史，undo 整表移除', () => {
+        const session = openTableDoc(basicTable())
+        session.addTemplateTable('order.items')
+        expect(session.store.ui.selection).toEqual(['layers', 1])
+        expect(stepCount(session)).toBe(1)
+        session.undo()
+        expect(session.store.doc!.layers).toHaveLength(1)
+    })
+
+    it('rowsPath 空串 no-op（解码硬约束对齐）：零图层变化、零历史步', () => {
+        const session = openTableDoc(basicTable())
+        session.addTemplateTable('')
+        expect(session.store.doc!.layers).toHaveLength(1)
+        expect(stepCount(session)).toBe(0)
+    })
+})
+
+describe('addTemplateCell：模板行加格（ADR 0006 零高度耦合，spec §3.1）', () => {
+    it('空模板加格：格宽=模板行宽、带缺省文本内容（宽度同步）；自动选中；一步历史 undo 移除', () => {
+        const session = openTableDoc(emptyTemplateTable())
+        session.addTemplateCell(['layers', 0])
+
+        const template = tableAt(session, 0).template!
+        expect(template.cells).toHaveLength(1)
+        const cell = template.cells[0]!
+        expect(cell.shape.width).toBe(400)
+        expect(cell.shape.height).toBe(60)
+        expect(cell.content?.type).toBe('TextLayer')
+        expect(cell.content?.shape.width).toBe(400)
+        expect(cell.content?.shape.autoWidth).toBe(false)
+        expect(session.store.ui.selection).toEqual(['layers', 0, 'template', 'cells', 0])
+        expect(stepCount(session)).toBe(1)
+        session.undo()
+        expect(tableAt(session, 0).template!.cells).toHaveLength(0)
+    })
+
+    it('已有格加格：格宽随末格宽', () => {
+        const session = openTableDoc(templateTableWire())
+        session.addTemplateCell(['layers', 0])
+        expect(tableAt(session, 0).template!.cells[3]!.shape.width).toBe(160)
+    })
+
+    it('零高度耦合：行 shape 逐字段原样、既有 auto 格原样、新格/内容高不被压平', () => {
+        const session = openTableDoc(templateTableWire())
+        const before = tableAt(session, 0).template!
+        session.addTemplateCell(['layers', 0])
+
+        const after = tableAt(session, 0).template!
+        expect(after.shape).toEqual(before.shape)
+        expect(after.cells[0]!.shape.autoHeight).toBe(true)
+        expect(after.cells[0]!.shape.height).toBe(0)
+        const added = after.cells[3]!
+        expect(added.shape.height).toBe(60)
+        expect(added.content?.shape.height).toBe(60)
+        roundtrips(session)
+    })
+
+    it('V1 表调用 no-op（守卫）：无历史步、rows 不变', () => {
+        const session = openTableDoc(basicTable())
+        session.addTemplateCell(['layers', 0])
+        expect(stepCount(session)).toBe(0)
+        expect(tableAt(session, 0).rows).toHaveLength(2)
+    })
+})
+
+describe('convertTableToTemplate：V1→V2 转换（spec §2.3）', () => {
+    it('末行为种子：重标定 + 行宽重断言 + rows 清空 + rowsPath 落域；格/内容原样', () => {
+        const session = openTableDoc(basicTable())
+        session.convertTableToTemplate(['layers', 0], 'order.items')
+
+        const table = tableAt(session, 0)
+        expect(table.rows).toEqual([])
+        expect(table.rowsPath).toBe('order.items')
+        const template = table.template!
+        expect(template.type).toBe('TableRowTemplate')
+        expect(template.shape.width).toBe(400)
+        expect(template.shape.autoWidth).toBe(false)
+        expect(template.shape.height).toBe(30)
+        expect(template.shape.autoHeight).toBe(false)
+        expect(template.cells).toHaveLength(1)
+        const cell = template.cells[0]!
+        expect(cell.shape.width).toBe(400)
+        expect(cell.content?.type === 'TextLayer' && cell.content.text).toBe('丙')
+        roundtrips(session)
+    })
+
+    it('一步历史：undo 还原 V1 两行', () => {
+        const session = openTableDoc(basicTable())
+        session.convertTableToTemplate(['layers', 0], 'order.items')
+        expect(stepCount(session)).toBe(1)
+        session.undo()
+        const restored = tableAt(session, 0)
+        expect(restored.template).toBeNull()
+        expect(restored.rows).toHaveLength(2)
+    })
+
+    it('no-op 矩阵：末行零格 / 空表 / rowsPath 空串 / 已是模板态——零历史步', () => {
+        const emptyLast = openTableDoc(
+            tableWire(400, 120, [rowWire(400, 60, [cellWire(200, 60, '甲')]), rowWire(400, 60, [])]),
+        )
+        emptyLast.convertTableToTemplate(['layers', 0], 'order.items')
+        expect(tableAt(emptyLast, 0).template).toBeNull()
+        expect(stepCount(emptyLast)).toBe(0)
+
+        const empty = openTableDoc(tableWire(400, 60, []))
+        empty.convertTableToTemplate(['layers', 0], 'order.items')
+        expect(tableAt(empty, 0).template).toBeNull()
+        expect(stepCount(empty)).toBe(0)
+
+        const noPath = openTableDoc(basicTable())
+        noPath.convertTableToTemplate(['layers', 0], '')
+        expect(tableAt(noPath, 0).template).toBeNull()
+        expect(stepCount(noPath)).toBe(0)
+
+        const already = openTableDoc(templateTableWire())
+        already.convertTableToTemplate(['layers', 0], 'other.rows')
+        expect(tableAt(already, 0).rowsPath).toBe('order.items')
+        expect(stepCount(already)).toBe(0)
+    })
+
+    it('rows 子树内的选中回落表路径（rows 已清空不悬空）', () => {
+        const session = openTableDoc(basicTable())
+        session.store.setSelection(['layers', 0, 'rows', 1, 'cells', 0])
+        session.convertTableToTemplate(['layers', 0], 'order.items')
+        expect(session.store.ui.selection).toEqual(['layers', 0])
+    })
+})
+
+describe('convertTableToRows：V2→V1 逆向（V1 归一重断言，spec §2.3）', () => {
+    it('模板实例化为单行：auto 格采纳内容动态高并固化、行高取最高格；template null、rowsPath 清空、data 原样', () => {
+        const session = openTableDoc(templateTableWire())
+        session.convertTableToRows(['layers', 0])
+
+        const table = tableAt(session, 0)
+        expect(table.template).toBeNull()
+        expect(table.rowsPath).toBe('')
+        expect(table.rows).toHaveLength(1)
+        const row = table.rows[0]!
+        expect(row.type).toBe('TableRowLayer')
+        // 行：auto 行高按解码同门增长固化（最高固定格 40）
+        expect(row.shape.height).toBe(40)
+        expect(row.shape.autoHeight).toBe(false)
+        // 格0：auto+带内容 → 采纳内容动态高并固化，内容高压平（V1 带内容格恒固定高）
+        const cell0 = row.cells[0]!
+        expect(cell0.shape.autoHeight).toBe(false)
+        expect(cell0.content!.shape.height).toBe(cell0.shape.height)
+        // data 原样：expression 标记保留（字面渲染既有行为）
+        expect(cell0.content?.type === 'TextLayer' && cell0.content.expression).toBe('姓名：{{row.name}}')
+        roundtrips(session)
+    })
+
+    it('一步历史：undo 还原模板态', () => {
+        const session = openTableDoc(templateTableWire())
+        session.convertTableToRows(['layers', 0])
+        expect(stepCount(session)).toBe(1)
+        session.undo()
+        const restored = tableAt(session, 0)
+        expect(restored.template).not.toBeNull()
+        expect(restored.rows).toEqual([])
+    })
+
+    it('V1 表调用 no-op', () => {
+        const session = openTableDoc(basicTable())
+        session.convertTableToRows(['layers', 0])
+        expect(stepCount(session)).toBe(0)
+    })
+
+    it('模板子树内的选中回落表路径（template 已清空不悬空）', () => {
+        const session = openTableDoc(templateTableWire())
+        session.store.setSelection(['layers', 0, 'template', 'cells', 1])
+        session.convertTableToRows(['layers', 0])
+        expect(session.store.ui.selection).toEqual(['layers', 0])
+    })
+})
+
+describe('模板格删除与重排（守卫放宽，spec §3.2）', () => {
+    it('删模板格：splice + 一步历史 + 被删子树选中清空；删空所有格 = 空模板合法', () => {
+        const session = openTableDoc(templateTableWire())
+        session.store.setSelection(['layers', 0, 'template', 'cells', 2])
+        session.deleteLayer(['layers', 0, 'template', 'cells', 2])
+        expect(tableAt(session, 0).template!.cells).toHaveLength(2)
+        expect(stepCount(session)).toBe(1)
+        expect(session.store.ui.selection).toBeNull()
+
+        session.deleteLayer(['layers', 0, 'template', 'cells', 1])
+        session.deleteLayer(['layers', 0, 'template', 'cells', 0])
+        expect(tableAt(session, 0).template!.cells).toEqual([])
+        roundtrips(session)
+    })
+
+    it('删模板格内容：content 置 null，可撤销', () => {
+        const session = openTableDoc(templateTableWire())
+        session.deleteLayer(['layers', 0, 'template', 'cells', 1, 'content'])
+        expect(tableAt(session, 0).template!.cells[1]!.content).toBeNull()
+        session.undo()
+        expect(tableAt(session, 0).template!.cells[1]!.content).not.toBeNull()
+    })
+
+    it('行模板替身不可删：no-op 零历史步', () => {
+        const session = openTableDoc(templateTableWire())
+        session.deleteLayer(['layers', 0, 'template'])
+        expect(tableAt(session, 0).template).not.toBeNull()
+        expect(stepCount(session)).toBe(0)
+    })
+
+    it('模板格同行重排：moveTableCell 两型 union，选中随 remap', () => {
+        const session = openTableDoc(templateTableWire())
+        session.store.setSelection(['layers', 0, 'template', 'cells', 2])
+        session.moveTableCell(['layers', 0, 'template'], 2, 0)
+        const cells = tableAt(session, 0).template!.cells
+        expect(cells[0]!.content?.type).toBe('QrCodeLayer')
+        expect(session.store.ui.selection).toEqual(['layers', 0, 'template', 'cells', 0])
+        expect(stepCount(session)).toBe(1)
         roundtrips(session)
     })
 })

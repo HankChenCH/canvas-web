@@ -146,13 +146,13 @@ describe('layerBoxByPath（绝对盒：与渲染模板同一几何，供 gizmo/�
     })
 })
 
-// ---- 行模板子树路径（预览行选中，决策 2026-09）----
+// ---- 行模板子树路径（预览行选中 + 替身收尾，spec §2.2；推翻决策 2026-09）----
 
-describe('isLayerPath：template 段（无下标，替代 rows，后必须紧跟 cells）', () => {
-    it('模板格/格内容路径合法；模板行本身（template 收尾）非法', () => {
+describe('isLayerPath：template 段（无下标，替代 rows；后接 cells 或作替身收尾）', () => {
+    it('模板格/格内容路径合法；template 收尾 = 行模板替身路径，同样合法', () => {
         expect(isLayerPath(['layers', 0, 'template', 'cells', 1])).toBe(true)
         expect(isLayerPath(['layers', 0, 'template', 'cells', 1, 'content'])).toBe(true)
-        expect(isLayerPath(['layers', 0, 'template'])).toBe(false)
+        expect(isLayerPath(['layers', 0, 'template'])).toBe(true)
         expect(isLayerPath(['layers', 0, 'template', 'rows', 0])).toBe(false)
         expect(isLayerPath(['layers', 0, 'template', 'cells', 1, 'cells', 2])).toBe(false)
     })
@@ -163,16 +163,18 @@ describe('isLayerPath：template 段（无下标，替代 rows，后必须紧跟
 })
 
 describe('resolveLayer / selectionParentPath：模板子树', () => {
-    it('模板格路径解析到格；template 收尾解析为 null（模板行无选择身份）', () => {
+    it('模板格路径解析到格；template 收尾解析到行模板本体（替身路径，spec §2.2）', () => {
         const canvas = decodeGraph({ canvas: { width: 100, height: 100 }, layers: [templateTableWire()] })
         const cell = resolveLayer(canvas, ['layers', 0, 'template', 'cells', 0])
         expect(cell?.type).toBe('TableCellLayer')
-        expect(resolveLayer(canvas, ['layers', 0, 'template'])).toBeNull()
+        expect(resolveLayer(canvas, ['layers', 0, 'template'])?.type).toBe('TableRowTemplate')
     })
 
-    it('Escape 链：模板格 → 表（跳过无身份的 template 段）', () => {
-        expect(selectionParentPath(['layers', 0, 'template', 'cells', 1])).toEqual(['layers', 0])
+    it('Escape 链：格内容 → 格 → 行模板（替身）→ 表（spec §2.2 D2，推翻跳段语义）', () => {
         expect(selectionParentPath(['layers', 0, 'template', 'cells', 1, 'content'])).toEqual(['layers', 0, 'template', 'cells', 1])
+        expect(selectionParentPath(['layers', 0, 'template', 'cells', 1])).toEqual(['layers', 0, 'template'])
+        expect(selectionParentPath(['layers', 0, 'template'])).toEqual(['layers', 0])
+        expect(selectionParentPath(['layers', 0])).toBeNull()
     })
 })
 

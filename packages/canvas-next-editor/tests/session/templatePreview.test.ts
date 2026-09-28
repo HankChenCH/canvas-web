@@ -79,9 +79,11 @@ describe('预览行命中与选中', () => {
         expect(session.selectAt(160, 100)).toEqual(['layers', 0])
     })
 
-    it('Escape 升级：模板格 → 表', () => {
+    it('Escape 升级：模板格 → 行模板 → 表（spec §2.2 D2 Esc 链补全）', () => {
         const session = makeSession(templateLayers())
         session.setSelection(['layers', 0, 'template', 'cells', 1])
+        session.escapeSelection()
+        expect(session.store.ui.selection).toEqual(['layers', 0, 'template'])
         session.escapeSelection()
         expect(session.store.ui.selection).toEqual(['layers', 0])
     })
@@ -110,12 +112,15 @@ describe('模板子树的属性写入', () => {
     })
 })
 
-describe('模板子树的结构编辑守卫', () => {
-    it('deleteLayer 对模板子树空转；表本身可删', () => {
+describe('模板子树的结构编辑面（spec §3.2：cells/content 放行，替身拦截）', () => {
+    it('deleteLayer 删模板格生效（一步历史）；行模板替身 no-op；表本身可删', () => {
         const session = makeSession(templateLayers())
         session.deleteLayer(['layers', 0, 'template', 'cells', 0])
         const template = (session.store.doc!.layers[0] as unknown as { template: { cells: unknown[] } }).template
-        expect(template.cells).toHaveLength(2)
+        expect(template.cells).toHaveLength(1)
+
+        session.deleteLayer(['layers', 0, 'template'])
+        expect((session.store.doc!.layers[0] as unknown as { template: unknown }).template).not.toBeNull()
 
         session.setSelection(['layers', 0])
         session.deleteLayer(['layers', 0])
