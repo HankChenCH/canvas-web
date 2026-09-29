@@ -20,6 +20,7 @@ import type { Canvas, Layer, LayerType, TableLayer, TableCellLayer, TextLayer, T
 import type { Draft } from 'immer'
 
 import { isLayerPath, resolveLayer, type LayerPath } from '../shared/layerPath'
+import { scanExpressionFragments } from '../shared/expressionScan'
 
 /** 图层在容器树里的角色（决定面板缩进与可拖动性）；templateRow = 行模板替身节点 */
 export type LayerOutlineRole = 'root' | 'row' | 'cell' | 'content' | 'templateRow'
@@ -40,6 +41,13 @@ export interface LayerOutlineNode {
      * 语义只在 LayerBase 面）。
      */
     readonly visible: boolean
+    /**
+     * 表达式前置（layer-panel-expression-prefix 工单 01）：带标记内容层（三内容层
+     * 且 expression !== null）的全部闭合片段按 expr 重构 `{{…}}` 外壳、单空格连接，
+     * 面板零计算直读；空串 = 无前置（未标记 / 非内容层），对齐 name 字段先例；
+     * 全部片段无效得常量 `{{…}}`。全角色节点照带。
+     */
+    readonly expressionPrefix: string
     /** TableLayer 专属：是否模板态（+行按钮置灰与 title 的判定面，spec §2.5） */
     readonly templated?: boolean
     readonly children: readonly LayerOutlineNode[]
@@ -67,6 +75,37 @@ function childLists(layer: Layer): { key: 'rows' | 'cells' | 'content' | 'templa
     }
 }
 
+/** 三内容层的数据表达式标记读取面：非内容层无 data 字段，恒 null */
+function markedExpressionOf(layer: Layer): string | null {
+    switch (layer.type) {
+        case 'TextLayer':
+        case 'ImageLayer':
+        case 'QrCodeLayer':
+            return layer.expression
+        default:
+            return null
+    }
+}
+
+/** 全部闭合片段无效时的前置占位（spec 决策 2：无闭合片段 / expr 全空） */
+const EXPRESSION_PREFIX_PLACEHOLDER = '{{…}}'
+
+/**
+ * 表达式前置计算（layer-panel-expression-prefix 工单 01，spec 决策 2/3）：判据看
+ * 层型 + 标记、不看 role——实例行格内容与行模板子树格内容同享。取全部闭合片段，
+ * 按 expr（phpTrim 后路径，`row.` 前缀原样）重构外壳、单空格连接；expr 空的片段
+ * 无效，全部无效得常量占位。纯函数、无 I/O、不回写文档。
+ */
+function expressionPrefixFor(layer: Layer): string {
+    const expression = markedExpressionOf(layer)
+    if (expression === null) return ''
+    const exprs = scanExpressionFragments(expression).parts.flatMap((part) =>
+        part.kind === 'fragment' && part.expr !== '' ? [part.expr] : [],
+    )
+    if (exprs.length === 0) return EXPRESSION_PREFIX_PLACEHOLDER
+    return exprs.map((expr) => `{{${expr}}}`).join(' ')
+}
+
 function outlineWalk(layer: Layer, path: LayerPath, role: LayerOutlineRole): LayerOutlineNode {
     const children: LayerOutlineNode[] = []
     for (const { key, layers } of childLists(layer)) {
@@ -89,6 +128,7 @@ function outlineWalk(layer: Layer, path: LayerPath, role: LayerOutlineRole): Lay
         role,
         name: layer.name,
         visible: layer.visible,
+        expressionPrefix: expressionPrefixFor(layer),
         ...(layer.type === 'TableLayer' ? { templated: layer.template !== null } : null),
         children,
     }

@@ -6,9 +6,18 @@ import { EditorSession } from '../../src/session/editor'
 import {
     buildLayerOutline,
     createDefaultLayer,
+    type LayerOutlineNode,
 } from '../../src/editing/layerPanel'
 import type { FrameScheduler } from '../../src/session/editor'
-import { cellLayer, rowLayer, tableLayer, textLayer } from '../support/fixtures'
+import {
+    cellLayer,
+    imageLayer,
+    qrLayer,
+    rowLayer,
+    tableLayer,
+    templateTableWire,
+    textLayer,
+} from '../support/fixtures'
 
 const nullScheduler: FrameScheduler = () => () => {}
 
@@ -127,6 +136,97 @@ describe('buildLayerOutline：面板大纲（面板顶部 = 视觉最上层 = �
         }
         const outline = buildLayerOutline(doc)
         expect(outline.map((node) => node.visible)).toEqual([false, true])
+    })
+})
+
+describe('expressionPrefix：表达式前置投影（layer-panel-expression-prefix 工单 01）', () => {
+    it('三内容层带标记：取全部闭合片段按 expr 重构 {{…}} 外壳、单空格连接；未标记空串', () => {
+        const doc = {
+            width: 800,
+            height: 600,
+            layers: [
+                textLayer({ priority: 40, expression: '编号 {{ certCode }} 姓名 {{ personProfile.name }} 尾' }),
+                imageLayer({ priority: 30, expression: '{{ row.avatar }}' }),
+                qrLayer({ priority: 20, expression: '{{row.code}}' }),
+                textLayer({ priority: 10 }),
+            ],
+        }
+        const outline = buildLayerOutline(doc)
+        // 面板序 = 数组逆序（低 priority 在前）；expr 为 phpTrim 后路径（row. 前缀原样），字面段不参与
+        expect(outline.map((node) => node.expressionPrefix)).toEqual([
+            '',
+            '{{row.code}}',
+            '{{row.avatar}}',
+            '{{certCode}} {{personProfile.name}}',
+        ])
+    })
+
+    it('全部闭合片段无效：纯字面 / 含未闭合 {{ / expr 全空 → 常量 {{…}}', () => {
+        const doc = {
+            width: 800,
+            height: 600,
+            layers: [
+                textLayer({ priority: 30, expression: '没有标记' }),
+                textLayer({ priority: 20, expression: '{{row' }),
+                textLayer({ priority: 10, expression: '{{ }}{{}}' }),
+            ],
+        }
+        const outline = buildLayerOutline(doc)
+        expect(outline.map((node) => node.expressionPrefix)).toEqual(['{{…}}', '{{…}}', '{{…}}'])
+    })
+
+    it('无效片段跳过：expr 空的闭合片段与未闭合 {{ 段不参与，有效闭合片段照常显示', () => {
+        const doc = {
+            width: 800,
+            height: 600,
+            layers: [textLayer({ priority: 10, expression: '{{}} {{certCode}} 姓名 {{row' })],
+        }
+        const outline = buildLayerOutline(doc)
+        expect(outline[0]!.expressionPrefix).toBe('{{certCode}}')
+    })
+
+    it('未标记与非内容层恒空串：全角色节点照带字段（判据看层型 + 标记，不看 role）', () => {
+        const outline = buildLayerOutline({ width: 800, height: 600, layers: [tableDoc()] })
+        const flat: LayerOutlineNode[] = []
+        const walk = (nodes: readonly LayerOutlineNode[]): void => {
+            for (const node of nodes) {
+                flat.push(node)
+                walk(node.children)
+            }
+        }
+        walk(outline)
+        // 表/行/格骨架无 data 字段，格内容未标记——全树无前置（表/行0/格0/内容/格1/行1/格）
+        expect(flat.map((node) => node.expressionPrefix)).toEqual(['', '', '', '', '', '', ''])
+    })
+
+    it('实例行格内容与行模板子树格内容照常计算（同判据不分 role）', () => {
+        const v1Outline = buildLayerOutline({
+            width: 800,
+            height: 600,
+            layers: [
+                tableLayer(
+                    [
+                        rowLayer(
+                            [cellLayer(textLayer({ text: '甲', expression: '{{certCode}} 编号' }), { shape: { width: 300, height: 90 } })],
+                            { shape: { width: 600, height: 90 } },
+                        ),
+                    ],
+                    { shape: { width: 600, height: 200 } },
+                ),
+            ],
+        })
+        const v1Content = v1Outline[0]!.children[0]!.children[0]!.children[0]!
+        expect(v1Content.role).toBe('content')
+        expect(v1Content.expressionPrefix).toBe('{{certCode}}')
+
+        // 行模板子树（canonical wire：text/image/qr 三格各带 ExpressionValue 标记）
+        const tplOutline = buildLayerOutline(decodeGraph({ canvas: { width: 320, height: 120 }, layers: [templateTableWire()] }))
+        const templateRow = tplOutline[0]!.children[0]!
+        expect(templateRow.role).toBe('templateRow')
+        const [textCell, imageCell, qrCell] = templateRow.children
+        expect(textCell!.children[0]!.expressionPrefix).toBe('{{row.name}}')
+        expect(imageCell!.children[0]!.expressionPrefix).toBe('{{row.avatar}}')
+        expect(qrCell!.children[0]!.expressionPrefix).toBe('{{row.code}}')
     })
 })
 
