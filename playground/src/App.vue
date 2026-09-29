@@ -19,6 +19,9 @@
 // 垂直撑满）；壳层暗色统一（#070d18 页底 + #0b1220 面板族令牌，工具栏钮 ghost
 // 形态、主按钮 accent、画布桌面底暗色渐变、帮助抽屉换肤），editor-vue 面板与
 // StatusBar 令牌零改动，两面板宽度 232/288 与交互不动。
+// layer-align-snap 工单 03：对齐浮条宿主接线——canvas 域 AlignFloatBar 挂画布
+// 容器顶部居中（原型 FIG.2 落位），宿主只做定位；逐键 data-align-* 钩子由组件
+// 自带（工单 02），根钩子 data-align-float 供目验定位。缩放浮条右下落位不动。
 import { computed, nextTick, onBeforeUnmount, provide, ref, watch } from 'vue'
 
 import {
@@ -40,6 +43,7 @@ import {
     type FontPickerContext,
 } from '@hankchen/canvas-next-editor-vue'
 import {
+    AlignFloatBar,
     CanvasSurface,
     createRafScheduler,
     drawSelectionGizmo,
@@ -503,6 +507,13 @@ onBeforeUnmount(() => {
                  透进画布（不触发点选/平移），画布右下角浮条外的点击照常命中画布。 -->
             <div class="canvas-area">
                 <CanvasSurface class="surface" :editor="editor" @ready="onReady" />
+                <!-- 对齐浮条（layer-align-snap 工单 03，spec 决策 3）：画布容器顶部
+                     居中宿主级挂载（原型 FIG.2 .float.align 落位），浮于 CanvasSurface
+                     之上。与缩放浮条同款兄弟挂点——画布事件桥全在 .cn-surface 上，
+                     浮条点击不透进画布。组件自身零页面定位（工单 02），宿主只出
+                     .align-float 定位壳；暗色令牌组件自带（#0b1220 族与壳层面板同
+                     值），选中态/禁用态/逐键 data-align-* 钩子全在组件内。 -->
+                <AlignFloatBar class="align-float" :editor="editor" />
                 <!-- 缩放浮条（playground-canvas-first 工单 04，spec 决策 5）：画布右下角
                      呼吸边悬浮条，就近鼠标工作区。键序 − / %（只读，等宽字体）/ ＋ /
                      适应画布 / 适应选区 / 1:1，全部沿用现有视口语义：± 以视口中心为锚
@@ -872,6 +883,18 @@ onBeforeUnmount(() => {
     width: 100%;
     height: 100%;
     border-radius: 11px;
+}
+
+/* 对齐浮条（layer-align-snap 工单 03）：宿主只出定位——画布容器顶部居中
+   （原型 FIG.2 .float.align 同款 top 14 + translateX 居中，14 呼吸边与右下
+   缩放浮条一致）；浮于画布之上的层次 z-index 与缩放浮条同级。暗色观感是
+   组件自带令牌，宿主不再着色。 */
+.align-float {
+    position: absolute;
+    top: 14px;
+    left: 50%;
+    z-index: 10;
+    transform: translateX(-50%);
 }
 
 /* 缩放浮条（工单 04）：定位与点击隔离依据见模板注释（canvas-area 挂点）。
