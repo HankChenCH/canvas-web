@@ -10,8 +10,10 @@
 // + schema 三键，data-* 钩子原位保留）。
 // 工单 03：工具栏语义分组——文件（打开/保存/上传图片）｜历史（撤销/重做）｜插入
 // （＋文本/＋图片/＋二维码/＋表格，直调 editor.addRootLayer，与图层面板头「＋」
-// 同款动作并存保留，新层置顶并自动选中）；缩放控件暂留尾组（工单 04 摘除移入
-// 画布右下浮条）。
+// 同款动作并存保留，新层置顶并自动选中）。
+// 工单 04：缩放浮条——画布右下角宿主级悬浮条浮于 CanvasSurface 之上（− / %只读 /
+// ＋ / 适应画布 / 适应选区 / 1:1），工具栏缩放控件整组摘除：全壳缩放入口唯一
+// （浮条）、缩放读数唯一归状态栏；ctrl/cmd+滚轮缩放不变。
 import { computed, nextTick, onBeforeUnmount, provide, ref, watch } from 'vue'
 
 import {
@@ -367,7 +369,7 @@ function onReady({ contentCanvas, overlayCanvas }: CanvasSurfaceReady) {
     editor.fitToSurface() // 初始进入：整页 fit-min 语义
 }
 
-// 工具栏：以当前视口中心为锚做倍率/复位，平移不跳变
+// 缩放浮条（工单 04）：以当前视口中心为锚做倍率/复位，平移不跳变
 function zoomBy(factor: number): void {
     const { width, height } = editor.getSurfaceSize()
     editor.zoomAt(width / 2, height / 2, viewport.value.zoom * factor)
@@ -448,7 +450,7 @@ onBeforeUnmount(() => {
              并存保留，就近补充不回退既有能力；新层置顶 priority = min−1 并自动选中，
              一次调用 = 一步历史）。上传图片维持 uploadHandler 管线与 data-upload-image
              钩子。分组视觉用分隔线语义（toolbar-divider 延伸），按钮形态随工单 05
-             暗色壳统一。缩放控件本单暂留尾组原样（工单 04 才摘除移入浮条）；目验样图
+             暗色壳统一。缩放控件已整组摘除归画布右下浮条（工单 04）；目验样图
              与 schema 三键已在工单 02 迁入帮助抽屉、标尺/网格不出现（⑥ 范围外，
              不放死按钮）。 -->
         <section class="toolbar" aria-label="编辑器工具栏">
@@ -483,14 +485,6 @@ onBeforeUnmount(() => {
             <button type="button" data-insert-image title="新增图片层（置顶并自动选中，一步历史可撤销；本机选图上传建层用「上传图片」）" @click="editor.addRootLayer('ImageLayer')">＋图片</button>
             <button type="button" data-insert-qrcode title="新增二维码层（置顶并自动选中，一步历史可撤销；与图层面板头「＋」同款动作）" @click="editor.addRootLayer('QrCodeLayer')">＋二维码</button>
             <button type="button" data-insert-table title="新增表格层（置顶并自动选中，一步历史可撤销；与图层面板头「＋」同款动作）" @click="editor.addRootLayer('TableLayer')">＋表格</button>
-            <span class="toolbar-divider" aria-hidden="true"></span>
-            <!-- 缩放尾组（工单 03 暂留原样，工单 04 摘除移入画布右下浮条） -->
-            <button type="button" title="缩小（以视口中心为锚）" @click="zoomBy(1 / 1.25)">−</button>
-            <span class="zoom-value" data-zoom>{{ zoomPercent }}%</span>
-            <button type="button" title="放大（以视口中心为锚）" @click="zoomBy(1.25)">＋</button>
-            <button type="button" @click="zoomTo100">100%</button>
-            <button type="button" class="fit" @click="fitToCanvas">适应画布</button>
-            <button type="button" class="fit" title="视口适配当前选中的图层盒" @click="fitToSelection">适应选区</button>
             <!-- 隐藏文件入口：打开 graph JSON / 本机选图 -->
             <input ref="openInput" type="file" accept=".json,application/json" class="hidden" @change="onOpenGraphFile" />
             <input ref="imageInput" type="file" accept="image/*" class="hidden" @change="onImageFile" />
@@ -498,7 +492,35 @@ onBeforeUnmount(() => {
 
         <section class="workbench" aria-label="画布与面板">
             <LayerPanel :editor="editor" />
-            <CanvasSurface class="surface" :editor="editor" @ready="onReady" />
+            <!-- canvas-area：浮条的宿主级定位上下文（工单 04）。浮条是 CanvasSurface
+                 的兄弟而非子元素——画布事件桥全部挂在 .cn-surface 上，浮条点击不会
+                 透进画布（不触发点选/平移），画布右下角浮条外的点击照常命中画布。 -->
+            <div class="canvas-area">
+                <CanvasSurface class="surface" :editor="editor" @ready="onReady" />
+                <!-- 缩放浮条（playground-canvas-first 工单 04，spec 决策 5）：画布右下角
+                     呼吸边悬浮条，就近鼠标工作区。键序 − / %（只读，等宽字体）/ ＋ /
+                     适应画布 / 适应选区 / 1:1，全部沿用现有视口语义：± 以视口中心为锚
+                     （zoomBy）、适应画布 = fitToSurface、适应选区 = fitToSelection、
+                     1:1 = zoomTo100；ctrl/cmd+滚轮缩放不变（CanvasSurface 事件桥）。
+                     % 是操作组旁的只读伴随显示（原型 FIG.2 同款），全壳读数归口仍唯一
+                     在状态栏（data-zoom 钩子只在状态栏）；工具栏缩放控件本单摘除。
+                     暗色按原型配色内联（#0b1220 族 = 状态栏 --cn-bg 同源令牌），壳层
+                     统一归工单 05。 -->
+                <div class="zoom-float" role="toolbar" aria-label="缩放" data-zoom-float>
+                    <span class="zoom-float__group">
+                        <button type="button" class="zoom-float__key" data-zoom-out title="缩小（以视口中心为锚）" @click="zoomBy(1 / 1.25)">−</button>
+                        <span class="zoom-float__pct">{{ zoomPercent }}%</span>
+                        <button type="button" class="zoom-float__key" data-zoom-in title="放大（以视口中心为锚）" @click="zoomBy(1.25)">＋</button>
+                    </span>
+                    <span class="zoom-float__group">
+                        <button type="button" class="zoom-float__key zoom-float__key--text" data-zoom-fit title="视口适配整幅画布（留 fit 呼吸边）" @click="fitToCanvas">适应画布</button>
+                        <button type="button" class="zoom-float__key zoom-float__key--text" data-zoom-fit-selection title="视口适配当前选中的图层盒" @click="fitToSelection">适应选区</button>
+                    </span>
+                    <span class="zoom-float__group">
+                        <button type="button" class="zoom-float__key zoom-float__key--text" data-zoom-100 title="缩放复位 100%（以视口中心为锚）" @click="zoomTo100">1:1</button>
+                    </span>
+                </div>
+            </div>
             <PropertyPanel :editor="editor" />
         </section>
 
@@ -767,18 +789,6 @@ onBeforeUnmount(() => {
     background: #e5e7eb;
 }
 
-.toolbar .fit {
-    font-weight: 600;
-}
-
-.zoom-value {
-    min-width: 56px;
-    text-align: center;
-    font-variant-numeric: tabular-nums;
-    font-size: 14px;
-    color: #0f172a;
-}
-
 /* 工单 09：画布 + 属性面板并排的工作台布局 */
 .workbench {
     display: flex;
@@ -794,9 +804,15 @@ onBeforeUnmount(() => {
     border-radius: 8px;
 }
 
-.workbench .surface {
+/* 工单 04：画布容器 = 缩放浮条的定位上下文。flex:1 从 .surface 移到本层，
+   surface 以 100% 填满；浮条是 surface 的兄弟元素（见模板注释） */
+.canvas-area {
+    position: relative;
     flex: 1;
     min-width: 0;
+}
+
+.workbench .surface {
     border: 1px solid #e5e7eb;
     border-radius: 12px;
     background: #cbd5e1; /* 画布外的「桌面」底色：平移出界时清晰可辨 */
@@ -807,6 +823,71 @@ onBeforeUnmount(() => {
     width: 100%;
     height: 100%;
     border-radius: 11px;
+}
+
+/* 缩放浮条（工单 04）：暗色按原型配色内联（#0b1220 族 = 状态栏 --cn-bg 同源
+   令牌；壳层统一归工单 05，届时吸收这些字面量）。定位与点击隔离依据见模板
+   注释（canvas-area 挂点）。 */
+.zoom-float {
+    position: absolute;
+    right: 14px;
+    bottom: 14px;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    padding: 5px 8px;
+    border: 1px solid #2a3a58;
+    border-radius: 9px;
+    background: rgb(11 18 32 / 0.92);
+    user-select: none;
+}
+
+/* 分组：缩放步进（− % ＋）/ 适应族（适应画布/适应选区）/ 复位（1:1），
+   组间分隔线沿用原型 .float .fg 语义 */
+.zoom-float__group {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0 6px;
+    border-right: 1px solid #2a3a58;
+}
+
+.zoom-float__group:last-child {
+    border-right: 0;
+}
+
+.zoom-float__key {
+    display: grid;
+    place-content: center;
+    min-width: 24px;
+    height: 24px;
+    padding: 0 2px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    font-size: 14px;
+    line-height: 1;
+    color: #e6edf7;
+    cursor: pointer;
+}
+
+.zoom-float__key--text {
+    padding: 0 8px;
+    font-size: 12px;
+}
+
+.zoom-float__key:hover {
+    background: #16223a;
+}
+
+/* 只读百分比：等宽字体 + 表格数字（与状态栏缩放段同一呈现口径） */
+.zoom-float__pct {
+    min-width: 46px;
+    text-align: center;
+    font-family: 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 12.5px;
+    font-variant-numeric: tabular-nums;
+    color: #e6edf7;
 }
 
 /* 帮助抽屉（工单 02）：宿主级浮层，右缘滑出面板 + 半透明遮罩；Teleport 到 body，
