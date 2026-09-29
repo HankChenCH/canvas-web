@@ -56,6 +56,12 @@ import {
 } from '../shared/layerPath'
 import { normalizeExpressionSchemaSource } from '../shared/expressionSchema'
 import {
+    ALIGN_CORNER_MARGIN_PX,
+    alignToCanvasTarget,
+    type AlignToCanvasMode,
+    type AlignToCanvasOptions,
+} from '../editing/alignCanvas'
+import {
     PASTE_OFFSET_PX,
     canCopyLayerAt,
     cloneLayerSubtree,
@@ -422,6 +428,46 @@ export class EditorSession {
         if (!this.store.ui.drag) return
         this.store.setDrag(null)
         this.store.closeMerge(DRAG_MERGE_KEY)
+    }
+
+    // ---- 对齐画布（layer-align-snap 工单 01）：图层盒整体对齐画布几何 ----
+
+    /**
+     * 对齐画布 action 族（对齐画布/贴边/贴角，ADR 0011）：把 path 处图层盒整体
+     * 对齐到画布几何——mode 十种：贴边 left/right/top/bottom（零边距）、居中
+     * h-center/v-center、贴角 corner-tl/tr/bl/br（opts.margin 统一边距，缺省
+     * ALIGN_CORNER_MARGIN_PX）。与属性面板「盒内对齐」（写 align 字段移动盒内
+     * 内容）是两类动作，并存不回退。
+     * 几何以 layerBoxAt(path) 解析的图层盒为唯一来源、画布尺寸取 doc.canvas；
+     * 盒坐标对 position 线性（box = origin + anchorOffset + position），「目标
+     * 盒坐标 − 当前盒坐标」的位移原样写 position 偏移、anchor 不动；盒大于画布
+     * 不钳位（偏移可为负的领域语义，溢出侧按公式确定）。一次调用 = 一步历史
+     * （无 mergeKey，连续点击不合并）；已对齐（零位移）经 store 空 patch 短路
+     * 不进历史；文档未打开/路径不可解析/未知 mode 空转（无历史步）。
+     */
+    alignToCanvas(path: LayerPath, mode: AlignToCanvasMode, options: AlignToCanvasOptions = {}): void {
+        const doc = this.store.doc
+        if (!doc) return
+        const box = this.boxByPath(path)
+        if (!box) return
+        const target = alignToCanvasTarget(
+            mode,
+            box,
+            doc.width,
+            doc.height,
+            options.margin ?? ALIGN_CORNER_MARGIN_PX,
+        )
+        if (!target) return
+        const dx = target.x - box.x
+        const dy = target.y - box.y
+        this.store.transact((draft) => {
+            const layer = resolveLayer(draft, path)
+            if (!layer) return
+            // draft 语义解除 readonly；盒位移与 position 位移一一对应（斜率 1）
+            const position = layer.position as { x: number; y: number }
+            position.x += dx
+            position.y += dy
+        })
     }
 
     // ---- 文本编辑会话（工单 11）：会话住 ui 分支，提交经漏斗一次性落文档 ----

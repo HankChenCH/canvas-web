@@ -1,8 +1,8 @@
 /**
  * 内核 editing 层出口：编辑特性模块——剪贴板（clipboard）、图层增删移
- * （layerPanel）、表格编辑（tableEditing）、字体清单（fontCatalog）、
- * 上传物化（upload）。只向下依赖 shared，不得引用 session 门面
- * （editor-editing-isolation 红线锁定）。
+ * （layerPanel）、表格编辑（tableEditing）、对齐画布（alignCanvas）、
+ * 字体清单（fontCatalog）、上传物化（upload）。只向下依赖 shared，不得引用
+ * session 门面（editor-editing-isolation 红线锁定）。
  */
 export {
     addRootLayerInDraft,
@@ -42,6 +42,13 @@ export {
     syncRowWidthInDraft,
     type MovedSubtreeRef,
 } from './tableEditing'
+export {
+    ALIGN_CORNER_MARGIN_PX,
+    alignToCanvasTarget,
+    type AlignBoxGeometry,
+    type AlignToCanvasMode,
+    type AlignToCanvasOptions,
+} from './alignCanvas'
 export { FontCatalog, type FontCatalogEntry } from './fontCatalog'
 export {
     UploadHandlerMissingError,
