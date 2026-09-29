@@ -8,6 +8,10 @@
 // 工单 02：头栏一行化（文档名 + 未保存点 + 画布规格徽标｜帮助 + 导出主按钮）+
 // 宿主级帮助抽屉（使用说明区 = legend 原样迁移；开发者区 = 工票长文 + 目验样图
 // + schema 三键，data-* 钩子原位保留）。
+// 工单 03：工具栏语义分组——文件（打开/保存/上传图片）｜历史（撤销/重做）｜插入
+// （＋文本/＋图片/＋二维码/＋表格，直调 editor.addRootLayer，与图层面板头「＋」
+// 同款动作并存保留，新层置顶并自动选中）；缩放控件暂留尾组（工单 04 摘除移入
+// 画布右下浮条）。
 import { computed, nextTick, onBeforeUnmount, provide, ref, watch } from 'vue'
 
 import {
@@ -438,14 +442,22 @@ onBeforeUnmount(() => {
             </div>
         </header>
 
-        <!-- 工具栏（工单 02 后过渡形态）：导出 PNG 升头栏主按钮，「目验样图」与
-             schema 三键收进帮助抽屉开发者区（data-* 钩子随迁）；打开/保存/上传图片、
-             撤销/重做与缩放组原位保留（语义分组归工单 03、缩放摘除归工单 04） -->
-        <section class="toolbar" aria-label="文档与视图工具栏">
+        <!-- 工具栏语义分组（playground-canvas-first 工单 03，spec 决策 3）：文件
+             （打开/保存/上传图片）｜历史（撤销/重做）｜插入（＋文本/＋图片/＋二维码/
+             ＋表格，直调 editor.addRootLayer——与图层面板头「文/图/码/表」同款动作
+             并存保留，就近补充不回退既有能力；新层置顶 priority = min−1 并自动选中，
+             一次调用 = 一步历史）。上传图片维持 uploadHandler 管线与 data-upload-image
+             钩子。分组视觉用分隔线语义（toolbar-divider 延伸），按钮形态随工单 05
+             暗色壳统一。缩放控件本单暂留尾组原样（工单 04 才摘除移入浮条）；目验样图
+             与 schema 三键已在工单 02 迁入帮助抽屉、标尺/网格不出现（⑥ 范围外，
+             不放死按钮）。 -->
+        <section class="toolbar" aria-label="编辑器工具栏">
+            <!-- 文件组：打开 / 保存 / 上传图片 -->
             <button type="button" data-open title="打开 graph JSON（解码回编辑器）" @click="onOpenClick">打开</button>
             <button type="button" data-save title="保存 graph JSON（Ctrl/Cmd+S）" @click="saveGraph">保存</button>
             <button type="button" data-upload-image title="本机选图 → 上传（data URL 兜底）→ 新建图片图层（宿主未注入上传实现时禁用）" :disabled="!editor.canUpload" @click="onUploadImageClick">上传图片</button>
             <span class="toolbar-divider" aria-hidden="true"></span>
+            <!-- 历史组：撤销 / 重做 -->
             <button
                 type="button"
                 data-undo
@@ -465,6 +477,14 @@ onBeforeUnmount(() => {
                 重做
             </button>
             <span class="toolbar-divider" aria-hidden="true"></span>
+            <!-- 插入组：直调 addRootLayer（与图层面板头同款动作，自守卫无文档空转），
+                 新层置顶并自动选中；＋图片建空层，本机选图上传走「上传图片」 -->
+            <button type="button" data-insert-text title="新增文本层（置顶并自动选中，一步历史可撤销；与图层面板头「＋」同款动作）" @click="editor.addRootLayer('TextLayer')">＋文本</button>
+            <button type="button" data-insert-image title="新增图片层（置顶并自动选中，一步历史可撤销；本机选图上传建层用「上传图片」）" @click="editor.addRootLayer('ImageLayer')">＋图片</button>
+            <button type="button" data-insert-qrcode title="新增二维码层（置顶并自动选中，一步历史可撤销；与图层面板头「＋」同款动作）" @click="editor.addRootLayer('QrCodeLayer')">＋二维码</button>
+            <button type="button" data-insert-table title="新增表格层（置顶并自动选中，一步历史可撤销；与图层面板头「＋」同款动作）" @click="editor.addRootLayer('TableLayer')">＋表格</button>
+            <span class="toolbar-divider" aria-hidden="true"></span>
+            <!-- 缩放尾组（工单 03 暂留原样，工单 04 摘除移入画布右下浮条） -->
             <button type="button" title="缩小（以视口中心为锚）" @click="zoomBy(1 / 1.25)">−</button>
             <span class="zoom-value" data-zoom>{{ zoomPercent }}%</span>
             <button type="button" title="放大（以视口中心为锚）" @click="zoomBy(1.25)">＋</button>
