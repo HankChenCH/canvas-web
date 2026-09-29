@@ -14,6 +14,11 @@
 // 工单 04：缩放浮条——画布右下角宿主级悬浮条浮于 CanvasSurface 之上（− / %只读 /
 // ＋ / 适应画布 / 适应选区 / 1:1），工具栏缩放控件整组摘除：全壳缩放入口唯一
 // （浮条）、缩放读数唯一归状态栏；ctrl/cmd+滚轮缩放不变。
+// 工单 05：全视口暗色工作台壳——.stage 100vh 四行网格（头栏 48 / 工具栏 44 /
+// 工作台 1fr / 状态栏 auto≈30），页面零滚动；去 1240px 锁宽（四行全宽、画布区
+// 垂直撑满）；壳层暗色统一（#070d18 页底 + #0b1220 面板族令牌，工具栏钮 ghost
+// 形态、主按钮 accent、画布桌面底暗色渐变、帮助抽屉换肤），editor-vue 面板与
+// StatusBar 令牌零改动，两面板宽度 232/288 与交互不动。
 import { computed, nextTick, onBeforeUnmount, provide, ref, watch } from 'vue'
 
 import {
@@ -449,8 +454,9 @@ onBeforeUnmount(() => {
              ＋表格，直调 editor.addRootLayer——与图层面板头「文/图/码/表」同款动作
              并存保留，就近补充不回退既有能力；新层置顶 priority = min−1 并自动选中，
              一次调用 = 一步历史）。上传图片维持 uploadHandler 管线与 data-upload-image
-             钩子。分组视觉用分隔线语义（toolbar-divider 延伸），按钮形态随工单 05
-             暗色壳统一。缩放控件已整组摘除归画布右下浮条（工单 04）；目验样图
+             钩子。分组视觉用分隔线语义（toolbar-divider 延伸），按钮 ghost 形态随
+             工单 05 暗色壳统一落定（插入组亮色引导高频动作）。缩放控件已整组摘除
+             归画布右下浮条（工单 04）；目验样图
              与 schema 三键已在工单 02 迁入帮助抽屉、标尺/网格不出现（⑥ 范围外，
              不放死按钮）。 -->
         <section class="toolbar" aria-label="编辑器工具栏">
@@ -481,10 +487,10 @@ onBeforeUnmount(() => {
             <span class="toolbar-divider" aria-hidden="true"></span>
             <!-- 插入组：直调 addRootLayer（与图层面板头同款动作，自守卫无文档空转），
                  新层置顶并自动选中；＋图片建空层，本机选图上传走「上传图片」 -->
-            <button type="button" data-insert-text title="新增文本层（置顶并自动选中，一步历史可撤销；与图层面板头「＋」同款动作）" @click="editor.addRootLayer('TextLayer')">＋文本</button>
-            <button type="button" data-insert-image title="新增图片层（置顶并自动选中，一步历史可撤销；本机选图上传建层用「上传图片」）" @click="editor.addRootLayer('ImageLayer')">＋图片</button>
-            <button type="button" data-insert-qrcode title="新增二维码层（置顶并自动选中，一步历史可撤销；与图层面板头「＋」同款动作）" @click="editor.addRootLayer('QrCodeLayer')">＋二维码</button>
-            <button type="button" data-insert-table title="新增表格层（置顶并自动选中，一步历史可撤销；与图层面板头「＋」同款动作）" @click="editor.addRootLayer('TableLayer')">＋表格</button>
+            <button type="button" class="tb-ins" data-insert-text title="新增文本层（置顶并自动选中，一步历史可撤销；与图层面板头「＋」同款动作）" @click="editor.addRootLayer('TextLayer')">＋文本</button>
+            <button type="button" class="tb-ins" data-insert-image title="新增图片层（置顶并自动选中，一步历史可撤销；本机选图上传建层用「上传图片」）" @click="editor.addRootLayer('ImageLayer')">＋图片</button>
+            <button type="button" class="tb-ins" data-insert-qrcode title="新增二维码层（置顶并自动选中，一步历史可撤销；与图层面板头「＋」同款动作）" @click="editor.addRootLayer('QrCodeLayer')">＋二维码</button>
+            <button type="button" class="tb-ins" data-insert-table title="新增表格层（置顶并自动选中，一步历史可撤销；与图层面板头「＋」同款动作）" @click="editor.addRootLayer('TableLayer')">＋表格</button>
             <!-- 隐藏文件入口：打开 graph JSON / 本机选图 -->
             <input ref="openInput" type="file" accept=".json,application/json" class="hidden" @change="onOpenGraphFile" />
             <input ref="imageInput" type="file" accept="image/*" class="hidden" @change="onImageFile" />
@@ -538,8 +544,8 @@ onBeforeUnmount(() => {
         />
 
         <!-- 帮助抽屉（playground-canvas-first 工单 02，spec 决策 2）：头栏「帮助」开
-             的宿主级浮层，Teleport 到 body（fixed 定位不占文档流，不破工单 05 将来的
-             全视口零滚动；工单 05 前页面本就允许页内滚动）。两个分区：
+             的宿主级浮层，Teleport 到 body（fixed 定位不占文档流，不破工单 05 的
+             全视口零滚动）。两个分区：
              使用说明区 = 原 legend 全量条目原样迁移（文案不改写，spec 范围外）；
              开发者区 = 原 header 工票长文原样 + 目验样图 + schema 注入/非法/清除三键
              （行为与 data-visual-check / data-schema-* 钩子不变，仅落位迁移）。 -->
@@ -637,31 +643,49 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+/* 全视口暗色工作台壳（工单 05，spec 决策 6）：100vh 四行网格——头栏 48 / 工具栏
+   44 / 工作台 1fr / 状态栏 auto（组件自然高 ≈30），页面零滚动。小视口降级：工作台
+   行压缩（minmax(0,1fr)）+ 面板自内滚 + 工具栏横向内滚，不回退成页滚。壳层暗色
+   令牌 = 原型 #070d18/#0b1220 族（与状态栏 --cn-bg 同源）；editor-vue 面板/状态栏
+   令牌零改动。浮条随 .stage 级联取令牌；帮助抽屉 Teleport 出 body，自带一份同值
+   令牌块（工单 04 内联字面量在此吸收）。 */
 .stage {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 12px;
-    min-height: 100vh;
+    --shell-bg: #070d18;
+    --shell-panel: #0b1220;
+    --shell-panel-92: rgb(11 18 32 / 0.92);
+    --shell-line: #1e2a40;
+    --shell-line-strong: #2a3a58;
+    --shell-hover: #16223a;
+    --shell-fg: #e6edf7;
+    --shell-fg-2: #c3cddd;
+    --shell-fg-3: #aab6c8;
+    --shell-muted: #7c8ca5;
+    --shell-accent: #38bdf8;
+    --shell-on-accent: #06202b;
+    --shell-insert: #7dd3fc;
+    --shell-font-mono: 'SF Mono', Menlo, Consolas, monospace;
+    --shell-desktop: radial-gradient(1100px 600px at 50% 40%, #101b30 0%, #0a1120 70%);
+
+    display: grid;
+    grid-template-rows: 48px 44px minmax(0, 1fr) auto;
+    height: 100vh;
     margin: 0;
-    padding: 20px 16px;
-    background: #f5f6f8;
+    overflow: hidden;
+    background: var(--shell-bg);
     font-family: system-ui, sans-serif;
-    color: #374151;
+    color: var(--shell-fg);
 }
 
-/* 头栏一行化（工单 02）：48px 单行，与工作台同宽；暗色令牌统一归工单 05 */
+/* 头栏（工单 02 一行化 + 工单 05 暗色壳）：48px 全宽边条，面板底 + 下缘分隔线
+   （去 1240px 锁宽与圆角卡片形态） */
 .topbar {
     display: flex;
     align-items: center;
     gap: 14px;
-    width: min(1240px, calc(100vw - 32px));
     height: 48px;
-    flex: none;
-    padding: 0 14px;
-    border: 1px solid #e5e7eb;
-    border-radius: 10px;
-    background: #fff;
+    padding: 0 16px;
+    background: var(--shell-panel);
+    border-bottom: 1px solid var(--shell-line);
 }
 
 .topbar-doc {
@@ -677,11 +701,11 @@ onBeforeUnmount(() => {
     flex: none;
     font-size: 13px;
     line-height: 1;
-    color: #94a3b8;
+    color: var(--shell-muted);
 }
 
 .dirty-dot.is-dirty {
-    color: #d97706;
+    color: #f59e0b;
 }
 
 .doc-name {
@@ -690,19 +714,20 @@ onBeforeUnmount(() => {
     white-space: nowrap;
     font-size: 14px;
     font-weight: 600;
-    color: #0f172a;
+    color: var(--shell-fg);
 }
 
 /* 画布规格徽标：宽 × 高 · 竖版/横版（doc.canvas 派生，空文档隐藏） */
 .canvas-badge {
     flex: none;
     padding: 2px 8px;
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--shell-line);
     border-radius: 6px;
+    font-family: var(--shell-font-mono);
     font-size: 12px;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
-    color: #64748b;
+    color: var(--shell-muted);
 }
 
 .topbar-actions {
@@ -714,16 +739,17 @@ onBeforeUnmount(() => {
 
 .topbar .ghost {
     padding: 5px 12px;
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--shell-line);
     border-radius: 8px;
-    background: #fff;
+    background: transparent;
     font-size: 13px;
-    color: #374151;
+    color: var(--shell-fg-3);
     cursor: pointer;
 }
 
 .topbar .ghost:hover {
-    border-color: #94a3b8;
+    border-color: var(--shell-line-strong);
+    color: var(--shell-fg);
 }
 
 /* 导出主按钮：一天工作的收束动作最显眼（spec 用户故事 4）；导出中禁用 */
@@ -731,19 +757,20 @@ onBeforeUnmount(() => {
     padding: 6px 14px;
     border: none;
     border-radius: 8px;
-    background: #2563eb;
+    background: var(--shell-accent);
     font-size: 13px;
     font-weight: 600;
-    color: #fff;
+    color: var(--shell-on-accent);
     cursor: pointer;
 }
 
 .topbar .primary:hover {
-    background: #1d4ed8;
+    filter: brightness(1.12);
 }
 
 .topbar .primary:disabled {
-    background: #93c5fd;
+    background: color-mix(in srgb, var(--shell-accent) 30%, transparent);
+    color: color-mix(in srgb, var(--shell-on-accent) 70%, transparent);
     cursor: not-allowed;
 }
 
@@ -751,57 +778,79 @@ onBeforeUnmount(() => {
     display: none;
 }
 
+/* 工具栏（工单 03 分组 + 工单 05 暗色壳）：44px 全宽边条，ghost 钮（无边框透明底
+   + hover 面板亮色）；小视口横向内滚降级（页面零滚动不破）——内滚条不占行高
+   （经典滚动条平台会裁切按钮），滚动能力保留（滚轮/触控板横扫） */
 .toolbar {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
+    min-width: 0;
+    padding: 0 16px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    background: var(--shell-panel);
+    border-bottom: 1px solid var(--shell-line);
+    scrollbar-width: none;
+}
+
+.toolbar::-webkit-scrollbar {
+    display: none;
 }
 
 .toolbar button {
-    min-width: 34px;
-    padding: 4px 10px;
-    border: 1px solid #e5e7eb;
-    border-radius: 8px;
-    background: #fff;
+    flex: none;
+    padding: 5px 9px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
     font-size: 13px;
-    color: #374151;
+    white-space: nowrap;
+    color: var(--shell-fg-2);
     cursor: pointer;
 }
 
-.toolbar button:hover {
-    border-color: #94a3b8;
+.toolbar button:hover:not(:disabled) {
+    background: var(--shell-hover);
 }
 
 .toolbar button:disabled {
-    color: #cbd5e1;
+    opacity: 0.55;
+    color: var(--shell-muted);
     cursor: not-allowed;
-    border-color: #f1f5f9;
 }
 
-.toolbar button:disabled:hover {
-    border-color: #f1f5f9;
+/* 插入组（工单 03 前置直达）：亮色引导最高频动作 */
+.toolbar button.tb-ins {
+    color: var(--shell-insert);
 }
 
 .toolbar-divider {
+    flex: none;
     width: 1px;
     height: 18px;
     margin: 0 2px;
-    background: #e5e7eb;
+    background: var(--shell-line);
 }
 
-/* 工单 09：画布 + 属性面板并排的工作台布局 */
+/* 工作台（工单 05）：1fr 行垂直撑满 + 去 1240px 锁宽全宽；水平 10px 呼吸沿原型。
+   垂直零留白是验收基线的算术前提——1440×900 下画布区 = 900−48−44−30 = 778px，
+   995×1464 fit（留 48 呼吸边）预览高 ≈682px（较 484px +41%）。min-height 0 允许
+   小视口压缩：面板自内滚（组件自带 overflow-y-auto），画布缩小，页面不滚。 */
 .workbench {
     display: flex;
-    align-items: stretch;
-    gap: 12px;
-    width: min(1240px, calc(100vw - 32px));
-    height: max(420px, calc(100vh - 320px));
+    gap: 10px;
+    min-width: 0;
+    min-height: 0;
+    padding: 0 10px;
 }
 
-/* 工单 14：状态栏（缩放/选中路径/物化进行数），与工作台同宽、圆角暗条 */
+/* 状态栏（工单 01 读数归口 + 工单 05 壳层）：全宽底边条（去 1240px 锁宽与浮动
+   圆角），宿主只做几何——组件自带暗色令牌零改动 */
 .statusbar {
-    width: min(1240px, calc(100vw - 32px));
-    border-radius: 8px;
+    width: 100%;
+    border-radius: 0;
+    border-top: 1px solid var(--shell-line);
 }
 
 /* 工单 04：画布容器 = 缩放浮条的定位上下文。flex:1 从 .surface 移到本层，
@@ -813,9 +862,9 @@ onBeforeUnmount(() => {
 }
 
 .workbench .surface {
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--shell-line);
     border-radius: 12px;
-    background: #cbd5e1; /* 画布外的「桌面」底色：平移出界时清晰可辨 */
+    background: var(--shell-desktop); /* 画布外的「桌面」暗底：平移出界可辨、纸面突出 */
     overflow: hidden;
 }
 
@@ -825,9 +874,9 @@ onBeforeUnmount(() => {
     border-radius: 11px;
 }
 
-/* 缩放浮条（工单 04）：暗色按原型配色内联（#0b1220 族 = 状态栏 --cn-bg 同源
-   令牌；壳层统一归工单 05，届时吸收这些字面量）。定位与点击隔离依据见模板
-   注释（canvas-area 挂点）。 */
+/* 缩放浮条（工单 04）：定位与点击隔离依据见模板注释（canvas-area 挂点）。
+   暗色原为工单 04 按原型内联的字面量，工单 05 吸收为 .stage 级联令牌（同值），
+   并补原型浮条的投影与毛玻璃（浮于暗色桌面上增加层次）。 */
 .zoom-float {
     position: absolute;
     right: 14px;
@@ -836,9 +885,11 @@ onBeforeUnmount(() => {
     display: flex;
     align-items: center;
     padding: 5px 8px;
-    border: 1px solid #2a3a58;
+    border: 1px solid var(--shell-line-strong);
     border-radius: 9px;
-    background: rgb(11 18 32 / 0.92);
+    background: var(--shell-panel-92);
+    box-shadow: 0 10px 26px rgb(0 0 0 / 0.45);
+    backdrop-filter: blur(4px);
     user-select: none;
 }
 
@@ -849,7 +900,7 @@ onBeforeUnmount(() => {
     align-items: center;
     gap: 2px;
     padding: 0 6px;
-    border-right: 1px solid #2a3a58;
+    border-right: 1px solid var(--shell-line-strong);
 }
 
 .zoom-float__group:last-child {
@@ -867,7 +918,7 @@ onBeforeUnmount(() => {
     background: transparent;
     font-size: 14px;
     line-height: 1;
-    color: #e6edf7;
+    color: var(--shell-fg);
     cursor: pointer;
 }
 
@@ -877,28 +928,37 @@ onBeforeUnmount(() => {
 }
 
 .zoom-float__key:hover {
-    background: #16223a;
+    background: var(--shell-hover);
 }
 
 /* 只读百分比：等宽字体 + 表格数字（与状态栏缩放段同一呈现口径） */
 .zoom-float__pct {
     min-width: 46px;
     text-align: center;
-    font-family: 'SF Mono', Menlo, Consolas, monospace;
+    font-family: var(--shell-font-mono);
     font-size: 12.5px;
     font-variant-numeric: tabular-nums;
-    color: #e6edf7;
+    color: var(--shell-fg);
 }
 
 /* 帮助抽屉（工单 02）：宿主级浮层，右缘滑出面板 + 半透明遮罩；Teleport 到 body，
-   fixed 定位不占文档流。浅色过渡形态（暗色统一归工单 05）。 */
+   fixed 定位不占文档流。工单 05 暗色统一落定：面板族令牌自带一份（Teleport 出
+   .stage 不级联，同值块见 .stage 注释）。 */
 .help-overlay {
+    --shell-panel: #0b1220;
+    --shell-line: #1e2a40;
+    --shell-line-strong: #2a3a58;
+    --shell-fg: #e6edf7;
+    --shell-fg-2: #c3cddd;
+    --shell-fg-3: #aab6c8;
+    --shell-muted: #7c8ca5;
+
     position: fixed;
     inset: 0;
     z-index: 60;
     display: flex;
     justify-content: flex-end;
-    background: rgb(15 23 42 / 0.45);
+    background: rgb(2 6 23 / 0.6);
 }
 
 .help-drawer {
@@ -906,8 +966,9 @@ onBeforeUnmount(() => {
     flex-direction: column;
     width: min(560px, 92vw);
     height: 100%;
-    background: #fff;
-    box-shadow: -12px 0 32px rgb(15 23 42 / 0.2);
+    background: var(--shell-panel);
+    border-left: 1px solid var(--shell-line);
+    box-shadow: -12px 0 32px rgb(0 0 0 / 0.5);
     outline: none;
 }
 
@@ -917,27 +978,28 @@ onBeforeUnmount(() => {
     justify-content: space-between;
     flex: none;
     padding: 10px 16px;
-    border-bottom: 1px solid #e5e7eb;
+    border-bottom: 1px solid var(--shell-line);
 }
 
 .help-head h2 {
     margin: 0;
     font-size: 15px;
-    color: #0f172a;
+    color: var(--shell-fg);
 }
 
 .help-close {
     padding: 4px 10px;
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--shell-line);
     border-radius: 8px;
-    background: #fff;
+    background: transparent;
     font-size: 13px;
-    color: #374151;
+    color: var(--shell-fg-3);
     cursor: pointer;
 }
 
 .help-close:hover {
-    border-color: #94a3b8;
+    border-color: var(--shell-line-strong);
+    color: var(--shell-fg);
 }
 
 .help-body {
@@ -954,7 +1016,7 @@ onBeforeUnmount(() => {
     font-size: 12px;
     font-weight: 600;
     letter-spacing: 0.08em;
-    color: #94a3b8;
+    color: var(--shell-muted);
 }
 
 .help-section ul {
@@ -962,14 +1024,18 @@ onBeforeUnmount(() => {
     padding: 0 0 0 18px;
     font-size: 12px;
     line-height: 1.9;
-    color: #6b7280;
+    color: var(--shell-fg-3);
+}
+
+.help-section b {
+    color: var(--shell-fg-2);
 }
 
 .help-ticket {
     margin: 0 0 10px;
     font-size: 12px;
     line-height: 1.8;
-    color: #6b7280;
+    color: var(--shell-fg-3);
 }
 
 .help-dev-actions {
@@ -980,15 +1046,16 @@ onBeforeUnmount(() => {
 
 .help-dev-actions button {
     padding: 4px 10px;
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--shell-line);
     border-radius: 8px;
-    background: #fff;
+    background: transparent;
     font-size: 13px;
-    color: #374151;
+    color: var(--shell-fg-3);
     cursor: pointer;
 }
 
 .help-dev-actions button:hover {
-    border-color: #94a3b8;
+    border-color: var(--shell-line-strong);
+    color: var(--shell-fg);
 }
 </style>
