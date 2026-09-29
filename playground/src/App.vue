@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // 工单 14 目验：剪贴板（Ctrl/Cmd+C/V/D 与右键「创建副本」）、快捷键注册表
 // （useShortcuts 统一接键盘：让路规则见内核 classifyEditorShortcut）、右键菜单
-// （删除/副本/置顶/置底）、状态栏（缩放/选中路径/物化进行数）。
+// （删除/副本/置顶/置底）、状态栏（缩放/选中路径/物化进行数；工单 01 起状态栏
+// 收编全部读数：坐标尺寸/资源/保存/schema/反馈段）。
 // 工单 13 目验保留：保存/导出/上传/字体清单。工单 11/08/05 保留：文本编辑、相机导航。
 import { computed, onBeforeUnmount, provide, ref } from 'vue'
 
@@ -492,7 +493,18 @@ onBeforeUnmount(() => {
             <PropertyPanel :editor="editor" />
         </section>
 
-        <StatusBar class="statusbar" :editor="editor" :pending-count="pendingCount" />
+        <!-- 状态栏收编全部读数（playground-canvas-first 工单 01）：组件内直读的
+             缩放/选中路径/坐标尺寸/schema 声明态之外，资源/保存/反馈三段由宿主
+             注入（物化状态订阅 assetsNote、dirty 基线 isDirty、动作读数 docNote，
+             三者复用头部读数的既有宿主状态）；头部四行读数本单暂不拆（工单 02）。 -->
+        <StatusBar
+            class="statusbar"
+            :editor="editor"
+            :pending-count="pendingCount"
+            :resource-note="assetsNote"
+            :save-state="isDirty ? 'dirty' : 'clean'"
+            :feedback="docNote"
+        />
 
         <section class="legend">
             <ul>
