@@ -37,6 +37,10 @@
     --cn-accent-soft: rgba(56, 189, 248, 0.12);
     --cn-on-accent: #06283d;
 
+    /* 表达式前置色（layer-panel-expression-prefix 工单 02）：带标记内容层行内
+       片段串的用色（图层面板 .cn-layers__prefix 消费）；原型 .ex 色值为参考值 */
+    --cn-expression: #5dd3b0;
+
     /* 危险/告警（预留） */
     --cn-danger: #f87171;
 
@@ -187,6 +191,23 @@
     border: 1px solid var(--cn-accent);
     border-radius: 3px;
     outline: none;
+}
+
+/* 表达式前置（layer-panel-expression-prefix 工单 02）：带标记内容层行内、拖柄
+   与标签之间的等宽小字片段串（内容与全文提示都由内核投影携带，面板零计算）。
+   溢出契约（spec 决策 7）：名称 flex-1 truncate 先截，前置 flex:none + max-width
+   封顶后自身省略——title 提示完整片段串。字号 10.5px 为原型 .ex 参考值，
+   line-height 对齐行标签 leading-4，行高不因前置变化 */
+.cn-props .cn-layers__prefix {
+    flex: none;
+    max-width: 96px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--cn-font-mono);
+    font-size: 10.5px;
+    line-height: 16px;
+    color: var(--cn-expression);
 }
 
 /* 隐藏行（layer-panel-ux 工单 10）：降不透明度示意不可见态（与闭眼钮常显同源），

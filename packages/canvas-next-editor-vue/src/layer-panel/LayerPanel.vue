@@ -5,7 +5,8 @@
  * 分立；行可跨表、格可跨行——跨容器落点走内核重建路径同步尺寸）、增删（新增
  * 置顶 min−1、加行/加格走重建路径、删除含子树）、点选/悬停与画布双向联动、
  * 根层行内重命名（工单 09：双击/hover 铅笔/F2 开会话，Enter·失焦提交、Esc
- * 取消，会话与漏斗在内核 ui 分支）。
+ * 取消，会话与漏斗在内核 ui 分支）。表达式前置（工单 02）：带标记内容层行内
+ * 等宽显示闭合片段串——只读 outline 投影字段，面板零计算。
  * 视觉沿用 .cn-props 主题命名空间（与属性面板同一套设计令牌）；行卡片化 +
  * 根层拖拽把手见 panel-theme.css 的 cn-layers 区块（工单 08）。
  *
@@ -488,6 +489,13 @@ watch(panel.renaming, async (path) => {
                 >
                     <PanelIcon :icon="GripVertical" :size="12" :stroke-width="2.5" />
                 </span>
+                <!-- 表达式前置（工单 02）：只读内核投影字段（零计算），拖柄与标签
+                     之间行内显示；空串不渲染任何元素，样式走 panel-theme 令牌 -->
+                <span
+                    v-if="row.node.expressionPrefix !== ''"
+                    class="cn-layers__prefix"
+                    :title="row.node.expressionPrefix"
+                >{{ row.node.expressionPrefix }}</span>
                 <input
                     v-if="isRenaming(row)"
                     :ref="setRenameInputEl"

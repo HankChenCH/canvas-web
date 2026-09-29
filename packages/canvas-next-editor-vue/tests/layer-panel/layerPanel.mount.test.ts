@@ -9,7 +9,14 @@
 import { describe, expect, it, vi } from 'vitest'
 import { mount, type DOMWrapper } from '@vue/test-utils'
 
-import { EditorSession, type FrameScheduler, type Layer, type TableRowLayer } from '@hankchen/canvas-next-editor'
+import {
+    EditorSession,
+    type FrameScheduler,
+    type Layer,
+    type TableCellLayer,
+    type TextLayer,
+    type TableRowLayer,
+} from '@hankchen/canvas-next-editor'
 
 import LayerPanel from '../../src/layer-panel/LayerPanel.vue'
 import { isUpperHalf } from '../../src/layer-panel/useLayerPanel'
@@ -36,7 +43,9 @@ const baseShape = (width: number, height: number) => ({
 const baseAlign = { horizontal: 'left' as const, vertical: 'top' as const }
 const basePosition = { anchor: 'top-left' as const, x: 0, y: 0 }
 
-const textLayer = (priority: number, text: string): Layer => ({
+// 返回精确层型（非宽 Layer union）：带标记/带内容的用例要 spread 覆写 expression/content
+// 等部分成员才有的键，宽 union spread 会触发逐成员 EPC
+const textLayer = (priority: number, text: string): TextLayer => ({
     type: 'TextLayer',
     name: '',
     visible: true,
@@ -77,7 +86,7 @@ const rowLayer = (priority: number, cells: readonly Layer[] = []): Layer => ({
     cells: cells as TableRowLayer['cells'],
 })
 
-const cellLayer = (width: number): Layer => ({
+const cellLayer = (width: number): TableCellLayer => ({
     type: 'TableCellLayer',
     name: '',
     visible: true,
@@ -94,6 +103,43 @@ const rowLabels = (wrapper: ReturnType<typeof mount>): string[] =>
 /** jsdom 的 getBoundingClientRect 全零；拖放落点判定需 mock 目标行盒（top=0 + 高 32） */
 function mockRect(row: DOMWrapper<Element>): void {
     vi.spyOn(row.element as HTMLElement, 'getBoundingClientRect').mockReturnValue({ height: 32, top: 0 } as DOMRect)
+}
+
+/** 模板态表 + 一格的最小文档：格内容由调用方给（缺省 null = 无内容） */
+function templateTableDoc(content: Layer | null = null): Layer[] {
+    const table: Layer = {
+        type: 'TableLayer',
+        name: '',
+        visible: true,
+        priority: 5,
+        shape: baseShape(600, 200),
+        align: baseAlign,
+        position: basePosition,
+        rowsPath: 'order.items',
+        rows: [],
+        template: {
+            type: 'TableRowTemplate',
+            name: '',
+            visible: true,
+            priority: 0,
+            shape: baseShape(600, 0),
+            align: baseAlign,
+            position: basePosition,
+            cells: [
+                {
+                    type: 'TableCellLayer',
+                    name: '',
+                    visible: true,
+                    priority: 0,
+                    shape: baseShape(300, 0),
+                    align: baseAlign,
+                    position: basePosition,
+                    content,
+                },
+            ],
+        },
+    }
+    return [table]
 }
 
 describe('拖放落点纯函数', () => {
@@ -569,43 +615,6 @@ describe('LayerPanel：模板表创建菜单（spec §2.1）', () => {
 })
 
 describe('LayerPanel：模板态大纲与操作面（spec §2.2/§2.5）', () => {
-    /** 模板态表 + 一格（无内容）的最小文档 */
-    function templateTableDoc(): Layer[] {
-        const table: Layer = {
-            type: 'TableLayer',
-            name: '',
-            visible: true,
-            priority: 5,
-            shape: baseShape(600, 200),
-            align: baseAlign,
-            position: basePosition,
-            rowsPath: 'order.items',
-            rows: [],
-            template: {
-                type: 'TableRowTemplate',
-                name: '',
-                visible: true,
-                priority: 0,
-                shape: baseShape(600, 0),
-                align: baseAlign,
-                position: basePosition,
-                cells: [
-                    {
-                        type: 'TableCellLayer',
-                        name: '',
-                        visible: true,
-                        priority: 0,
-                        shape: baseShape(300, 0),
-                        align: baseAlign,
-                        position: basePosition,
-                        content: null,
-                    },
-                ],
-            },
-        }
-        return [table]
-    }
-
     it('大纲渲染行模板节点；+行 置灰；行模板 ✕ 置灰（spec §2.5 反馈规范）', async () => {
         const editor = makeEditor(templateTableDoc())
         const wrapper = mount(LayerPanel, { props: { editor } })
@@ -647,6 +656,65 @@ describe('LayerPanel：模板态大纲与操作面（spec §2.2/§2.5）', () =>
         const cellEl = wrapper.findAll('li').find((li) => li.text().includes('格 1'))!
         await cellEl.trigger('click')
         expect(editor.store.ui.selection).toEqual(['layers', 0, 'template', 'cells', 0])
+        wrapper.unmount()
+    })
+})
+
+// ---- 表达式前置（layer-panel-expression-prefix 工单 02）：行内只吃预构建投影 ----
+
+describe('LayerPanel：表达式前置（layer-panel-expression-prefix 工单 02）', () => {
+    /** 带标记文本层：expression 原文照携，前置串由内核投影算好（面板零计算） */
+    const marked = (expression: string, priority = 10): TextLayer => ({
+        ...textLayer(priority, '内容'),
+        expression,
+    })
+
+    it('根层行前置：前置 span 内容与 title = 完整片段串；未标记行零元素；全无效片段显示占位常量；点行选层不变', async () => {
+        const editor = makeEditor([textLayer(30, '无标记'), marked('编号 {{ certCode }} 尾', 20), marked('纯字面')])
+        const wrapper = mount(LayerPanel, { props: { editor } })
+
+        // 面板序：占位行、certCode 行、无标记行——只两个带标记行有前置元素
+        const prefixes = wrapper.findAll('.cn-layers__prefix')
+        expect(prefixes).toHaveLength(2)
+        expect(prefixes[0]!.text()).toBe('{{…}}')
+        expect(prefixes[0]!.attributes('title')).toBe('{{…}}')
+        expect(prefixes[1]!.text()).toBe('{{certCode}}')
+        expect(prefixes[1]!.attributes('title')).toBe('{{certCode}}')
+
+        // 带前置行的点选行为零变化
+        await wrapper.findAll('.cn-layers__row')[1]!.trigger('click')
+        expect(editor.store.ui.selection).toEqual(['layers', 1])
+        wrapper.unmount()
+    })
+
+    it('覆盖面：实例格内容与模板子树格内容行显示；表/行/格/行模板骨架行无前置', () => {
+        const v1Table = tableLayer([rowLayer(30, [{ ...cellLayer(600), content: marked('{{certCode}}') }])])
+        const editor = makeEditor([v1Table, ...templateTableDoc(marked('{{personProfile.name}}'))])
+        const wrapper = mount(LayerPanel, { props: { editor } })
+
+        const rows = wrapper.findAll('.cn-layers__row')
+        expect(rows).toHaveLength(8)
+        // 前置只落在两条内容行（判据看层型 + 标记的投影结果，面板不分 role）；
+        // 面板序 = 数组逆序：模板表在 layers.1 先渲染
+        const prefixedKeys = rows
+            .filter((row) => row.find('.cn-layers__prefix').exists())
+            .map((row) => row.attributes('data-key'))
+        expect(prefixedKeys).toEqual(['layers.1.template.cells.0.content', 'layers.0.rows.0.cells.0.content'])
+        expect(rows[3]!.find('.cn-layers__prefix').text()).toBe('{{personProfile.name}}')
+        expect(rows[7]!.find('.cn-layers__prefix').text()).toBe('{{certCode}}')
+        wrapper.unmount()
+    })
+
+    it('重命名会话共存：input 只替换标签槽位，前置 span 仍在', async () => {
+        const editor = makeEditor([marked('{{personProfile.name}}')])
+        const wrapper = mount(LayerPanel, { props: { editor }, attachTo: document.body })
+
+        await wrapper.findAll('.cn-layers__label')[0]!.trigger('dblclick')
+        await wrapper.vm.$nextTick()
+        expect(wrapper.find('[data-rename-input]').exists()).toBe(true)
+        const prefix = wrapper.find('.cn-layers__prefix')
+        expect(prefix.exists()).toBe(true)
+        expect(prefix.text()).toBe('{{personProfile.name}}')
         wrapper.unmount()
     })
 })
