@@ -68,11 +68,16 @@ const completionTarget = computed<HTMLTextAreaElement | HTMLInputElement | null>
     return el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement ? el : null
 })
 
+/** 浮层根元素（组件 expose 的 rootEl）：量宽收口用，未挂载/不接线为 null */
+const popupRef = ref<InstanceType<typeof ExpressionCompletionPopup> | null>(null)
+const popupElement = computed<HTMLElement | null>(() => popupRef.value?.rootEl ?? null)
+
 const { popup, accept } = useExpressionCompletion({
     target: completionTarget,
     // 表达式态且声明在场才开事件入口（静态态不生效；未注入 schema = 无候选态）
     enabled: () => wiresCompletion.value && isExpression.value && props.completion != null,
     resolve: (expr) => props.completion?.(expr) ?? null,
+    popupEl: popupElement,
 })
 
 /** 复合控件的子字段提交转发（模板内联箭头的参数标注不便，收口到脚本） */
@@ -118,5 +123,5 @@ function relaySubCommit(field: FieldDef, value: unknown, final: boolean): void {
     </component>
     <!-- 补全浮层（工单 04/05）：portal 到 body，仅数据文本字段渲染；面板不给本
          组件下发 attrs，多根无 fallthrough 断点 -->
-    <ExpressionCompletionPopup v-if="wiresCompletion" :state="popup" @select="accept" />
+    <ExpressionCompletionPopup v-if="wiresCompletion" ref="popupRef" :state="popup" @select="accept" />
 </template>

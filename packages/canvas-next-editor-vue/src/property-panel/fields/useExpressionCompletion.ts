@@ -17,11 +17,13 @@
  *   一律不触发（延伸 TextareaField/TextField 既有 composing 守卫语义）；
  *   compositionend 后键位恢复。
  * - 锚点：mirror div 测光标（completionAnchor.ts），浮层 fixed 定位在光标
- *   下方；scroll（捕获，任意滚动容器）/resize 重算。
+ *   下方；scroll（捕获，任意滚动容器）/resize 重算；光标贴近视口右缘时按
+ *   浮层实测宽左移收口（右缘不越 innerWidth——量不到宽按原锚放，首开浮层
+ *   未渲染延一拍补量）。
  *
  * 静态态零补全：enabled 为假时全部事件入口短路（候选源零调用）。
  */
-import { onMounted, onScopeDispose, reactive, toValue, watch, type MaybeRefOrGetter, type Ref } from 'vue'
+import { nextTick, onMounted, onScopeDispose, reactive, toValue, watch, type MaybeRefOrGetter, type Ref } from 'vue'
 
 import {
     expressionFragmentAtCursor,
@@ -56,6 +58,8 @@ export function useExpressionCompletion(options: {
     enabled: MaybeRefOrGetter<boolean>
     /** 候选源（纯函数注入缝，见 completion.ts） */
     resolve: CompletionSource
+    /** 浮层根元素（可选；在场时按其量宽做视口右缘收口） */
+    popupEl?: MaybeRefOrGetter<HTMLElement | null>
 }): {
     /** 呈现态（reactive），传给浮层组件 */
     popup: ExpressionCompletionState
@@ -80,7 +84,22 @@ export function useExpressionCompletion(options: {
         if (!popup.open || !el) return
         const anchor = measureCursorAnchor(el)
         popup.top = anchor.bottom + ANCHOR_GAP
-        popup.left = anchor.left
+        popup.left = clampToViewport(anchor.left)
+    }
+
+    /** 浮层右缘与视口右缘的最小留白（px；与锚点间隙同级的最小呼吸位） */
+    const VIEWPORT_MARGIN = 4
+
+    /**
+     * 视口右缘收口：光标贴近视口右缘时浮层左移，右缘不越 innerWidth；视口比
+     * 浮层还窄时钉在左缘。量不到宽（首帧未渲染/降级）按原锚放——首开路径由
+     * recompute 延一拍补量（fixed 定位于 body，无 containing block 干扰）。
+     */
+    function clampToViewport(left: number): number {
+        const node = options.popupEl ? toValue(options.popupEl) : null
+        const width = node?.offsetWidth ?? 0
+        if (width <= 0) return left
+        return Math.max(0, Math.min(left, window.innerWidth - VIEWPORT_MARGIN - width))
     }
 
     /**
@@ -120,6 +139,9 @@ export function useExpressionCompletion(options: {
         popup.activeIndex = 0
         popup.open = true
         reposition()
+        // 首开浮层 v-if 下一拍才挂载，此刻量不到宽——延一拍补跑收口（微任务先
+        // 于绘制，无闪烁）；已开刷新路径元素在场，同步收口已生效，补跑幂等
+        void nextTick(reposition)
     }
 
     function accept(index?: number): void {

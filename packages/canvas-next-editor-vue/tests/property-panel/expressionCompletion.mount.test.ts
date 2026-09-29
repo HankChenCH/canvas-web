@@ -64,17 +64,24 @@ const wrappers: VueWrapper[] = []
 
 function mountHost(tag: FieldTag, resolve: CompletionSource): HostHarness {
     const el = ref<HTMLTextAreaElement | HTMLInputElement | null>(null)
+    const popupComp = ref<InstanceType<typeof ExpressionCompletionPopup> | null>(null)
     const enabled = ref(true)
     const source = vi.fn(resolve)
     const events: HostHarness['events'] = []
     const Host = defineComponent({
         setup() {
-            const completion = useExpressionCompletion({ target: el, enabled, resolve: source })
+            // 接线面与 PropertyField 同构：popup 根元素经 expose 回递做量宽收口
+            const completion = useExpressionCompletion({
+                target: el,
+                enabled,
+                resolve: source,
+                popupEl: () => popupComp.value?.rootEl ?? null,
+            })
             const record = (kind: 'input' | 'change') => (event: Event) =>
                 events.push({ kind, value: (event.target as HTMLInputElement).value })
             return () => [
                 h(tag, { ref: el, onInput: record('input'), onChange: record('change') }),
-                h(ExpressionCompletionPopup, { state: completion.popup, onSelect: completion.accept }),
+                h(ExpressionCompletionPopup, { ref: popupComp, state: completion.popup, onSelect: completion.accept }),
             ]
         },
     })
@@ -399,6 +406,35 @@ describe('portal 与锚点重算（jsdom 布局为零，rect 经 mock 钉坐标�
         window.dispatchEvent(new Event('scroll'))
         await nextTick()
         expect(popup.style.left).toBe('88px')
+    })
+
+    it('光标贴近视口右缘：浮层左移收口不越出视口（首开补量 + resize 同路）', async () => {
+        const VIEWPORT_W = 1024
+        const POPUP_W = 241 // 工单 05 目验实测宽
+        Object.defineProperty(window, 'innerWidth', { value: VIEWPORT_W, configurable: true })
+        const harness = mountHost('textarea', headSource)
+        const field = harness.field()
+        // 字段贴视口右缘：光标锚 x=900，900 + 241 > 1024 → 不收口即越界 117px
+        vi.spyOn(field, 'getBoundingClientRect').mockReturnValue(rectOf({ left: 900, x: 900, right: 1100 }))
+        // jsdom 零布局：浮层量宽口径按类名钉在 prototype（首渲染即被覆盖，先于首开补量一拍）
+        const widthSpy = vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) {
+            return this.classList.contains('cn-completion') ? POPUP_W : 0
+        })
+
+        await type(harness, '{{', 2)
+        await nextTick()
+
+        const popup = popupEl()!
+        expect(popup).not.toBeNull()
+        expect(parseFloat(popup.style.left) + POPUP_W).toBeLessThanOrEqual(VIEWPORT_W)
+
+        // 视口收窄：resize 重算按新视口收口
+        Object.defineProperty(window, 'innerWidth', { value: 960, configurable: true })
+        window.dispatchEvent(new Event('resize'))
+        await nextTick()
+        expect(parseFloat(popup.style.left) + POPUP_W).toBeLessThanOrEqual(960)
+
+        widthSpy.mockRestore()
     })
 
     it('textarea 多行形态：mirror 流式锚（jsdom 默认字号 16px 入行高兜底），双形态共用重算', async () => {

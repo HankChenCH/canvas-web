@@ -22,6 +22,10 @@ const emit = defineEmits<{ select: [index: number] }>()
 
 const rootRef = ref<HTMLElement | null>(null)
 
+// 根元素外 exposure：宿主（PropertyField）转交 useExpressionCompletion 量宽
+// 做视口右缘收口（工单 04 遗留目验项）
+defineExpose({ rootEl: rootRef })
+
 // 键盘导航跟随：高亮项滚进可视区（max-height 滚动时）；jsdom 无此 API 走可选调用
 watch(
     () => props.state.activeIndex,
