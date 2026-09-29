@@ -18,6 +18,8 @@
  * ExpressionCompletionPopup）——target 取控件根元素（textarea/input 双形态），
  * 候选源由面板按选中路径下发（completionSource：根层 = 根候选集 / 模板格内容层
  * = 行候选集）。静态态/未注入 schema 时 enabled 恒假，事件入口全短路零补全。
+ * `{{` 自动配对（工单 07）独立于 schema 注入：表达式态即配对（防未闭合静默错），
+ * 静态态 `{{` 是字面不配对。
  */
 import { computed, ref, type ComponentPublicInstance } from 'vue'
 
@@ -76,6 +78,9 @@ const { popup, accept } = useExpressionCompletion({
     target: completionTarget,
     // 表达式态且声明在场才开事件入口（静态态不生效；未注入 schema = 无候选态）
     enabled: () => wiresCompletion.value && isExpression.value && props.completion != null,
+    // 配对门（工单 07）独立于候选源注入：表达式态即配对——未闭合 {{ 的静默错
+    // （字面渲染/编进二维码）不依赖 schema 在场；静态态 {{ 是字面不配对
+    pairing: () => wiresCompletion.value && isExpression.value,
     resolve: (expr) => props.completion?.(expr) ?? null,
     popupEl: popupElement,
 })

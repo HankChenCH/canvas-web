@@ -55,6 +55,8 @@ interface HostHarness {
     wrapper: VueWrapper
     field: () => HTMLTextAreaElement | HTMLInputElement
     enabled: Ref<boolean>
+    /** 配对门（工单 07）：与 enabled 分离——表达式态未注入 schema 也配对 */
+    pairing: Ref<boolean>
     source: Mock<CompletionSource>
     /** 宿主记录到的提交事件（input 实时 / change 收口） */
     events: { kind: 'input' | 'change'; value: string }[]
@@ -66,6 +68,7 @@ function mountHost(tag: FieldTag, resolve: CompletionSource): HostHarness {
     const el = ref<HTMLTextAreaElement | HTMLInputElement | null>(null)
     const popupComp = ref<InstanceType<typeof ExpressionCompletionPopup> | null>(null)
     const enabled = ref(true)
+    const pairing = ref(true)
     const source = vi.fn(resolve)
     const events: HostHarness['events'] = []
     const Host = defineComponent({
@@ -74,6 +77,7 @@ function mountHost(tag: FieldTag, resolve: CompletionSource): HostHarness {
             const completion = useExpressionCompletion({
                 target: el,
                 enabled,
+                pairing,
                 resolve: source,
                 popupEl: () => popupComp.value?.rootEl ?? null,
             })
@@ -87,7 +91,7 @@ function mountHost(tag: FieldTag, resolve: CompletionSource): HostHarness {
     })
     const wrapper = mount(Host)
     wrappers.push(wrapper)
-    return { wrapper, field: () => el.value as HTMLTextAreaElement, enabled, source, events }
+    return { wrapper, field: () => el.value as HTMLTextAreaElement, enabled, pairing, source, events }
 }
 
 /* ---------------------------------------------------------------- 操作帮手 */
@@ -104,6 +108,20 @@ async function type(harness: HostHarness, value: string, cursor: number): Promis
 async function pressKey(harness: HostHarness, key: string, init: KeyboardEventInit = {}): Promise<void> {
     harness.field().dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init }))
     await nextTick()
+}
+
+/** 带 inputType 的 input 事件（真实浏览器恒带；jsdom 的 InputEvent 可能丢 init，兜底补写） */
+function typedInput(inputType: string): Event {
+    let event: Event
+    try {
+        event = new InputEvent('input', { bubbles: true, inputType })
+    } catch {
+        event = new Event('input', { bubbles: true })
+    }
+    if ((event as InputEvent).inputType !== inputType) {
+        Object.defineProperty(event, 'inputType', { value: inputType })
+    }
+    return event
 }
 
 /** 浮层经 Teleport 挂 body，断言绕过 wrapper 直接查 document */
@@ -222,7 +240,7 @@ describe('接受（补全剩余路径段，与手工输入同路）', () => {
         await pressKey(harness, 'ArrowDown')
         expect(activeIndex()).toBe(0)
         await pressKey(harness, 'Enter')
-        expect(harness.field().value).toBe('{{orderNo')
+        expect(harness.field().value).toBe('{{orderNo}}') // {{ 键入已配对：接受落 {{ }} 之间出完整片段
     })
 
     it('多片段模板：接受落在光标所在片段，字面与前序片段不动', async () => {
@@ -244,6 +262,161 @@ describe('接受（补全剩余路径段，与手工输入同路）', () => {
     })
 })
 
+/* ---------------------------------------------------------------- 自动配对（工单 07） */
+
+describe('自动配对（工单 07）：{{ 补出 }} + 光标回移 + 弹候选', () => {
+    it('键入第二个 {：值补成 {{}}、光标落片段内、弹头部候选；第一个 { 不配', async () => {
+        const harness = mountHost('textarea', headSource)
+        await type(harness, '{', 1)
+        expect(harness.field().value).toBe('{')
+        expect(popupEl()).toBeNull()
+        await type(harness, '{{', 2)
+        expect(harness.field().value).toBe('{{}}')
+        expect(harness.field().selectionStart).toBe(2)
+        expect(popupEl()).not.toBeNull()
+        expect(optionSegments()).toEqual(['orderNo', 'assets', 'row', '$index', '$root'])
+    })
+
+    it('与手工输入同路：补出 } 只派发 input 实时合步（change 归接受/失焦，undo 粒度同手工连打）', async () => {
+        const harness = mountHost('textarea', headSource)
+        await type(harness, '{{', 2)
+        expect(harness.events.map((event) => [event.kind, event.value])).toEqual([
+            ['input', '{{'],
+            ['input', '{{}}'],
+        ])
+    })
+
+    it('空片段接受候选：补在 {{ }} 之间出完整片段、光标片段内原位', async () => {
+        const harness = mountHost('textarea', headSource)
+        await type(harness, '{{', 2)
+        await pressKey(harness, 'Enter')
+        expect(harness.field().value).toBe('{{orderNo}}')
+        expect(harness.field().selectionStart).toBe(9) // 'orderNo' 尾（index 9 = 首个 }} 之前，片段内原位）
+        expect(popupEl()).toBeNull()
+    })
+
+    it('composing 中不配对（延伸既有守卫语义）；compositionend 后片段在、浮层开但不补对', async () => {
+        const harness = mountHost('textarea', headSource)
+        harness.field().dispatchEvent(new Event('compositionstart'))
+        await nextTick()
+        await type(harness, '{{', 2)
+        expect(harness.field().value).toBe('{{')
+        expect(popupEl()).toBeNull()
+        harness.field().dispatchEvent(new Event('compositionend'))
+        await nextTick()
+        expect(harness.field().value).toBe('{{')
+        expect(popupEl()).not.toBeNull()
+    })
+
+    it('非键入插入不配对：paste / 合成落定的 inputType 各归其道；显式 insertText 配对', async () => {
+        const harness = mountHost('textarea', headSource)
+        const field = harness.field()
+        field.value = 'x{{'
+        field.setSelectionRange(3, 3)
+        field.dispatchEvent(typedInput('insertFromPaste'))
+        await nextTick()
+        expect(field.value).toBe('x{{')
+        expect(popupEl()).not.toBeNull() // open 片段照常触发浮层，只是不配对
+
+        field.value = '{{'
+        field.setSelectionRange(2, 2)
+        field.dispatchEvent(typedInput('insertCompositionText'))
+        await nextTick()
+        expect(field.value).toBe('{{')
+
+        // 真实浏览器键入恒带 insertText（退化空串同义，见实现注释）
+        field.value = 'y{{'
+        field.setSelectionRange(3, 3)
+        field.dispatchEvent(typedInput('insertText'))
+        await nextTick()
+        expect(field.value).toBe('y{{}}')
+    })
+
+    it('静态态（enabled=false、pairing=false）键入 {{ 原样不配', async () => {
+        const harness = mountHost('textarea', headSource)
+        harness.enabled.value = false
+        harness.pairing.value = false
+        await type(harness, '{{', 2)
+        expect(harness.field().value).toBe('{{')
+        expect(harness.source).not.toHaveBeenCalled()
+    })
+
+    it('配对门独立于候选源注入：表达式态未注入 schema（enabled=false）仍配对、浮层不弹', async () => {
+        const harness = mountHost('textarea', headSource)
+        harness.enabled.value = false
+        await type(harness, '{{', 2)
+        expect(harness.field().value).toBe('{{}}')
+        expect(popupEl()).toBeNull()
+        expect(harness.source).not.toHaveBeenCalled()
+    })
+
+    it('空片段退格 = {{}} 整对删除：光标落删除点、只发 input、浮层收口', async () => {
+        const harness = mountHost('textarea', headSource)
+        await type(harness, 'a {{', 4)
+        expect(harness.field().value).toBe('a {{}}')
+        harness.events.length = 0
+        await pressKey(harness, 'Backspace')
+        expect(harness.field().value).toBe('a ')
+        expect(harness.field().selectionStart).toBe(2)
+        expect(harness.events.map((event) => [event.kind, event.value])).toEqual([['input', 'a ']])
+        expect(popupEl()).toBeNull()
+    })
+
+    it('非空片段退格不劫持：只删一个字符由原生处理（整对删除仅空片段）', async () => {
+        const harness = mountHost('textarea', headSource)
+        await type(harness, '{{r}}', 3)
+        harness.events.length = 0
+        await pressKey(harness, 'Backspace')
+        expect(harness.field().value).toBe('{{r}}') // 测试无原生删除，handler 未拦截即断言成立
+        expect(harness.events).toHaveLength(0)
+    })
+
+    it('删对产物恰以 {{ 收尾时不立刻再配（再入闸对称）：{{{{}} 删外层对得 {{', async () => {
+        const harness = mountHost('textarea', headSource)
+        await type(harness, '{{{{}}', 4)
+        await pressKey(harness, 'Backspace')
+        expect(harness.field().value).toBe('{{')
+        expect(harness.field().selectionStart).toBe(2)
+    })
+
+    it('} 越过不重复：下一字符已是 } 时不插入、光标跳过，文本零变化零提交', async () => {
+        const harness = mountHost('textarea', headSource)
+        await type(harness, '{{', 2)
+        harness.events.length = 0
+        await pressKey(harness, '}')
+        expect(harness.field().value).toBe('{{}}')
+        expect(harness.field().selectionStart).toBe(3)
+        expect(harness.events).toHaveLength(0)
+        expect(popupEl()).not.toBeNull() // 仍在片段区域内（closed 判定 < end）
+        await pressKey(harness, '}')
+        expect(harness.field().selectionStart).toBe(4)
+        expect(popupEl()).toBeNull() // 越过 }} 出片段 → 关闭
+    })
+
+    it('浮层未开（无候选态）时 } 越过同样生效（惯例作用于表达式态输入，不依赖浮层）', async () => {
+        const harness = mountHost('textarea', headSource)
+        await type(harness, '{{zz}}', 4)
+        expect(popupEl()).toBeNull() // 'zz' 无候选
+        await pressKey(harness, '}')
+        expect(harness.field().value).toBe('{{zz}}')
+        expect(harness.field().selectionStart).toBe(5)
+    })
+
+    it('光标后已有 }}（closed 片段）时不误配：交给既有候选路径', async () => {
+        const harness = mountHost('textarea', headSource)
+        await type(harness, 'x{{}}', 3)
+        expect(harness.field().value).toBe('x{{}}') // 不再补 }} —— 已是（空）片段
+        expect(popupEl()).not.toBeNull() // 空片段 → 头部候选自然弹出
+    })
+
+    it('单行 input 同款配对（textarea/input 双形态同路）', async () => {
+        const harness = mountHost('input', headSource)
+        await type(harness, '{{', 2)
+        expect(harness.field().value).toBe('{{}}')
+        expect(popupEl()).not.toBeNull()
+    })
+})
+
 /* ---------------------------------------------------------------- IME 守卫 */
 
 describe('IME 守卫（事件入口最前沿）', () => {
@@ -255,7 +428,7 @@ describe('IME 守卫（事件入口最前沿）', () => {
         harness.events.length = 0
 
         await pressKey(harness, 'Enter', { keyCode: 229, isComposing: true } as KeyboardEventInit)
-        expect(harness.field().value).toBe('{{')
+        expect(harness.field().value).toBe('{{}}') // {{ 键入已在合成开始前配对；合成期 Enter 未接受
         expect(harness.events).toHaveLength(0)
         expect(popupEl()).not.toBeNull()
 
@@ -267,7 +440,7 @@ describe('IME 守卫（事件入口最前沿）', () => {
         harness.field().dispatchEvent(new Event('compositionend'))
         await nextTick()
         await pressKey(harness, 'Enter', { keyCode: 13 })
-        expect(harness.field().value).toBe('{{orderNo')
+        expect(harness.field().value).toBe('{{orderNo}}') // 空片段配对态接受：补在 {{ }} 之间
         expect(harness.events.map((event) => event.kind)).toEqual(['input', 'change'])
     })
 
@@ -279,7 +452,7 @@ describe('IME 守卫（事件入口最前沿）', () => {
         harness.events.length = 0
         optionEls()[0]!.click()
         await nextTick()
-        expect(harness.field().value).toBe('{{')
+        expect(harness.field().value).toBe('{{}}') // {{ 键入已在合成开始前配对；合成期点选不接受
         expect(harness.events).toHaveLength(0)
     })
 })

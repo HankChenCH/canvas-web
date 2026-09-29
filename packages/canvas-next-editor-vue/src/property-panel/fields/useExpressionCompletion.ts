@@ -20,6 +20,12 @@
  *   下方；scroll（捕获，任意滚动容器）/resize 重算；光标贴近视口右缘时按
  *   浮层实测宽左移收口（右缘不越 innerWidth——量不到宽按原锚放，首开浮层
  *   未渲染延一拍补量）。
+ * - 自动配对（工单 07）：表达式态键入第二个 `{` 自动补出 `}}`、光标回移片段
+ *   内，候选浮层经 input 路径自然弹出（未闭合 `{{` 的实害是静默错：文本层按
+ *   字面渲染、二维码层把原文编进码——配对在源头消除整类失误）。只认键入插入
+ *   （composing 合成 / paste 不配）；静态态不配（`{{` 是字面）；空片段 `{{}}`
+ *   退格整对删除（放弃一步退出）；`}` 越过不重复（下一字符已是 `}` 时跳过）。
+ *   补对/删对只派发 input（实时合步，与手工连打同粒度，change 归接受/失焦）。
  *
  * 静态态零补全：enabled 为假时全部事件入口短路（候选源零调用）。
  */
@@ -60,6 +66,12 @@ export function useExpressionCompletion(options: {
     resolve: CompletionSource
     /** 浮层根元素（可选；在场时按其量宽做视口右缘收口） */
     popupEl?: MaybeRefOrGetter<HTMLElement | null>
+    /**
+     * `{{` 自动配对门（工单 07，可选）：与 enabled 分离——表达式态未注入
+     * schema 也配对（配对防的是未闭合静默错，不依赖候选声明）；缺省回落
+     * enabled，调用方未分门时跟随浮层开关。
+     */
+    pairing?: MaybeRefOrGetter<boolean>
 }): {
     /** 呈现态（reactive），传给浮层组件 */
     popup: ExpressionCompletionState
@@ -162,10 +174,98 @@ export function useExpressionCompletion(options: {
         close()
     }
 
+    /* ---- 自动配对（工单 07）---- */
+
+    /** 配对门（缺省回落 enabled） */
+    function pairingOn(): boolean {
+        return toValue(options.pairing ?? options.enabled)
+    }
+
+    /** 配对系键位的公共前置：宿主在场 + 光标折叠；返回光标位或 null */
+    function collapsedCursor(node: HTMLTextAreaElement | HTMLInputElement): number | null {
+        const cursor = node.selectionStart
+        if (cursor === null || cursor !== node.selectionEnd) return null
+        return cursor
+    }
+
+    /** 配对再入闸：补对/删对派发的 input 会同步重入 onInput，置位期间不再判配 */
+    let pairingDispatch = false
+
+    /**
+     * `{{` 自动配对：input 恰以 `{{` 收尾（键入第二个 `{` 落定）时补出 `}}`、
+     * 光标回移片段内。只认键入插入——inputType 白名单 insertText（合成落定/
+     * paste/拖放/自动替换各有专名不配），未带类型（程序派发/退化事件，含空串）
+     * 视同键入；合成期与 isComposing 已在 onInput 入口短路。光标之后串内已有
+     * `}}` 时不配（本地快速判定，比内核扫描宽松：不管 `}}` 归属哪个片段）——
+     * 防的是连打第三个 `{` 把既有配对撞成不均衡串；误判的代价只是退回字面键入
+     * 的旧行为。补出文本只派发 input（实时合步）：change 归接受/失焦，undo
+     * 粒度与手工连打一致（配对与随后接受合一步历史，工单 07「同路不回归」）。
+     */
+    function autoPairOnBraces(event: Event): void {
+        if (pairingDispatch || !pairingOn()) return
+        const node = el
+        if (!node) return
+        const inputType = (event as InputEvent).inputType
+        if (inputType !== undefined && inputType !== '' && inputType !== 'insertText') return
+        const cursor = collapsedCursor(node)
+        if (cursor === null || cursor < 2) return
+        const value = node.value
+        if (!value.startsWith('{{', cursor - 2)) return
+        if (value.includes('}}', cursor)) return
+        pairingDispatch = true
+        node.value = `${value.slice(0, cursor)}}}${value.slice(cursor)}`
+        node.setSelectionRange(cursor, cursor)
+        node.dispatchEvent(new Event('input', { bubbles: true }))
+        pairingDispatch = false
+    }
+
+    /**
+     * 空片段退格整对删除：光标夹在 `{{}}` 中间时退格删整对（编辑器惯例，放弃
+     * 配对一步退出）。同样只删输入（实时合步），删除后浮层经 input 路径自然
+     * 收口（光标处无片段）。删对同样置再入闸——删除产物若恰以 `{{` 收尾
+     * （如 `{{{{}}` 删外层对），重入不得立刻再配，否则退格看似失灵。返回是否
+     * 已拦截（调用方短路后续键位处理）。
+     */
+    function unpairOnBackspace(event: KeyboardEvent): boolean {
+        if (!pairingOn()) return false
+        const node = el
+        if (!node) return false
+        const cursor = collapsedCursor(node)
+        if (cursor === null || cursor < 2) return false
+        const value = node.value
+        if (!value.startsWith('{{', cursor - 2) || !value.startsWith('}}', cursor)) return false
+        event.preventDefault()
+        pairingDispatch = true
+        node.value = value.slice(0, cursor - 2) + value.slice(cursor + 2)
+        node.setSelectionRange(cursor - 2, cursor - 2)
+        node.dispatchEvent(new Event('input', { bubbles: true }))
+        pairingDispatch = false
+        return true
+    }
+
+    /**
+     * `}` 越过不重复（编辑器惯例，工单 07 惯例可选条目）：下一字符已是 `}` 时
+     * 键入不重复插入、光标越过。文本零变化故零派发；光标出片段经 recompute
+     * 跟踪路径收口（不主动开）。
+     */
+    function skipCloseBrace(event: KeyboardEvent): boolean {
+        if (!pairingOn()) return false
+        const node = el
+        if (!node) return false
+        const cursor = collapsedCursor(node)
+        if (cursor === null) return false
+        if (node.value[cursor] !== '}') return false
+        event.preventDefault()
+        node.setSelectionRange(cursor + 1, cursor + 1)
+        recompute(false)
+        return true
+    }
+
     /* ---- 事件处理（IME 守卫在各入口最前沿）---- */
 
     function onInput(event: Event): void {
         if (composing || (event as InputEvent).isComposing) return
+        autoPairOnBraces(event)
         recompute(true)
     }
 
@@ -189,6 +289,9 @@ export function useExpressionCompletion(options: {
             recompute(true, true)
             return
         }
+        // 配对系键位（工单 07）先于浮层导航：空片段退格删对 / } 越过不依赖浮层开合
+        if (event.key === 'Backspace' && unpairOnBackspace(event)) return
+        if (event.key === '}' && skipCloseBrace(event)) return
         if (!popup.open) return
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
             event.preventDefault()

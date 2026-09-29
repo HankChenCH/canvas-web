@@ -78,6 +78,13 @@ async function pressEnter(wrapper: VueWrapper): Promise<void> {
     await nextTick()
 }
 
+async function pressBackspace(wrapper: VueWrapper): Promise<void> {
+    wrapper.find('textarea').element.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }),
+    )
+    await nextTick()
+}
+
 afterEach(() => {
     wrappers.splice(0).forEach((wrapper) => wrapper.unmount())
     document.body.innerHTML = ''
@@ -162,6 +169,81 @@ describe('上下文感知：候选集随选中位置切换', () => {
         await nextTick()
         await type(wrapper, '{{', 2)
         expect(optionSegments()).toEqual(['orderNo', 'order', '$root', 'row', '$index'])
+    })
+})
+
+describe('{{ 自动配对（工单 07）：配对文本与手工输入同路', () => {
+    it('键入 {{ 补出 }} → 接受候选出完整片段，mergeKey 合步一步历史、undo 一步回配对前', async () => {
+        const editor = makeEditor([textLayer({ text: '{{', expression: '{{' })])
+        editor.setDataSourceSchema(RAW_SCHEMA)
+        const wrapper = mountPanel(editor)
+        editor.setSelection(['layers', 0])
+        await nextTick()
+
+        await type(wrapper, '{{', 2)
+        const fieldEl = wrapper.find('textarea').element as HTMLTextAreaElement
+        expect(fieldEl.value).toBe('{{}}')
+        expect(fieldEl.selectionStart).toBe(2)
+        expect(popupOpen()).toBe(true)
+
+        await pressEnter(wrapper)
+        expect(popupOpen()).toBe(false)
+
+        // 配对只发 input（实时合步）：原生 {{ 键入与补出 }} 同并入接受的 change——
+        // 与手工连打同粒度，一步历史
+        const layer = editor.store.doc!.layers[0]!
+        expect(layer.type === 'TextLayer' && layer.expression).toBe('{{orderNo}}')
+        expect(layer.type === 'TextLayer' && layer.text).toBe('{{orderNo}}')
+        expect(editor.store.history).toHaveLength(1)
+
+        // undo 一步：标记与镜像一并回退到配对前（重标镜像语义）
+        editor.undo()
+        await nextTick()
+        const restored = editor.store.doc!.layers[0]!
+        expect(restored.type === 'TextLayer' && restored.expression).toBe('{{')
+        expect(restored.type === 'TextLayer' && restored.text).toBe('{{')
+    })
+
+    it('空片段退格整对删除 → 表达式回字面态（无残壳），历史零推进（change 归失焦）', async () => {
+        const editor = makeEditor([textLayer({ text: '{{', expression: '{{' })])
+        editor.setDataSourceSchema(RAW_SCHEMA)
+        const wrapper = mountPanel(editor)
+        editor.setSelection(['layers', 0])
+        await nextTick()
+
+        await type(wrapper, '{{', 2)
+        await pressBackspace(wrapper)
+        const fieldEl = wrapper.find('textarea').element as HTMLTextAreaElement
+        expect(fieldEl.value).toBe('')
+        expect(popupOpen()).toBe(false)
+
+        const layer = editor.store.doc!.layers[0]!
+        expect(layer.type === 'TextLayer' && layer.expression).toBe('')
+        expect(layer.type === 'TextLayer' && layer.text).toBe('')
+
+        // 配对 + 删对并入同一 mergeKey 会话（只发 input，与手工连打同粒度）：
+        // 一个合并步、undo 一步回配对前
+        expect(editor.store.history).toHaveLength(1)
+        editor.undo()
+        await nextTick()
+        const restored = editor.store.doc!.layers[0]!
+        expect(restored.type === 'TextLayer' && restored.expression).toBe('{{')
+        expect(restored.type === 'TextLayer' && restored.text).toBe('{{')
+    })
+
+    it('静态态键入 {{ 不配对：字面提交管线不变（表达式标记保持 null）', async () => {
+        const editor = makeEditor([textLayer()])
+        editor.setDataSourceSchema(RAW_SCHEMA)
+        const wrapper = mountPanel(editor)
+        editor.setSelection(['layers', 0])
+        await nextTick()
+
+        await type(wrapper, '{{', 2)
+        const fieldEl = wrapper.find('textarea').element as HTMLTextAreaElement
+        expect(fieldEl.value).toBe('{{')
+        const layer = editor.store.doc!.layers[0]!
+        expect(layer.type === 'TextLayer' && layer.text).toBe('{{')
+        expect(layer.type === 'TextLayer' && layer.expression).toBeNull()
     })
 })
 
