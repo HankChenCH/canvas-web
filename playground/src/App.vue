@@ -57,6 +57,9 @@ import type { OverlayPainter } from '@hankchen/canvas-next-editor'
 import { decodeGraph, encodeGraph } from '@hankchen/canvas-next'
 
 import { DEMO_GRAPH_JSON } from './demoGraph'
+// 桌面网格底纹（原型）：内容层 begin 后垫网格线（只画纸面外桌面），区分纸面与
+// 背景；导出不经此路
+import { GridBackdropBackend } from './gridBackdrop'
 import { INVALID_DATASET_SCHEMA, SAMPLE_DATASET_SCHEMA } from './sampleDatasetSchema'
 import { buildVisualCheckGraph } from './visualCheckGraph'
 
@@ -169,6 +172,8 @@ window.addEventListener('keydown', onDrawerKeydown, { capture: true })
 
 let materializer: Materializer | null = null
 let contentBackend: Canvas2DBackend | null = null
+/** 网格底纹后端（内容层子类）：开关态由本组件持有，直改 enabled 后 invalidate */
+let gridBackdrop: GridBackdropBackend | null = null
 let overlayCtx: CanvasRenderingContext2D | null = null
 let unsubscribeAssets: (() => void) | null = null
 let unsubscribeDoc: (() => void) | null = null
@@ -345,7 +350,9 @@ function onReady({ contentCanvas, overlayCanvas }: CanvasSurfaceReady) {
     overlayCtx = overlayCanvas.getContext('2d')
     if (!contentCtx || !overlayCtx) return
 
-    const backend = new Canvas2DBackend(contentCtx)
+    const backend = new GridBackdropBackend(contentCtx)
+    gridBackdrop = backend
+    gridBackdrop.enabled = gridEnabled.value
     contentBackend = backend
     // 跨域资源可经 new Materializer(backend, { imageProxy }) 注入代理改写；
     // 本页资源全部同源，无需代理。
@@ -412,6 +419,18 @@ function fitToSelection(): void {
     editor.fitToSelection()
 }
 
+// ---- 桌面网格（原型）：区分画布与背景的底纹开关 ----
+
+/** 网格显隐（原型会话态：不入 store、不落盘）；默认开——打开即见纸面/桌面之分 */
+const gridEnabled = ref(true)
+
+function toggleGrid(): void {
+    gridEnabled.value = !gridEnabled.value
+    if (gridBackdrop) gridBackdrop.enabled = gridEnabled.value
+    // 网格垫在内容层 begin 之后，重绘档位 content 足够（覆盖层 gizmo 不动）
+    editor.invalidate('content')
+}
+
 onBeforeUnmount(() => {
     window.removeEventListener('keydown', onKeydown)
     window.removeEventListener('keydown', onDrawerKeydown, { capture: true })
@@ -461,8 +480,10 @@ onBeforeUnmount(() => {
              钩子。分组视觉用分隔线语义（toolbar-divider 延伸），按钮 ghost 形态随
              工单 05 暗色壳统一落定（插入组亮色引导高频动作）。缩放控件已整组摘除
              归画布右下浮条（工单 04）；目验样图
-             与 schema 三键已在工单 02 迁入帮助抽屉、标尺/网格不出现（⑥ 范围外，
-             不放死按钮）。 -->
+             与 schema 三键已在工单 02 迁入帮助抽屉。标尺/网格在工单 03 时点不出现
+             （⑥ 范围外，不放死按钮）——网格开关后以视图组入列（宿主侧原型，调研
+             见 .scratch/canvas-web/canvas-grid-research.md）；标尺仍不设钮（常显
+             于画布顶+左，⇧R 开关，ruler-guides-snap 工单 04）。 -->
         <section class="toolbar" aria-label="编辑器工具栏">
             <!-- 文件组：打开 / 保存 / 上传图片 -->
             <button type="button" data-open title="打开 graph JSON（解码回编辑器）" @click="onOpenClick">打开</button>
@@ -495,6 +516,19 @@ onBeforeUnmount(() => {
             <button type="button" class="tb-ins" data-insert-image title="新增图片层（置顶并自动选中，一步历史可撤销；本机选图上传建层用「上传图片」）" @click="editor.addRootLayer('ImageLayer')">＋图片</button>
             <button type="button" class="tb-ins" data-insert-qrcode title="新增二维码层（置顶并自动选中，一步历史可撤销；与图层面板头「＋」同款动作）" @click="editor.addRootLayer('QrCodeLayer')">＋二维码</button>
             <button type="button" class="tb-ins" data-insert-table title="新增表格层（置顶并自动选中，一步历史可撤销；与图层面板头「＋」同款动作）" @click="editor.addRootLayer('TableLayer')">＋表格</button>
+            <span class="toolbar-divider" aria-hidden="true"></span>
+            <!-- 视图组：桌面网格开关（原型）。网格垫在内容层 begin 后、只画纸面外
+                 桌面（evenodd 挖掉纸面矩形）——桌面有纹理、纸面保持平滑，边界恒
+                 清晰；导出走 fork 后端不带网格 -->
+            <button
+                type="button"
+                :class="{ 'tb-on': gridEnabled }"
+                data-grid-toggle
+                title="桌面网格线（区分画布与背景；只影响编辑器预览，不进导出 PNG）"
+                @click="toggleGrid"
+            >
+                网格
+            </button>
             <!-- 隐藏文件入口：打开 graph JSON / 本机选图 -->
             <input ref="openInput" type="file" accept=".json,application/json" class="hidden" @change="onOpenGraphFile" />
             <input ref="imageInput" type="file" accept="image/*" class="hidden" @change="onImageFile" />
@@ -606,6 +640,7 @@ onBeforeUnmount(() => {
                                 <li><b>表格模板态与表达式标记（TableLayer V2，工票 03）</b>：中列 V2 目验区自上而下——<b>标记图片</b>（src 为表达式镜像字面 <span v-pre>{{assets.banner}}</span>，按字面引用装载失败 → 占位 + 红叉，不崩渲染）、<b>标记二维码</b>（内容为字面 <span v-pre>{{orderNo}}</span>，按字面出码）、<b>标记文本</b>（显示镜像字面 <span v-pre>订单 {{orderNo}} · 共 {{$count}} 件</span>，编辑器不求值——终图由服务端展开求值）、<b>模板态表格</b>（<b>空壳渲染</b>：表壳 bg/border 照画、行区零高——rows 为空、模板行不实例化）；模板子树不进大纲/不可选中/不参与物化，双击或面板编辑标记文本即解除标记回字面（保存后需重打标，spec §3.7）</li>
                                 <li><b>数据源 schema 注入缝（content-completion 工单 03）</b>：<b>宿主随会话注入</b>（D2）——本页建立会话即注入样例载荷 schema，工具栏三键可重演：<b>注入 schema</b>（载荷形态，D1：声明即 <code>compile(canvas, dataset)</code> 的 data 载荷形状，顶层键 = 根上下文候选；键树与演示 graph 表达式对齐，description 全中文供浮层元信息目验）、<b>注入非法 schema</b>（根级保留键 <code>row</code> → 声明被拒：<b>降级无候选 + console.warn 警告，不弹错不抛错</b>，前移填充期 reserved_root_key 硬错误）、<b>清除声明</b>（未注入 = 无候选，清除不告警）；声明只进编辑器会话态（store ui 分支）——<b>不进 graph、不落 localStorage、不动 wire</b>，换文档不重置；页头读数显示声明态（已注入键数 / 无候选）</li>
                                 <li><b>表达式路径补全三字段接线（content-completion 工单 05）</b>：<b>仅表达式态生效</b>（ValueTypeSegmented 表达式段点亮）——选中标记文本/图片/二维码层，在 内容/资源地址 输入框键入 <code v-pre>{{</code> 自动弹出候选浮层（portal 到 body，不破 288px 面板）；<b>上下文感知</b>：根层 = 根候选集（载荷顶层键 + <code>$root</code>），模板表格<b>格内容层</b> = 行候选集（+ <code>row.*</code> / <code>$index</code>，<code>row.</code> 下钻 items 键树）；片段内 <code>.</code> 刷新候选、↑↓ 移动、Enter/Tab 接受（补全剩余路径段）、鼠标点选同效；接受 = 文本替换走既有 input/change 提交——<b>表达式 + 镜像同改、一步历史</b>，Ctrl/Cmd+Z 撤销一步恢复镜像；Esc/失焦/点外/<code v-pre>}}</code> 关闭；静态态与未注入声明零补全；中文输入法合成期按键不误触发（IME 守卫）；全角 <code>｛｛</code> 不触发属已知限制（Ctrl/Cmd+Space 手动触发兜底）</li>
+                                <li><b>桌面网格（原型）</b>：工具栏「网格」开关画布背景网格线——<b>只画纸面之外的桌面</b>（垫在图层之下、evenodd 挖掉纸面矩形），桌面有纹理、纸面保持平滑，「画布 vs 背景」之辨不随模板底图有无而失效；随平移缩放联动（线宽恒 1 物理像素、步长随缩放自适应倍增）；开关是<b>编辑器会话态</b>（不进 graph、不进导出——导出 PNG 经 fork 后端恒无网格）</li>
                             </ul>
                         </section>
                         <section class="help-section" aria-label="开发者">
@@ -833,6 +868,11 @@ onBeforeUnmount(() => {
 
 /* 插入组（工单 03 前置直达）：亮色引导最高频动作 */
 .toolbar button.tb-ins {
+    color: var(--shell-insert);
+}
+
+/* 视图开关点亮态（网格原型）：与插入组同族亮色，灭时回落 ghost */
+.toolbar button.tb-on {
     color: var(--shell-insert);
 }
 
