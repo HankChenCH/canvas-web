@@ -67,8 +67,9 @@ export function expressionFieldContext(
 /**
  * 候选源适配（工单 04 注入缝）：schema null（未注入/声明被拒降级）= null 源，
  * 浮层恒闭；否则包裹内核枚举器——ok:false（语法错误/无补全态）映射 null，
- * ok:true 原样透传（ExpressionCandidate 结构兼容 CompletionItem，partial/
- * candidates 契约见 fields/completion.ts）。
+ * ok:true 原样透传（ExpressionCandidate 结构兼容 CompletionItem——description/
+ * title D8 分离透传、展示回落归浮层；open 信号随结果面透出供工单 10 占位提示，
+ * partial/candidates 契约见 fields/completion.ts）。
  */
 export function expressionCompletionSource(
     schema: ExpressionSchemaNode | null,
@@ -82,6 +83,10 @@ export function expressionCompletionSource(
             rowSchema: context.rowSchema,
         })
         if (!result.ok) return null
-        return { partial: result.partial, candidates: result.candidates }
+        return {
+            partial: result.partial,
+            candidates: result.candidates,
+            ...(result.open === true ? { open: true } : {}),
+        }
     }
 }

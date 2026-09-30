@@ -16,19 +16,36 @@ export interface CompletionItem {
     segment: string
     /** schema description（未声明为 undefined） */
     description?: string
+    /** schema title（D8 形状树两字段分离透传，未声明为 undefined）——浮层展示回落 description ?? title */
+    title?: string
     /** 类型徽标数据（未声明为 undefined） */
     type?: string
 }
 
 /**
+ * 候选源一次求值结果（工单 02 partial/candidates 契约 + 工单 10 open 信号扩展）：
+ * 浮层据此开合与渲染，候选空与否和 open 信号无关（D10 语义）。
+ */
+export interface CompletionResult {
+    /** 正在输入的未完整段（恒为 expr 的后缀，尾点态 = 空后缀） */
+    partial: string
+    /** 全量合法候选（不按 partial 预过滤——前缀过滤归浮层） */
+    candidates: readonly CompletionItem[]
+    /**
+     * 开放映射信号（D10）：候选来源节点标 open（additionalProperties: true）时为
+     * true，非 open 恒缺省——浮层渲染「动态字段，键由模板定义」占位提示行（不可
+     * 接受、不进导航序，仅解释无候选的原因），信号在场时候选空也不关浮层。
+     */
+    open?: boolean
+}
+
+/**
  * 候选源契约（纯函数注入缝）：入参 = 光标所在片段表达式（trim 后，可能带单个
  * 补全尾点），出参 = 正在输入的 partial（恒为 expr 后缀，工单 02 契约）+ 全量
- * 合法候选（不按 partial 预过滤——前缀过滤归浮层）；null = 无补全态（语法
- * 错误/无候选），浮层不开。
+ * 合法候选（不按 partial 预过滤——前缀过滤归浮层）+ open 信号（工单 10）；
+ * null = 无补全态（语法错误/无候选），浮层不开。
  */
-export type CompletionSource = (
-    expr: string,
-) => { partial: string; candidates: readonly CompletionItem[] } | null
+export type CompletionSource = (expr: string) => CompletionResult | null
 
 /** PHP trim() 默认字符集——内核 expressionScan 导出（单一事实源，勿按值复刻） */
 

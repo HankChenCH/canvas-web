@@ -8,7 +8,10 @@
  *   （click/keyup）只做跟踪——保持/重定位/关闭，不主动开。
  * - 关闭：Esc、失焦、点外（document mousedown，浮层根拦 mousedown 免夺焦
  *   免误关）、光标离开片段（输入 `}}` 后光标出片段即同路关闭——扫描语义
- *   的 closed 片段判定天然覆盖）、候选空、enabled 切 false。
+ *   的 closed 片段判定天然覆盖）、候选空、enabled 切 false。候选空的唯一例外：
+ *   候选源携带 open 信号（开放映射节点，工单 10）——浮层照开渲染「动态字段，
+ *   键由模板定义」占位提示行（不可接受、不进导航序，仅解释无候选的原因，
+ *   行业惯例：无候选但不阻断），上述关闭路径照常收口。
  * - 接受：↑↓ 循环导航、Enter/Tab、鼠标点选；在片段表达式末尾把 partial 换成
  *   候选段（completion.ts 手术），随后对宿主派发既有 input（实时合步）+
  *   change（收口一步历史）事件——与手工输入同路，提交管线零改动。
@@ -49,6 +52,13 @@ export interface ExpressionCompletionState {
     /** 视口坐标（fixed 定位；光标下缘 + 间隙） */
     top: number
     left: number
+    /**
+     * 开放映射占位提示（D10，工单 10）：候选来源节点标 open 时为 true——浮层渲染
+     * 「动态字段，键由模板定义」占位提示行（不可接受、不进导航序，仅解释无候选的
+     * 原因）。信号与候选空否无关（宿主合入 properties 的键照常枚举），true 时提示
+     * 行恒在场；items 导航/接受只认候选条目，提示行不在其中。
+     */
+    openMapping: boolean
 }
 
 /** 光标下缘与浮层上缘的间隙（px） */
@@ -78,7 +88,14 @@ export function useExpressionCompletion(options: {
     /** 接受高亮项（或指定项）；浮层点选经此回接 */
     accept: (index?: number) => void
 } {
-    const popup = reactive<ExpressionCompletionState>({ open: false, items: [], activeIndex: 0, top: 0, left: 0 })
+    const popup = reactive<ExpressionCompletionState>({
+        open: false,
+        items: [],
+        activeIndex: 0,
+        top: 0,
+        left: 0,
+        openMapping: false,
+    })
 
     let el: HTMLTextAreaElement | HTMLInputElement | null = null
     let composing = false
@@ -89,6 +106,7 @@ export function useExpressionCompletion(options: {
         popup.open = false
         popup.items = []
         popup.activeIndex = 0
+        popup.openMapping = false
         current = null
     }
 
@@ -136,12 +154,15 @@ export function useExpressionCompletion(options: {
             return
         }
         const result = options.resolve(fragment.expr)
-        if (!result || result.candidates.length === 0) {
+        if (!result) {
             close()
             return
         }
         const shown = full ? result.candidates : result.candidates.filter((item) => item.segment.startsWith(result.partial))
-        if (shown.length === 0) {
+        // 开放映射（D10，工单 10）：open 信号在场即开浮层——候选空（含 partial 过滤
+        // 后空）由占位提示行解释原因（无候选但不阻断），关闭路径照常；非 open 空
+        // 候选维持现状（不开）
+        if (shown.length === 0 && result.open !== true) {
             close()
             return
         }
@@ -149,6 +170,7 @@ export function useExpressionCompletion(options: {
         if (!popup.open && !openAllowed) return
         popup.items = shown
         popup.activeIndex = 0
+        popup.openMapping = result.open === true
         popup.open = true
         reposition()
         // 首开浮层 v-if 下一拍才挂载，此刻量不到宽——延一拍补跑收口（微任务先

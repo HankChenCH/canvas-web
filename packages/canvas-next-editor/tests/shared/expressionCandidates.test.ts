@@ -99,6 +99,24 @@ describe('enumerateExpressionCandidates（头部候选分表）', () => {
         expect(remark?.type).toBeUndefined() // 未声明 type → 无徽标数据
     })
 
+    it('D8：title 随候选分离透传（形状树两字段不走展示回落——回落归浮层 description ?? title）', () => {
+        const parsed = parseExpressionSchema({
+            type: 'object',
+            properties: {
+                both: { type: 'string', title: '两者都有', description: '描述优先' },
+                onlyTitle: { type: 'string', title: '只有标题' },
+            },
+        })
+        if (!parsed.ok) throw new Error('样例 schema 应合法')
+        const result = enumerateExpressionCandidates(parsed.schema, { context: 'root', expr: '' })
+        if (!result.ok) throw new Error('应枚举成功')
+        const both = result.candidates.find((candidate) => candidate.segment === 'both')
+        expect(both).toMatchObject({ title: '两者都有', description: '描述优先' })
+        const onlyTitle = result.candidates.find((candidate) => candidate.segment === 'onlyTitle')
+        expect(onlyTitle).toMatchObject({ title: '只有标题' })
+        expect(onlyTitle?.description).toBeUndefined()
+    })
+
     it('头部部分段（如 {{tag）：prefix 为空、partial = 头部名，候选给全量由 UI 按前缀过滤', () => {
         const result = enumerateExpressionCandidates(payloadSchema, { context: 'row', expr: 'tag', rowSchema })
         if (!result.ok) throw new Error('应枚举成功')

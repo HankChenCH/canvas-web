@@ -24,8 +24,9 @@
  * - 结果 `partial` 恒为 expr 的后缀（尾点态 = 空后缀）：接受 = 在 expr 末尾把
  *   partial 替换为候选 segment；候选给**全量合法子项**、不按 partial 预过滤，
  *   前缀过滤/高亮归浮层（Ctrl+Space 全量展示语义亦归浮层）。
- * - 元信息：path（补全后的完整点路径）+ schema description + 类型徽标数据
- *   （type 归一）。`$root`/`row`/`$index` 结构头是下钻踏脚石（`{{$root}}`/
+ * - 元信息：path（补全后的完整点路径）+ schema description/title（D8 两字段分离
+ *   透传，展示回落 description ?? title 归浮层）+ 类型徽标数据（type 归一）。
+ *   `$root`/`row`/`$index` 结构头是下钻踏脚石（`{{$root}}`/
  *   `{{row}}` 单独求值无意义），元信息仅有行 schema 声明时的 row 携带。
  *
  * 降级语义：schema null（声明被拒/形态非法，经 normalizeExpressionSchemaSource
@@ -45,7 +46,7 @@ import {
 /** 'root' = 根层三字段（独立图层）；'row' = 格内容层（模板行内） */
 export type ExpressionContextKind = 'root' | 'row'
 
-/** 一条补全候选：路径 + schema 元信息（description/类型徽标） */
+/** 一条补全候选：路径 + schema 元信息（description/title/类型徽标，展示回落归浮层） */
 export interface ExpressionCandidate {
     /** 补全后的完整点路径（前缀 + 本段；头部候选即头部名），如 row.user.city */
     path: string
@@ -53,6 +54,8 @@ export interface ExpressionCandidate {
     segment: string
     /** schema description（未声明为 undefined） */
     description?: string
+    /** schema title（D8 形状树两字段分离透传，未声明为 undefined）——浮层展示取 description ?? title */
+    title?: string
     /** 类型徽标数据（schema type 归一；未声明为 undefined） */
     type?: string
 }
@@ -92,9 +95,10 @@ function headName(head: ExpressionPathHead): string {
     return head.name
 }
 
-function candidateMeta(node: ExpressionSchemaNode): Pick<ExpressionCandidate, 'description' | 'type'> {
-    const meta: Pick<ExpressionCandidate, 'description' | 'type'> = {}
+function candidateMeta(node: ExpressionSchemaNode): Pick<ExpressionCandidate, 'description' | 'title' | 'type'> {
+    const meta: Pick<ExpressionCandidate, 'description' | 'title' | 'type'> = {}
     if (node.description !== undefined) meta.description = node.description
+    if (node.title !== undefined) meta.title = node.title
     if (node.type !== undefined) meta.type = node.type
     return meta
 }

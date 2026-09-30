@@ -47,6 +47,32 @@ const headSource: CompletionSource = (expr) => {
     return null
 }
 
+/** open 节点桩源（工单 10，D10）：候选可空但携带 open 信号——'' = 头部层 open 根节点，
+ * 'mix.' = open 节点带宿主合入 properties 的候选（信号与候选空否无关），'mix' = 前缀
+ * 过滤后空仍携信号 */
+const openSource: CompletionSource = (expr) => {
+    if (expr === '') return { partial: '', candidates: [], open: true }
+    if (expr === 'dyn') return { partial: 'dyn', candidates: [], open: true }
+    if (expr === 'mix') return { partial: 'mix', candidates: [{ path: 'mix.alpha', segment: 'alpha', type: 'string' }], open: true }
+    if (expr === 'mix.') return { partial: '', candidates: [{ path: 'mix.alpha', segment: 'alpha', type: 'string' }], open: true }
+    return null
+}
+
+/** title 回落桩源（工单 10，D8）：description/title 两字段分离透传的三态样本 */
+const titleSource: CompletionSource = (expr) => {
+    if (expr === '') {
+        return {
+            partial: '',
+            candidates: [
+                { path: 'both', segment: 'both', description: '描述优先', title: '标题兜底' },
+                { path: 'onlyTitle', segment: 'onlyTitle', title: '仅标题' },
+                { path: 'neither', segment: 'neither', type: 'string' },
+            ],
+        }
+    }
+    return null
+}
+
 /* ---------------------------------------------------------------- 测试宿主 */
 
 type FieldTag = 'textarea' | 'input'
@@ -130,6 +156,7 @@ const optionEls = (): HTMLElement[] => Array.from(document.body.querySelectorAll
 const optionSegments = (): string[] =>
     optionEls().map((option) => option.querySelector('.cn-completion__segment')?.textContent ?? '')
 const activeIndex = (): number => optionEls().findIndex((option) => option.getAttribute('aria-selected') === 'true')
+const hintEl = (): HTMLElement | null => document.body.querySelector('.cn-completion__hint')
 
 afterEach(() => {
     wrappers.splice(0).forEach((wrapper) => wrapper.unmount())
@@ -145,7 +172,7 @@ describe('触发与候选呈现', () => {
         const popup = popupEl()
         expect(popup).not.toBeNull()
         expect(harness.wrapper.element.contains(popup)).toBe(false)
-        expect(popup!.getAttribute('role')).toBe('listbox')
+        expect(popup!.querySelector('[role="listbox"]')).not.toBeNull() // listbox 内只含 option，占位行在表格外
         expect(optionSegments()).toEqual(['row'])
     })
 
@@ -189,6 +216,96 @@ describe('触发与候选呈现', () => {
         await type(harness, '｛｛', 2)
         expect(popupEl()).toBeNull()
         expect(harness.source).not.toHaveBeenCalled()
+    })
+})
+
+/* -------------------------------------------- 开放映射占位与 title 回落（工单 10） */
+
+describe('开放映射占位提示行（工单 10，D10）', () => {
+    it('open 信号 → 浮层开：占位提示行渲染（动态字段，键由模板定义）、零候选按钮', async () => {
+        const harness = mountHost('textarea', openSource)
+        await type(harness, '{{', 2)
+        expect(popupEl()).not.toBeNull()
+        expect(optionEls()).toHaveLength(0)
+        expect(hintEl()?.textContent?.trim()).toBe('动态字段，键由模板定义')
+    })
+
+    it('提示行不进导航序：↑↓ 无导航目标；Enter/Tab/点选零提交、浮层保持', async () => {
+        const harness = mountHost('textarea', openSource)
+        await type(harness, '{{', 2)
+        harness.events.length = 0
+        await pressKey(harness, 'ArrowDown')
+        await pressKey(harness, 'ArrowUp')
+        expect(activeIndex()).toBe(-1) // 无 option 项，无高亮
+        await pressKey(harness, 'Enter')
+        await pressKey(harness, 'Tab')
+        expect(harness.field().value).toBe('{{}}')
+        expect(harness.events).toHaveLength(0)
+        expect(popupEl()).not.toBeNull()
+        hintEl()!.click()
+        await nextTick()
+        expect(harness.field().value).toBe('{{}}')
+        expect(harness.events).toHaveLength(0)
+    })
+
+    it('open 节点带候选（宿主合入 properties）：提示行并存，候选照常导航接受', async () => {
+        const harness = mountHost('textarea', openSource)
+        await type(harness, '{{mix.', 7)
+        expect(optionSegments()).toEqual(['alpha'])
+        expect(hintEl()).not.toBeNull()
+        await pressKey(harness, 'Enter')
+        expect(harness.field().value).toBe('{{mix.alpha')
+        expect(popupEl()).toBeNull()
+    })
+
+    it('partial 过滤后空而 open 在场：浮层仍开只显示提示行（无候选但不阻断）', async () => {
+        const harness = mountHost('textarea', openSource)
+        await type(harness, '{{mix', 5) // expr 'mix'：候选 alpha 不匹配前缀，shown 空
+        expect(popupEl()).not.toBeNull()
+        expect(optionEls()).toHaveLength(0)
+        expect(hintEl()).not.toBeNull()
+    })
+
+    it('提示行态关闭路径不回归：Esc / 失焦 / 点外 / }} 照常收口', async () => {
+        const harness = mountHost('textarea', openSource)
+        await type(harness, '{{', 2)
+        expect(popupEl()).not.toBeNull()
+        await pressKey(harness, 'Escape')
+        expect(popupEl()).toBeNull()
+
+        await type(harness, '{{', 2)
+        harness.field().dispatchEvent(new Event('blur'))
+        await nextTick()
+        expect(popupEl()).toBeNull()
+
+        await type(harness, '{{', 2)
+        const outside = document.createElement('div')
+        document.body.appendChild(outside)
+        outside.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+        await nextTick()
+        expect(popupEl()).toBeNull()
+
+        await type(harness, '{{dyn}}', 7) // 光标越过 }} 出片段
+        expect(popupEl()).toBeNull()
+    })
+
+    it('非 open 节点空候选维持现状：不弹（提示行只随 open 信号渲染）', async () => {
+        const harness = mountHost('textarea', headSource)
+        await type(harness, '{{zz', 4)
+        expect(popupEl()).toBeNull()
+    })
+})
+
+describe('候选展示回落 description ?? title（工单 10，D8）', () => {
+    it('description 优先显示；仅 title 回落显示；二者皆缺省无说明文本', async () => {
+        const harness = mountHost('textarea', titleSource)
+        await type(harness, '{{', 2)
+        const options = optionEls()
+        expect(options[0]!.textContent).toContain('描述优先')
+        expect(options[0]!.textContent).not.toContain('标题兜底')
+        expect(options[1]!.textContent).toContain('仅标题')
+        expect(options[2]!.textContent).not.toContain('描述')
+        expect(options[2]!.textContent).not.toContain('标题')
     })
 })
 

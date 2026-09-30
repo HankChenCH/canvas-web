@@ -69,6 +69,8 @@ const optionSegments = (): string[] =>
     Array.from(document.body.querySelectorAll('.cn-completion__option')).map(
         (option) => option.querySelector('.cn-completion__segment')?.textContent ?? '',
     )
+const optionTexts = (): string[] =>
+    Array.from(document.body.querySelectorAll('.cn-completion__option')).map((option) => option.textContent ?? '')
 const popupOpen = (): boolean => document.body.querySelector('.cn-completion') !== null
 
 async function pressEnter(wrapper: VueWrapper): Promise<void> {
@@ -169,6 +171,65 @@ describe('上下文感知：候选集随选中位置切换', () => {
         await nextTick()
         await type(wrapper, '{{', 2)
         expect(optionSegments()).toEqual(['orderNo', 'order', '$root', 'row', '$index'])
+    })
+})
+
+describe('开放映射占位提示 + title 回落（工单 10，真实候选源全链路）', () => {
+    /** open 节点 schema（D10/D8）：根与 extra 子树标 open，certCode 仅 title、certName 双注解 */
+    const OPEN_SCHEMA = {
+        type: 'object',
+        additionalProperties: true,
+        properties: {
+            extra: { type: 'object', additionalProperties: true, title: '扩展字段' },
+            certCode: { type: 'string', title: '证书编号' },
+            certName: { type: 'string', description: '证书名称', title: '名称标题' },
+        },
+    }
+
+    it('头部层 open（根节点）：候选照常枚举 + 提示行并存（信号与候选空否无关）', async () => {
+        const editor = makeEditor([textLayer({ text: '{{', expression: '{{' })])
+        editor.setDataSourceSchema(OPEN_SCHEMA)
+        const wrapper = mountPanel(editor)
+        editor.setSelection(['layers', 0])
+        await nextTick()
+
+        await type(wrapper, '{{', 2)
+        expect(popupOpen()).toBe(true)
+        expect(optionSegments()).toEqual(['extra', 'certCode', 'certName', '$root'])
+        expect(document.body.querySelector('.cn-completion__hint')?.textContent?.trim()).toBe('动态字段，键由模板定义')
+    })
+
+    it('下钻层 open（extra.）：空候选只显示提示行；Esc 照常收口', async () => {
+        const editor = makeEditor([textLayer({ text: '{{', expression: '{{' })])
+        editor.setDataSourceSchema(OPEN_SCHEMA)
+        const wrapper = mountPanel(editor)
+        editor.setSelection(['layers', 0])
+        await nextTick()
+
+        await type(wrapper, '{{extra.', 8)
+        expect(popupOpen()).toBe(true)
+        expect(optionSegments()).toEqual([])
+        expect(document.body.querySelector('.cn-completion__hint')?.textContent?.trim()).toBe('动态字段，键由模板定义')
+
+        wrapper.find('textarea').element.dispatchEvent(
+            new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+        )
+        await nextTick()
+        expect(popupOpen()).toBe(false)
+    })
+
+    it('title 回落：仅 title 显示 title，description 优先于 title', async () => {
+        const editor = makeEditor([textLayer({ text: '{{', expression: '{{' })])
+        editor.setDataSourceSchema(OPEN_SCHEMA)
+        const wrapper = mountPanel(editor)
+        editor.setSelection(['layers', 0])
+        await nextTick()
+
+        await type(wrapper, '{{cert', 6)
+        expect(optionSegments()).toEqual(['certCode', 'certName'])
+        expect(optionTexts()[0]).toContain('证书编号')
+        expect(optionTexts()[1]).toContain('证书名称')
+        expect(optionTexts()[1]).not.toContain('名称标题')
     })
 })
 
