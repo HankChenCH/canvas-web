@@ -747,16 +747,18 @@ export class EditorSession {
         }, options)
     }
 
-    // ---- 数据源 schema 声明（content-completion 工单 03）：D2 宿主随会话注入 ----
+    // ---- 数据源 schema 声明（content-completion 工单 03/08）：D2 宿主随会话注入 ----
 
     /**
      * 注入数据源 schema 声明（载荷形态，D1 钉定：声明即 compile(canvas, dataset)
-     * 收到的 data 载荷形状，根上下文候选 = 载荷顶层键）。声明期校验经
-     * normalizeExpressionSchemaSource 一次性收口——根级保留键（row/$ 前缀，前移
-     * 填充期 reserved_root_key）或形态非法降级为无候选 + console 警告，不抛错不
+     * 收到的 data 载荷形状，根上下文候选 = 载荷顶层键）。声明经
+     * normalizeExpressionSchemaSource 一次性编译收口——根级结构性问题（保留键
+     * row/$ 前缀，前移填充期 reserved_root_key；根非对象/缺 properties 层级）降级
+     * 为无候选 + console 警告，局部故障（$ref 断链/外部指针/环引用/目标形态不符）
+     * 不拒绝：该节点降叶子 + 注入期汇总告警一次，树其余部分照常服务，不抛错不
      * 弹错（辅助声明不作权威）；null/undefined = 清除声明。声明只住 store ui 分支：
      * 不进 graph、不落 localStorage、不进 wire；openDocument 换文档不重置，
-     * 重注入/清除走同一入口。
+     * 重注入/清除走同一入口。签名与「注入即整体替换」语义不变（D6）。
      */
     setDataSourceSchema(raw: unknown): void {
         this.store.setDataSourceSchema(

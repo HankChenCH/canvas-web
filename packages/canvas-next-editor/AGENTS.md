@@ -7,7 +7,7 @@ headless 编辑器内核：EditorSession 门面、immer observable store（doc/u
 - `src/session/` — 会话层：editor.ts（EditorSession 门面：注入式帧调度合帧、分层脏标）、store.ts、shortcuts.ts（快捷键注册表）。可引用全部下层域。
 - `src/spatial/` — 空间层：camera.ts（视口纯函数）、hitTest.ts、wheel.ts（滚轮意图分类）。
 - `src/editing/` — 编辑特性层：clipboard.ts、layerPanel.ts（图层增删移）、tableEditing.ts、fontCatalog.ts、upload.ts。
-- `src/shared/` — 纯数据原语，被所有层引用：layerPath.ts（图层路径寻址）、expressionPath.ts（表达式路径解析）+ expressionScan.ts（表达式片段扫描，content-completion 工单 01）+ expressionSchema.ts（数据源 schema 子集 walker）+ expressionCandidates.ts（补全候选枚举器，工单 02）。层内仅两条依赖：expressionScan → expressionPath、expressionCandidates → {expressionSchema, expressionPath}。
+- `src/shared/` — 纯数据原语，被所有层引用：layerPath.ts（图层路径寻址）、expressionPath.ts（表达式路径解析）+ expressionScan.ts（表达式片段扫描，content-completion 工单 01）+ expressionSchema.ts（数据源 schema 方言编译器：注入边界一次性转译形状树，工单 02/08）+ expressionCandidates.ts（补全候选枚举器，工单 02）。层内仅两条依赖：expressionScan → expressionPath、expressionCandidates → {expressionSchema, expressionPath}。
 - 分层 DAG：`session → {spatial, editing, shared}`、`editing → shared`、`spatial → shared`、`shared → ∅`（层内 scan → path、candidates → schema/path 除外）；下层引用上层被 depcruise `editor-*-isolation` 规则拦截。唯一跨层例外已在 DAG 内（store → camera）。
 - `tests/` 与 src 分层镜像；跨包共享 fixture 在 `tests/support/fixtures.ts`（editor-vue 的 mount 测试也引用它，改路径要联动）。
 

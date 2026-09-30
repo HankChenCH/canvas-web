@@ -71,9 +71,10 @@ export interface EditorUi {
      */
     anchorExpanded: boolean
     /**
-     * 数据源 schema 声明（content-completion 工单 03，D2 宿主随会话注入）：
-     * 归一化节点树或降级 null（声明被拒/形态非法，注入期经
-     * normalizeExpressionSchemaSource 一次性收口 + console 警告）。只住会话态——
+     * 数据源 schema 声明（content-completion 工单 03/08，D2 宿主随会话注入）：
+     * 编译产物形状树或降级 null（根级结构性拒绝，注入期经
+     * normalizeExpressionSchemaSource 一次性收口 + console 警告；局部故障不拒绝，
+     * 该节点降叶子 + 注入期汇总告警一次，树其余照常服务）。只住会话态——
      * 不进 graph、不落 localStorage、不进 wire（红线 3 延伸）；openDocument 换
      * 文档不重置（声明随会话，重注入/清除走同一入口）。
      */
