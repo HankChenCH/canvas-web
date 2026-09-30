@@ -166,6 +166,13 @@ export interface TextEditLayout {
 /** 拖动事务的合并键：一次拖动的全部 pointermove 并成一步历史 */
 const DRAG_MERGE_KEY = 'drag'
 
+/** 微调步长（kbd-nav 工单 02）：基础步 1 场景 px，Shift 大步 10 px 固定 */
+const NUDGE_STEP_PX = 1
+const NUDGE_COARSE_STEP_PX = 10
+
+/** 微调事务的合并键：含选中层路径（换层即换步）、方向无关（连按跨方向同串） */
+const nudgeMergeKey = (path: LayerPath): string => `nudge:${path.join(':')}`
+
 export interface EditorSessionOptions {
     scheduleFrame: FrameScheduler
     /** 缩放范围（可配置，缺省 5%–800%） */
@@ -503,6 +510,38 @@ export class EditorSession {
     /** 当次拖动命中的吸附轴（只读查询，吸附线呈现消费）；非拖动态/未命中为空 */
     listSnapAxes(): readonly SnapAxis[] {
         return this.store.ui.snapAxes
+    }
+
+    /**
+     * 方向键微调（kbd-nav 工单 02）：选中层 position 按场景增量位移（注册表 8
+     * 条目方向 × 步长归并到此，executeShortcut 传 ±1/±10）。作用面与拖动同门——
+     * 选中什么微调什么，位置写法与 dragTo 同一语义（position 原位 += 增量）；
+     * 拖不动的空转（无选择/无文档/路径不可解析）。**不吸附**：吸附是拖动过程的
+     * 连续行为（CONTEXT「微调」词条边界），微调是可预测的定量位移，不走
+     * resolveSnap、不回显命中轴。
+     * 连续微调合并一条历史：mergeKey 含选中层路径、方向无关——同层连按（跨方向）
+     * 并成一步，undo 一次回连按前；换层即换步（mergeKey 随路径变）；undo/redo
+     * 走 store 既有断开规则（closeMerge）。断开是键控而非选择事件驱动：选择往返
+     * （A→B→A 中途无文档变更）会并回 A 的原串，机制既有规则同款。拖动会话进行中
+     * 空转（防插入事务拆分开放中的 drag 合并步）。
+     * 守卫（canvas-web-layer-lock 工单 01 挂账兑现）：锁定子树空转（isLocked
+     * 谓词同门——微调是变更类动作）。空转返回 false（executeShortcut 可用态口径）。
+     */
+    nudge(deltaX: number, deltaY: number): boolean {
+        const path = this.store.ui.selection
+        if (path === null || this.store.ui.drag !== null) return false
+        if (this.isLocked(path)) return false
+        const doc = this.store.doc
+        if (!doc || resolveLayer(doc, path) === null) return false
+        this.store.transact((draft) => {
+            const layer = resolveLayer(draft, path)
+            if (!layer) return
+            // immer draft 原位写 position；类型层的 readonly 由 draft 语义解除
+            const position = layer.position as { x: number; y: number }
+            position.x += deltaX
+            position.y += deltaY
+        }, { mergeKey: nudgeMergeKey(path) })
+        return true
     }
 
     // ---- 参考线与标尺（ruler-guides-snap 工单 01）：会话态住 ui 分支，零契约面 ----
@@ -977,7 +1016,7 @@ export class EditorSession {
      * 仅根图层——行/格是容器内结构（锁定语义只在 LayerBase 面），路径非根或
      * 不可解析一律空转（renameLayer/toggleLayerVisibility 同门）。
      * 下游语义：锁定层整子树退出画布命中面（hitTest 过滤）、拖动起点/删除在
-     * 内核空转（方向键微调随 kbd-nav 工单 02 接入同一谓词）；属性编辑/duplicate/
+     * 内核空转（方向键微调已随 kbd-nav 工单 02 接入同一谓词）；属性编辑/duplicate/
      * 显隐/改名/z 序等刻意通道不受限；⌘D 副本新路径天然无锁。
      */
     toggleLayerLock(path: LayerPath): void {
@@ -1157,7 +1196,9 @@ export class EditorSession {
      * 执行快捷键动作（注册表分类的出口）：undo/redo/delete/copy/paste/duplicate/
      * rename/toggleRulers/toggleLayerLock/toggleLayerVisibility 的统一分派面，以及
      * z 序四件套与缩放三件（kbd-nav 工单 01：bringForward/sendBackward/
-     * bringToFront/sendToBack/zoomReset/fitToSurface/fitToSelection）。让路规则在
+     * bringToFront/sendToBack/zoomReset/fitToSurface/fitToSelection）与微调八动作
+     * （kbd-nav 工单 02：nudgeUp/Down/Left/Right + Coarse 变体，归并到同一 nudge
+     * 实现）。让路规则在
      * 分类器（classifyEditorShortcut）裁决，到达这里的动作不再重复判态；动作为
      * 空转（无选择/空剪贴板/非根层/已在端点）返回 false，其余 true。rename 开
      * 选中根层的重命名会话（F2，工单 09），不直接写文档；锁定/显隐作用于选中根层
@@ -1204,6 +1245,22 @@ export class EditorSession {
                 return this.bringToFront()
             case 'sendToBack':
                 return this.sendToBack()
+            case 'nudgeUp':
+                return this.nudge(0, -NUDGE_STEP_PX)
+            case 'nudgeDown':
+                return this.nudge(0, NUDGE_STEP_PX)
+            case 'nudgeLeft':
+                return this.nudge(-NUDGE_STEP_PX, 0)
+            case 'nudgeRight':
+                return this.nudge(NUDGE_STEP_PX, 0)
+            case 'nudgeUpCoarse':
+                return this.nudge(0, -NUDGE_COARSE_STEP_PX)
+            case 'nudgeDownCoarse':
+                return this.nudge(0, NUDGE_COARSE_STEP_PX)
+            case 'nudgeLeftCoarse':
+                return this.nudge(-NUDGE_COARSE_STEP_PX, 0)
+            case 'nudgeRightCoarse':
+                return this.nudge(NUDGE_COARSE_STEP_PX, 0)
             case 'zoomReset':
                 this.resetZoom()
                 return true

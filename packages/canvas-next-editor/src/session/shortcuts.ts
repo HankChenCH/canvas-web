@@ -7,7 +7,9 @@
  * 名 F2 自 layer-panel-ux 工单 09 入表（分派到选中根层的重命名编辑会话）。z 序与
  * 缩放键位自 kbd-nav 工单 01 入表（⌘]/⌘[ 前移/后移、⌥⌘]/⌥⌘[ 置顶/置底——Canva/
  * Sketch 同构，弃 Excalidraw ⌘⇧ 系 Safari 换 tab 键位拦截不可靠；⌘0 复位 100%、
- * ⇧1/⇧2 适应画布/选区）。条目携带 label（中文短句）/ group（展示归组）元数据：
+ * ⇧1/⇧2 适应画布/选区）。方向键微调自 kbd-nav 工单 02 入表：裸方向键 1px 基础
+ * 步、⇧+方向键 10px 大步，方向 × 步长独立 action id（shift 精确匹配先例所致）。
+ * 条目携带 label（中文短句）/ group（展示归组）元数据：
  * 注册表是键位的唯一事实源，帮助面板（kbd-nav 工单 04）直读渲染，后续动作自动
  * 入面板。
  *
@@ -45,6 +47,14 @@ export type EditorShortcutAction =
     | 'sendBackward'
     | 'bringToFront'
     | 'sendToBack'
+    | 'nudgeUp'
+    | 'nudgeDown'
+    | 'nudgeLeft'
+    | 'nudgeRight'
+    | 'nudgeUpCoarse'
+    | 'nudgeDownCoarse'
+    | 'nudgeLeftCoarse'
+    | 'nudgeRightCoarse'
     | 'zoomReset'
     | 'fitToSurface'
     | 'fitToSelection'
@@ -122,6 +132,27 @@ export const DEFAULT_EDITOR_SHORTCUTS: readonly EditorShortcutBinding[] = [
         combo: { key: '[', mod: true, shift: false, alt: true, code: 'BracketLeft' },
         action: 'sendToBack',
         label: '置底',
+        group: 'layer',
+    },
+    // 微调（kbd-nav 工单 02）：裸方向键 1px 基础步、⇧+方向键 10px 大步，方向 ×
+    // 步长独立 action id（shift 精确匹配先例所致，undo/redo 同款）；mod/alt 修饰
+    // 不入表（⌘←/→ 浏览器历史导航、⌥+方向既有语义不抢）
+    { combo: { key: 'arrowup', mod: false, shift: false }, action: 'nudgeUp', label: '微调上移', group: 'layer' },
+    { combo: { key: 'arrowdown', mod: false, shift: false }, action: 'nudgeDown', label: '微调下移', group: 'layer' },
+    { combo: { key: 'arrowleft', mod: false, shift: false }, action: 'nudgeLeft', label: '微调左移', group: 'layer' },
+    { combo: { key: 'arrowright', mod: false, shift: false }, action: 'nudgeRight', label: '微调右移', group: 'layer' },
+    { combo: { key: 'arrowup', mod: false, shift: true }, action: 'nudgeUpCoarse', label: '大步上移', group: 'layer' },
+    { combo: { key: 'arrowdown', mod: false, shift: true }, action: 'nudgeDownCoarse', label: '大步下移', group: 'layer' },
+    {
+        combo: { key: 'arrowleft', mod: false, shift: true },
+        action: 'nudgeLeftCoarse',
+        label: '大步左移',
+        group: 'layer',
+    },
+    {
+        combo: { key: 'arrowright', mod: false, shift: true },
+        action: 'nudgeRightCoarse',
+        label: '大步右移',
         group: 'layer',
     },
     // 缩放（kbd-nav 工单 01）：⌘0 复位 100%（视口中心为锚；浏览器吞键时的降级
