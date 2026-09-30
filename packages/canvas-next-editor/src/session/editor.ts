@@ -61,6 +61,7 @@ import {
     pathsEqual,
     remapPathAfterSplice,
     resolveLayer,
+    rootLayerOf,
     selectionParentPath,
     type LayerPath,
 } from '../shared/layerPath'
@@ -413,6 +414,49 @@ export class EditorSession {
         const selection = this.store.ui.selection
         if (!selection) return
         this.store.setSelection(selectionParentPath(selection))
+    }
+
+    /**
+     * 循环选层（kbd-nav 工单 03，CONTEXT「循环选层」词条 / spec 决策 4）：Tab
+     * 沿面板序朝更垫底方向移动选中（面板顶 = 视觉最上层 = 数组尾，故数组下标 −1），
+     * ⇧Tab 反向（selectPrevLayer），端点 wrap 回绕；空选从视觉最上层（面板首行）
+     * 开始（spec 决策 4 字面口径，⇧Tab 同一起点）；子层选中以根祖先为基准取相邻
+     * 根层（不下钻表格，循环只落根路径）。跳过面与命中面同门（hitTest 同款判定）：
+     * 隐藏根层整子树排除（visible=false 是排除语义非保护语义）、锁定根层整子树
+     * 退出交互面（isLocked 谓词——Tab 是命中面的键盘投影，「画布挡误触」同门，
+     * layer-lock 合入后随谓词自动生效）；全部根层被跳过时空转返回 false。
+     * 选中变更走 setSelection（ui 分支零历史步；值等短路使单根层 wrap 自身无害
+     * ——不通知）。返回是否落到选中（executeShortcut 可用态口径）。
+     */
+    selectNextLayer(): boolean {
+        return this.cycleRootSelection(1)
+    }
+
+    /** ⇧Tab 反向循环选层（语义见 selectNextLayer） */
+    selectPrevLayer(): boolean {
+        return this.cycleRootSelection(-1)
+    }
+
+    /** 循环选层的共同游走：direction = 1 朝数组头（垫底）、−1 朝数组尾（最上），模 count 回绕 */
+    private cycleRootSelection(direction: 1 | -1): boolean {
+        const doc = this.store.doc
+        const count = doc?.layers.length ?? 0
+        if (doc === null || count === 0) return false
+        // 基准根下标：任意深度的选中取根祖先（路径第 2 段即根下标）；悬空选中
+        // （undo prune 窗口外的瞬态）视同空选按起点口径
+        const selection = this.store.ui.selection
+        const baseline =
+            selection !== null && rootLayerOf(doc, selection) !== null ? (selection[1] as number) : null
+        const startIndex = baseline === null ? count - 1 : baseline - direction
+        for (let step = 0; step < count; step += 1) {
+            const index = (((startIndex - direction * step) % count) + count) % count
+            const path: LayerPath = ['layers', index]
+            // 跳过面与命中面同门：visible=false 整子树排除；锁定经 isLocked 谓词收口
+            if (doc.layers[index]!.visible === false || this.isLocked(path)) continue
+            this.store.setSelection(path)
+            return true
+        }
+        return false
     }
 
     /** 悬停命中（指针移动时调用；离场传 null 或用 setHovered） */
@@ -1210,9 +1254,10 @@ export class EditorSession {
      * 执行快捷键动作（注册表分类的出口）：undo/redo/delete/copy/paste/duplicate/
      * rename/toggleRulers/toggleLayerLock/toggleLayerVisibility 的统一分派面，以及
      * z 序四件套与缩放三件（kbd-nav 工单 01：bringForward/sendBackward/
-     * bringToFront/sendToBack/zoomReset/fitToSurface/fitToSelection）与微调八动作
+     * bringToFront/sendToBack/zoomReset/fitToSurface/fitToSelection）、微调八动作
      * （kbd-nav 工单 02：nudgeUp/Down/Left/Right + Coarse 变体，归并到同一 nudge
-     * 实现）；helpShortcuts（kbd-nav 工单 04）是 UI 面动作，由绑定层桥拦截路由
+     * 实现）与循环选层两动作（kbd-nav 工单 03：selectNextLayer/selectPrevLayer）；
+     * helpShortcuts（kbd-nav 工单 04）是 UI 面动作，由绑定层桥拦截路由
      * 帮助面板、不经此处。让路规则在
      * 分类器（classifyEditorShortcut）裁决，到达这里的动作不再重复判态；动作为
      * 空转（无选择/空剪贴板/非根层/已在端点）返回 false，其余 true。rename 开
@@ -1276,6 +1321,10 @@ export class EditorSession {
                 return this.nudge(-NUDGE_COARSE_STEP_PX, 0)
             case 'nudgeRightCoarse':
                 return this.nudge(NUDGE_COARSE_STEP_PX, 0)
+            case 'selectNextLayer':
+                return this.selectNextLayer()
+            case 'selectPrevLayer':
+                return this.selectPrevLayer()
             case 'zoomReset':
                 this.resetZoom()
                 return true

@@ -67,24 +67,38 @@ describe('HelpDialog：内容两组', () => {
         wrapper.unmount()
     })
 
-    it('注册表驱动渲染：注入缝新条目自动入面板（后续动作零改面板）', async () => {
-        // 模拟后续批次新动作（如工单 03 的 Tab 循环选层）：动作联合向前演进，
-        // 测试以注入条目钉住「新条目自动出现」的面板行为
-        const future = {
-            combo: { key: 'tab', mod: false, shift: false },
-            action: 'selectNextLayer' as EditorShortcutAction,
-            label: '循环选层',
-            group: 'layer' as const,
-        }
-        const wrapper = mountDialog({
-            platform: 'win',
-            bindings: [...DEFAULT_EDITOR_SHORTCUTS, future],
-        })
+    it('注册表驱动渲染：kbd-nav 工单 03 的 Tab 条目自动入面板（注册表即数据，零改面板）', async () => {
+        // 立票时的「未来动作」selectNextLayer/selectPrevLayer 已入缺省注册表——
+        // 本例钉住「新条目零改面板自动出现」承诺的兑现形态
+        const wrapper = mountDialog({ platform: 'win' })
         useShortcutsHelp().show()
         await wrapper.vm.$nextTick()
         const layerRows = rows('[data-help-group="layer"] [data-help-shortcut]').join('\n')
-        expect(layerRows.includes('循环选层')).toBe(true)
-        expect(layerRows.includes('Shift+Tab')).toBe(false) // 只渲染注入的那条，不脑补变体
+        expect(layerRows.includes('循环选下一层')).toBe(true)
+        expect(layerRows.includes('Tab')).toBe(true)
+        expect(layerRows.includes('Shift+Tab')).toBe(true)
+        wrapper.unmount()
+    })
+
+    it('注入缝新条目自动入面板（宿主扩展零改面板；只渲染声明的 combo，不脑补变体）', async () => {
+        // 注册表是唯一事实源：绑定注入缝追加的条目自动入面板。工单 03 落地后
+        // 动作联合已无「未来动作」可用，以「既有动作 + 宿主新键位」钉同一注入缝
+        // （面板只消费 combo/label/group，不感知动作语义）
+        const injected = {
+            combo: { key: 'k', mod: false, shift: false },
+            action: 'duplicate' as EditorShortcutAction,
+            label: '创建副本（宿主键位）',
+            group: 'clipboard' as const,
+        }
+        const wrapper = mountDialog({
+            platform: 'win',
+            bindings: [...DEFAULT_EDITOR_SHORTCUTS, injected],
+        })
+        useShortcutsHelp().show()
+        await wrapper.vm.$nextTick()
+        const clipboardRows = rows('[data-help-group="clipboard"] [data-help-shortcut]').join('\n')
+        expect(clipboardRows.includes('创建副本（宿主键位）')).toBe(true)
+        expect(clipboardRows.includes('Shift+K')).toBe(false) // 只渲染注入的那条，不脑补变体
         wrapper.unmount()
     })
 })

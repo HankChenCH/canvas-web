@@ -9,6 +9,9 @@
  * Sketch 同构，弃 Excalidraw ⌘⇧ 系 Safari 换 tab 键位拦截不可靠；⌘0 复位 100%、
  * ⇧1/⇧2 适应画布/选区）。方向键微调自 kbd-nav 工单 02 入表：裸方向键 1px 基础
  * 步、⇧+方向键 10px 大步，方向 × 步长独立 action id（shift 精确匹配先例所致）。
+ * 循环选层自 kbd-nav 工单 03 入表：Tab/⇧Tab 沿面板序在根层间移动选中（CONTEXT
+ * 「循环选层」词条）——文本编辑与属性面板输入中的 Tab 由让路规则天然放行原生
+ * 焦点移动，不劫持。
  * 条目携带 label（中文短句）/ group（展示归组）元数据：
  * 注册表是键位的唯一事实源，帮助面板（kbd-nav 工单 04）直读渲染，后续动作自动
  * 入面板。
@@ -55,6 +58,8 @@ export type EditorShortcutAction =
     | 'nudgeDownCoarse'
     | 'nudgeLeftCoarse'
     | 'nudgeRightCoarse'
+    | 'selectNextLayer'
+    | 'selectPrevLayer'
     | 'zoomReset'
     | 'fitToSurface'
     | 'fitToSelection'
@@ -156,6 +161,12 @@ export const DEFAULT_EDITOR_SHORTCUTS: readonly EditorShortcutBinding[] = [
         label: '大步右移',
         group: 'layer',
     },
+    // 循环选层（kbd-nav 工单 03）：Tab 朝面板垫底方向、⇧Tab 反向（shift 精确
+    // 匹配先例——⇧Tab 不落裸 Tab 条目）；mod/alt 修饰不入表（⌘Tab/⌥Tab 浏览器
+    // 与系统既有语义不抢）。文本编辑/输入框中的 Tab 由让路规则天然放行原生焦点
+    // 移动，不劫持
+    { combo: { key: 'tab', mod: false, shift: false }, action: 'selectNextLayer', label: '循环选下一层', group: 'layer' },
+    { combo: { key: 'tab', mod: false, shift: true }, action: 'selectPrevLayer', label: '循环选上一层', group: 'layer' },
     // 缩放（kbd-nav 工单 01）：⌘0 复位 100%（视口中心为锚；浏览器吞键时的降级
     // 预案 = Figma 纯 shift ⇧0/1/2，宿主注入亦可覆盖）；⇧1/⇧2 适应画布/选区，
     // 数字行按 code 匹配（US 布局 ⇧1 的 key 是 '!'，法国布局是 '1'，code 恒
