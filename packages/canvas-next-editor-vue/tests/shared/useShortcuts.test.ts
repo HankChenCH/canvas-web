@@ -7,12 +7,13 @@
  * - 让路场景端到端：文本编辑态 Delete 不删图层；焦点在输入框 Delete 不删图层；
  * - effect scope 停止后监听注销（重复派发不再触发动作）。
  */
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, beforeEach } from 'vitest'
 import { effectScope } from 'vue'
 
 import { EditorSession, type FrameScheduler } from '@hankchen/canvas-next-editor'
 
 import { useShortcuts } from '../../src/shared/useShortcuts'
+import { useShortcutsHelp } from '../../src/shared/useShortcutsHelp'
 import { textLayer } from '../../../canvas-next-editor/tests/support/fixtures'
 
 const nullScheduler: FrameScheduler = () => () => {}
@@ -135,7 +136,61 @@ describe('useShortcuts：折算 → 分类 → 分派', () => {
         expect(editor.store.ui.viewport.zoom).toBeCloseTo(1, 9) // fit 800×600 → 800×600 画布为 1
         scope.stop()
     })
+})
 
+describe('useShortcuts：⌘/ 帮助面板路由（kbd-nav 工单 04，UI 面动作）', () => {
+    beforeEach(() => {
+        useShortcutsHelp().close()
+    })
+
+    it('⌘/ 开面板、再按收面板（开合）；不经内核 dispatcher（文档零历史步）', () => {
+        const scope = effectScope()
+        const editor = makeEditor()
+        scope.run(() => useShortcuts(editor))
+        const help = useShortcutsHelp()
+
+        expect(help.open.value).toBe(false)
+        expect(press({ key: '/', metaKey: true })).toBe(true)
+        expect(help.open.value).toBe(true)
+        expect(editor.store.history).toHaveLength(0) // 对话态不进内核 store
+
+        expect(press({ key: '/', metaKey: true })).toBe(true)
+        expect(help.open.value).toBe(false)
+        scope.stop()
+        useShortcutsHelp().close()
+    })
+
+    it('编辑态 ⌘/ 不触发（分类器让路守卫既有）', () => {
+        const scope = effectScope()
+        const editor = makeEditor()
+        editor.setSelection(['layers', 0])
+        expect(editor.beginTextEdit(['layers', 0])).toBe(true)
+        scope.run(() => useShortcuts(editor))
+        const help = useShortcutsHelp()
+
+        expect(press({ key: '/', metaKey: true })).toBe(false)
+        expect(help.open.value).toBe(false)
+        scope.stop()
+        useShortcutsHelp().close()
+    })
+
+    it('输入框焦点 ⌘/ 不触发（原生编辑优先）', () => {
+        const scope = effectScope()
+        const editor = makeEditor()
+        scope.run(() => useShortcuts(editor))
+        const help = useShortcutsHelp()
+
+        const input = document.createElement('input')
+        document.body.appendChild(input)
+        expect(press({ key: '/', metaKey: true }, input)).toBe(false)
+        expect(help.open.value).toBe(false)
+        input.remove()
+        scope.stop()
+        useShortcutsHelp().close()
+    })
+})
+
+describe('useShortcuts：scope 停止与注销', () => {
     it('scope 停止后监听注销', () => {
         const scope = effectScope()
         const editor = makeEditor()

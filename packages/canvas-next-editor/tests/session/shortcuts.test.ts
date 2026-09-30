@@ -296,6 +296,27 @@ describe('注册表新键位（kbd-nav 工单 01）：z 序与缩放', () => {
     })
 })
 
+describe('helpShortcuts 条目（kbd-nav 工单 04）：⌘/ 快捷键帮助（UI 面动作）', () => {
+    it('⌘/ 分类为 helpShortcuts（mod 精确；无 mod / ⇧ 变体不入表）', () => {
+        expect(classifyEditorShortcut(input({ key: '/', mod: true, shift: false }))).toBe('helpShortcuts')
+        expect(classifyEditorShortcut(input({ key: '/', mod: true, shift: true }))).toBeNull()
+        expect(classifyEditorShortcut(input({ key: '/', mod: false, shift: false }))).toBeNull()
+        // US 布局 ⇧/ 的 key 变体 '?' 同样不入表（shift 精确匹配）
+        expect(classifyEditorShortcut(input({ key: '?', mod: true, shift: true }))).toBeNull()
+    })
+
+    it('条目元数据：label「快捷键帮助」+ group help（帮助面板分节的展示数据底座）', () => {
+        const binding = DEFAULT_EDITOR_SHORTCUTS.find((entry) => entry.action === 'helpShortcuts')
+        expect(binding?.label).toBe('快捷键帮助')
+        expect(binding?.group).toBe('help')
+    })
+
+    it('UI 面动作不经内核 dispatcher：executeShortcut 恒 false（绑定层桥拦截路由帮助面板）', () => {
+        const session = makeSession()
+        expect(session.executeShortcut('helpShortcuts')).toBe(false)
+    })
+})
+
 describe('注册表元数据（kbd-nav 工单 01）：label/group 数据完备性', () => {
     const GROUPS = new Set(['history', 'clipboard', 'layer', 'view', 'help'])
 

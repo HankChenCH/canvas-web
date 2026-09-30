@@ -2,13 +2,14 @@
 /**
  * StatusBar：状态栏（工单 14；playground-canvas-first 工单 01 收编全部读数）。
  *
- * 既有三段：
- * - 缩放百分比（只读）：ui.viewport 分支通知驱动（useViewport 切片桥）；
+ * 既有段：
+ * - 缩放百分比：ui.viewport 分支通知驱动（useViewport 切片桥）——kbd-nav 工单 04
+ *   起只读 % 段升级为交互控件：点击弹出五项菜单（100% 复位/适应画布/适应选区/
+ *   放大/缩小，步进 = zoomAt 视口中心 ×/÷1.25 的 playground 浮条先例收编；不做
+ *   数值输入框），分发即收、点外/Esc 收；data-zoom-* 目验钩子沿浮条命名迁入；
  * - 选中图层路径：ui.selection 分支驱动（useSelection）+ formatLayerPath；
  * - 物化进行数：宿主注入 prop（Materializer 住 browser-renderer，红线禁止
- *   editor-vue 直连——宿主订阅物化状态后在途计数传入），0 时该段隐藏。
- *
- * 工单 01 新增五段：
+ *   editor-vue 直连——宿主订阅物化状态后在途计数传入），0 时该段隐藏；
  * - 坐标尺寸段：组件内部由文档 position（resolveLayer）+ layerBoxAt 解析盒
  *   计算 `x=… y=… · 宽×高 · 锚点 …`，选择变更与拖动文档事务实时联动
  *   （useDoc/useSelection 双桥驱动），未选中隐藏；
@@ -18,10 +19,13 @@
  * - schema 声明态段：组件直读 ui 分支（已注入顶层 N 键 / 无候选），恒显；
  * - 瞬时反馈段：宿主注入动作结果/错误文案 prop，缺省隐藏。
  *
+ * kbd-nav 工单 04 新增「快捷键」段按钮：useShortcutsHelp 单例开合（帮助面板
+ * 第二入口，⌘/ 走 useShortcuts 桥同态；HelpDialog 由宿主挂载渲染）。
+ *
  * 路径格式化 formatLayerPath（纯函数另有单测）/ 坐标格式化 formatLayerGeometry
  * （经本组件 mount 测试覆盖格式与取整）。
  */
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 import type { EditorSession } from '@hankchen/canvas-next-editor'
 import { resolveLayer } from '@hankchen/canvas-next-editor'
@@ -31,6 +35,7 @@ import { formatLayerGeometry } from './layerGeometryLabel'
 import { useDataSourceSchema } from './useDataSourceSchema'
 import { useDoc } from './useDoc'
 import { useSelection } from '../shared/useSelection'
+import { useShortcutsHelp } from '../shared/useShortcutsHelp'
 import { useViewport } from '../shared/useViewport'
 
 const props = withDefaults(
@@ -78,11 +83,84 @@ const schemaLabel = computed(() => {
     const schema = dataSourceSchema.value
     return schema === null ? 'schema 无候选' : `schema 已注入顶层 ${schema.properties?.size ?? 0} 键`
 })
+
+// ---- 缩放控件（kbd-nav 工单 04）：只读 % 段升级弹层菜单 ----
+
+const zoomMenuOpen = ref(false)
+
+/** 帮助面板单例开合（「快捷键」段按钮；⌘/ 走 useShortcuts 桥共享同一 open 态） */
+const { toggle: toggleHelp } = useShortcutsHelp()
+
+/** 缩放步进（playground 浮条先例收编）：以视口中心为锚 ×/÷ 因子，平移不跳变 */
+function zoomBy(factor: number): void {
+    const { width, height } = props.editor.getSurfaceSize()
+    props.editor.zoomAt(width / 2, height / 2, viewport.value.zoom * factor)
+}
+
+/** 弹层菜单分发：执行即收（ContextMenu 动作即关同款） */
+function runZoom(run: () => void): void {
+    run()
+    zoomMenuOpen.value = false
+}
+
+// 开启期间点外/Esc 收菜单：监听随开合挂卸；触发钮 pointerdown.stop 免二次翻转
+// （pointerdown 先于 click——不拦则点触发钮收了又被 click 重开）
+function onWindowPointerDown(): void {
+    zoomMenuOpen.value = false
+}
+
+function onWindowKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Escape') zoomMenuOpen.value = false
+}
+
+watch(zoomMenuOpen, (isOpen) => {
+    if (isOpen) {
+        window.addEventListener('pointerdown', onWindowPointerDown)
+        window.addEventListener('keydown', onWindowKeydown)
+    } else {
+        window.removeEventListener('pointerdown', onWindowPointerDown)
+        window.removeEventListener('keydown', onWindowKeydown)
+    }
+})
+onBeforeUnmount(() => {
+    window.removeEventListener('pointerdown', onWindowPointerDown)
+    window.removeEventListener('keydown', onWindowKeydown)
+})
 </script>
 
 <template>
     <footer class="cn-statusbar" role="status" aria-label="编辑器状态栏">
-        <span class="cn-statusbar__segment" data-zoom>{{ zoomPercent }}%</span>
+        <div class="cn-statusbar__zoom">
+            <button
+                type="button"
+                class="cn-statusbar__segment cn-statusbar__zoom-trigger"
+                data-zoom
+                aria-haspopup="menu"
+                :aria-expanded="zoomMenuOpen"
+                title="缩放"
+                @pointerdown.stop
+                @click="zoomMenuOpen = !zoomMenuOpen"
+            >
+                {{ zoomPercent }}%
+            </button>
+            <div v-if="zoomMenuOpen" class="cn-statusbar__zoom-menu" role="menu" aria-label="缩放" data-zoom-menu @pointerdown.stop>
+                <button type="button" role="menuitem" class="cn-statusbar__zoom-item" data-zoom-100 @click="runZoom(() => props.editor.resetZoom())">
+                    100%
+                </button>
+                <button type="button" role="menuitem" class="cn-statusbar__zoom-item" data-zoom-fit @click="runZoom(() => props.editor.fitToSurface())">
+                    适应画布
+                </button>
+                <button type="button" role="menuitem" class="cn-statusbar__zoom-item" data-zoom-fit-selection @click="runZoom(() => props.editor.fitToSelection())">
+                    适应选区
+                </button>
+                <button type="button" role="menuitem" class="cn-statusbar__zoom-item" data-zoom-in title="放大（以视口中心为锚）" @click="runZoom(() => zoomBy(1.25))">
+                    放大
+                </button>
+                <button type="button" role="menuitem" class="cn-statusbar__zoom-item" data-zoom-out title="缩小（以视口中心为锚）" @click="runZoom(() => zoomBy(1 / 1.25))">
+                    缩小
+                </button>
+            </div>
+        </div>
         <span class="cn-statusbar__divider" aria-hidden="true"></span>
         <span class="cn-statusbar__segment" data-selection>{{ selectionLabel }}</span>
         <template v-if="props.pendingCount > 0">
@@ -111,6 +189,17 @@ const schemaLabel = computed(() => {
             <span class="cn-statusbar__divider" aria-hidden="true"></span>
             <span class="cn-statusbar__segment" data-feedback>{{ props.feedback }}</span>
         </template>
+        <span class="cn-statusbar__divider" aria-hidden="true"></span>
+        <button
+            type="button"
+            class="cn-statusbar__segment cn-statusbar__help"
+            data-help
+            aria-haspopup="dialog"
+            title="快捷键帮助（⌘/）"
+            @click="toggleHelp"
+        >
+            快捷键
+        </button>
     </footer>
 </template>
 
@@ -118,6 +207,7 @@ const schemaLabel = computed(() => {
 /* 令牌与 panel-theme.css 同值：状态栏自带主题，不依赖宿主接线，也不渗漏 */
 .cn-statusbar {
     --cn-bg: #0b1220;
+    --cn-bg-elevated: #101a2e;
     --cn-fg: #e6edf7;
     --cn-muted: #7c8ca5;
     --cn-line: #1e2a40;
@@ -137,6 +227,72 @@ const schemaLabel = computed(() => {
 
 .cn-statusbar__segment {
     white-space: nowrap;
+}
+
+/* 缩放控件（kbd-nav 工单 04）：触发钮沿用读数观感，弹层菜单向上弹出 */
+.cn-statusbar__zoom {
+    position: relative;
+}
+
+.cn-statusbar__zoom-trigger {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    color: inherit;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+}
+
+.cn-statusbar__zoom-trigger:hover {
+    color: var(--cn-accent);
+}
+
+.cn-statusbar__zoom-menu {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 0;
+    z-index: 40;
+    min-width: 108px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 4px;
+    background: var(--cn-bg-elevated);
+    border: 1px solid var(--cn-line);
+    border-radius: 10px;
+    box-shadow: 0 12px 32px rgba(2, 6, 23, 0.55);
+}
+
+.cn-statusbar__zoom-item {
+    padding: 6px 12px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--cn-fg);
+    font-size: 12px;
+    line-height: 1.4;
+    text-align: left;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.cn-statusbar__zoom-item:hover {
+    background: rgba(56, 189, 248, 0.12);
+    color: var(--cn-accent);
+}
+
+.cn-statusbar__help {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+}
+
+.cn-statusbar__help:hover {
+    color: var(--cn-accent);
 }
 
 .cn-statusbar__segment--pending {

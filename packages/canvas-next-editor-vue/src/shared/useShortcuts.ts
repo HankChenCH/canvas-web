@@ -3,7 +3,9 @@
  *
  * window keydown → KeyboardEvent 折算（mod/alt/composing/editing/editableTarget/
  * code）→ 内核 classifyEditorShortcut（让路规则在分类器裁决，有测试锁定）→
- * preventDefault + executeShortcut。折算说明：
+ * preventDefault + 分发。分发双路：helpShortcuts（kbd-nav 工单 04）是 UI 面动作
+ * ——开合帮助面板单例态（useShortcutsHelp），不经内核 dispatcher、不进内核
+ * store；其余动作 editor.executeShortcut。折算说明：
  * - mod = Ctrl（Windows/Linux）或 Cmd（macOS），两平台等价；alt 同理（kbd-nav
  *   工单 01 起 ⌥⌘ 组合按 code 匹配，alt 必须折算）；
  * - code = event.code（物理键码）：⌥ 变体字符与 ⇧ 数字变体场景下 key 不可靠，
@@ -18,8 +20,10 @@ import { onScopeDispose } from 'vue'
 import { classifyEditorShortcut, type EditorSession } from '@hankchen/canvas-next-editor'
 
 import { isEditableEventTarget } from './editableTarget'
+import { useShortcutsHelp } from './useShortcutsHelp'
 
 export function useShortcuts(editor: EditorSession): void {
+    const help = useShortcutsHelp()
     const onKeyDown = (event: KeyboardEvent): void => {
         const action = classifyEditorShortcut({
             key: event.key,
@@ -33,6 +37,12 @@ export function useShortcuts(editor: EditorSession): void {
         })
         if (action === null) return
         event.preventDefault()
+        // UI 面动作（kbd-nav 工单 04）：⌘/ 开合帮助面板——对话态是 UI 关注点，
+        // 不经内核 dispatcher、不进内核 store，桥在此拦截路由
+        if (action === 'helpShortcuts') {
+            help.toggle()
+            return
+        }
         editor.executeShortcut(action)
     }
     window.addEventListener('keydown', onKeyDown)

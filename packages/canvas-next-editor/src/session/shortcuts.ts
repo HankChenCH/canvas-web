@@ -58,6 +58,7 @@ export type EditorShortcutAction =
     | 'zoomReset'
     | 'fitToSurface'
     | 'fitToSelection'
+    | 'helpShortcuts'
 
 /**
  * 帮助面板的展示归组（kbd-nav 工单 04）：分节渲染的键位归类。展示名归 Vue，
@@ -166,6 +167,16 @@ export const DEFAULT_EDITOR_SHORTCUTS: readonly EditorShortcutBinding[] = [
         action: 'fitToSelection',
         label: '适应选区',
         group: 'view',
+    },
+    // 帮助面板（kbd-nav 工单 04）：⌘/ 开合快捷键帮助。UI 面动作——对话态是 UI
+    // 关注点，绑定层桥（useShortcuts）拦截路由到 useShortcutsHelp 单例态，不经
+    // 内核 dispatcher、不进内核 store；注册表是键位唯一事实源，条目在列帮助面板
+    // 才渲染（group 'help' 系元数据扩展时预留的归组）
+    {
+        combo: { key: '/', mod: true, shift: false },
+        action: 'helpShortcuts',
+        label: '快捷键帮助',
+        group: 'help',
     },
 ]
 

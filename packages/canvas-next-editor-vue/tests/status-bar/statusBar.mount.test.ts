@@ -9,12 +9,13 @@
  * - 资源/保存/反馈段：宿主注入 prop（资源就绪/保存态/动作结果），缺省隐藏；
  * - schema 声明态段：组件直读 ui 分支（已注入顶层 N 键 / 无候选）。
  */
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 
 import { EditorSession, type FrameScheduler } from '@hankchen/canvas-next-editor'
 
 import StatusBar from '../../src/status-bar/StatusBar.vue'
+import { useShortcutsHelp } from '../../src/shared/useShortcutsHelp'
 import { textLayer } from '../../../canvas-next-editor/tests/support/fixtures'
 
 const nullScheduler: FrameScheduler = () => () => {}
@@ -220,6 +221,135 @@ describe('StatusBar：schema 声明态段（组件直读 ui 分支）', () => {
         editor.setDataSourceSchema(null)
         await wrapper.vm.$nextTick()
         expect(wrapper.find('[data-schema]').text()).toBe('schema 无候选')
+        wrapper.unmount()
+    })
+})
+
+describe('StatusBar：缩放控件（kbd-nav 工单 04，只读 % 段升级弹层菜单）', () => {
+    beforeEach(() => {
+        useShortcutsHelp().close()
+    })
+
+    /** 开菜单的挂载：surface 已设尺寸（放大/缩小的视口中心锚需要）；await 渲染完成 */
+    const mountWithMenu = async (editor: EditorSession) => {
+        editor.setSurfaceSize(800, 600)
+        const wrapper = mountBar(editor)
+        await wrapper.find('[data-zoom]').trigger('click')
+        return wrapper
+    }
+
+    it('% 段可点击：弹层菜单五项齐现（data-zoom-* 钩子沿浮条命名迁入）', async () => {
+        const editor = makeEditor()
+        const wrapper = mountBar(editor)
+        expect(wrapper.find('[data-zoom-menu]').exists()).toBe(false)
+
+        await wrapper.find('[data-zoom]').trigger('click')
+        const menu = wrapper.find('[data-zoom-menu]')
+        expect(menu.exists()).toBe(true)
+        expect(wrapper.find('[data-zoom]').attributes('aria-expanded')).toBe('true')
+        for (const hook of ['data-zoom-100', 'data-zoom-fit', 'data-zoom-fit-selection', 'data-zoom-in', 'data-zoom-out']) {
+            expect(wrapper.find(`[${hook}]`).exists()).toBe(true)
+        }
+        wrapper.unmount()
+    })
+
+    it('分发：放大 = 视口中心 ×1.25，缩小 = ÷1.25，读数联动', async () => {
+        const editor = makeEditor()
+        const wrapper = await mountWithMenu(editor)
+
+        await wrapper.find('[data-zoom-in]').trigger('click')
+        expect(editor.store.ui.viewport.zoom).toBeCloseTo(1.25, 9)
+        expect(wrapper.find('[data-zoom]').text()).toBe('125%') // 读数联动
+
+        // 菜单已随分发收起，重开再缩小
+        await wrapper.find('[data-zoom]').trigger('click')
+        await wrapper.find('[data-zoom-out]').trigger('click')
+        expect(editor.store.ui.viewport.zoom).toBeCloseTo(1, 9)
+        expect(wrapper.find('[data-zoom]').text()).toBe('100%')
+        wrapper.unmount()
+    })
+
+    it('分发：100% 复位（视口中心为锚、平移不跳变）', async () => {
+        const editor = makeEditor()
+        editor.store.setViewport({ x: 0, y: 0, zoom: 2 })
+        const wrapper = await mountWithMenu(editor)
+        // 平移不跳变 = 复位前后屏幕中心下的场景点不动（resetZoom 中心锚语义）
+        const centerSceneBefore = editor.toScenePoint(400, 300)
+
+        await wrapper.find('[data-zoom-100]').trigger('click')
+        expect(editor.store.ui.viewport.zoom).toBe(1)
+        expect(editor.toScenePoint(400, 300)).toEqual(centerSceneBefore)
+        expect(wrapper.find('[data-zoom]').text()).toBe('100%')
+        wrapper.unmount()
+    })
+
+    it('分发：适应画布整页可见；适应选区按选中盒放大', async () => {
+        const editor = makeEditor()
+        editor.zoomAt(100, 100, 3)
+        const wrapper = await mountWithMenu(editor)
+
+        await wrapper.find('[data-zoom-fit]').trigger('click')
+        expect(editor.store.ui.viewport.zoom).toBeCloseTo(1, 9) // 800×600 画布配 800×600 表面
+        expect(wrapper.find('[data-zoom]').text()).toBe('100%')
+
+        editor.setSelection(['layers', 0]) // 缺省盒 100×50 → fit 后放大（上限 8）
+        await wrapper.find('[data-zoom]').trigger('click')
+        await wrapper.find('[data-zoom-fit-selection]').trigger('click')
+        expect(editor.store.ui.viewport.zoom).toBeCloseTo(8, 9)
+        expect(wrapper.find('[data-zoom]').text()).toBe('800%')
+        wrapper.unmount()
+    })
+
+    it('收菜单：点项即收；点外收；Escape 收', async () => {
+        const editor = makeEditor()
+        const wrapper = await mountWithMenu(editor)
+        expect(wrapper.find('[data-zoom-menu]').exists()).toBe(true)
+
+        // 点外（window pointerdown）收
+        document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
+        await wrapper.vm.$nextTick()
+        expect(wrapper.find('[data-zoom-menu]').exists()).toBe(false)
+
+        // 重开后 Escape 收
+        await wrapper.find('[data-zoom]').trigger('click')
+        expect(wrapper.find('[data-zoom-menu]').exists()).toBe(true)
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+        await wrapper.vm.$nextTick()
+        expect(wrapper.find('[data-zoom-menu]').exists()).toBe(false)
+
+        // 重开后点项分发即收
+        await wrapper.find('[data-zoom]').trigger('click')
+        await wrapper.find('[data-zoom-in]').trigger('click')
+        expect(wrapper.find('[data-zoom-menu]').exists()).toBe(false)
+        wrapper.unmount()
+    })
+
+    it('未打开时不触发收菜单监听：Escape 落在注册表外原样放行', async () => {
+        const editor = makeEditor()
+        const wrapper = mountBar(editor)
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+        await wrapper.vm.$nextTick()
+        expect(wrapper.find('[data-zoom-menu]').exists()).toBe(false)
+        wrapper.unmount()
+    })
+})
+
+describe('StatusBar：「快捷键」段按钮（kbd-nav 工单 04，帮助面板第二入口）', () => {
+    beforeEach(() => {
+        useShortcutsHelp().close()
+    })
+
+    it('点击开帮助面板单例态，再点收（与 ⌘/ 入口共享同一 open）', async () => {
+        const editor = makeEditor()
+        const wrapper = mountBar(editor)
+        const help = useShortcutsHelp()
+        expect(wrapper.find('[data-help]').text()).toBe('快捷键')
+
+        await wrapper.find('[data-help]').trigger('click')
+        expect(help.open.value).toBe(true)
+
+        await wrapper.find('[data-help]').trigger('click')
+        expect(help.open.value).toBe(false)
         wrapper.unmount()
     })
 })

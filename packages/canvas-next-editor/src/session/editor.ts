@@ -1198,7 +1198,8 @@ export class EditorSession {
      * z 序四件套与缩放三件（kbd-nav 工单 01：bringForward/sendBackward/
      * bringToFront/sendToBack/zoomReset/fitToSurface/fitToSelection）与微调八动作
      * （kbd-nav 工单 02：nudgeUp/Down/Left/Right + Coarse 变体，归并到同一 nudge
-     * 实现）。让路规则在
+     * 实现）；helpShortcuts（kbd-nav 工单 04）是 UI 面动作，由绑定层桥拦截路由
+     * 帮助面板、不经此处。让路规则在
      * 分类器（classifyEditorShortcut）裁决，到达这里的动作不再重复判态；动作为
      * 空转（无选择/空剪贴板/非根层/已在端点）返回 false，其余 true。rename 开
      * 选中根层的重命名会话（F2，工单 09），不直接写文档；锁定/显隐作用于选中根层
@@ -1270,6 +1271,11 @@ export class EditorSession {
             case 'fitToSelection':
                 this.fitToSelection()
                 return true
+            case 'helpShortcuts':
+                // UI 面动作（kbd-nav 工单 04）：绑定层桥拦截路由到帮助面板
+                // （useShortcutsHelp），不会到达这里；case 仅为动作联合穷尽
+                // （TS），防御性按不可用态口径返回 false
+                return false
             case 'delete': {
                 const path = this.store.ui.selection
                 if (!path) return false
