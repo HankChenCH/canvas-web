@@ -39,8 +39,16 @@ export function useLayerPanel(editor: EditorSession): LayerPanelBinding {
     const lockedPaths = shallowRef<readonly LayerPath[]>(editor.store.ui.lockedPaths)
 
     const unsubscribe = editor.subscribe((change) => {
-        if (change.scope === 'doc') doc.value = editor.store.doc
-        else if (change.branch === 'selection') selection.value = editor.store.ui.selection
+        if (change.scope === 'doc') {
+            doc.value = editor.store.doc
+            // openDocument 重置 selection/hovered/renaming/lockedPaths（uiValue 整体重建）
+            // 但 doc 通知不携 ui 分支——镜像在此一并重读（useSelection 同门），
+            // 否则换文档后旧锁/旧选中误标新文档同下标的层（工单 03 目验抓获）
+            selection.value = editor.store.ui.selection
+            hovered.value = editor.store.ui.hovered
+            renaming.value = editor.store.ui.renaming
+            lockedPaths.value = editor.store.ui.lockedPaths
+        } else if (change.branch === 'selection') selection.value = editor.store.ui.selection
         else if (change.branch === 'hovered') hovered.value = editor.store.ui.hovered
         else if (change.branch === 'renaming') renaming.value = editor.store.ui.renaming
         else if (change.branch === 'lockedPaths') lockedPaths.value = editor.store.ui.lockedPaths

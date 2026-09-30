@@ -84,6 +84,10 @@ export function usePropertyPanel(editor: EditorSession): PropertyPanelBinding {
     const unsubscribe = editor.subscribe((change) => {
         if (change.scope === 'doc') {
             doc.value = editor.store.doc
+            // openDocument 重置 selection（uiValue 整体重建）但 doc 通知不携 ui 分支——
+            // 镜像在此重读（useSelection 同门），否则换文档后旧路径解到新文档同下标的
+            // 层上，面板给已不被选中的层继续显示表单（工单 03 目验同族第三处收口）
+            selection.value = editor.store.ui.selection
         } else if (change.scope === 'ui') {
             if (change.branch === 'selection') {
                 selection.value = editor.store.ui.selection

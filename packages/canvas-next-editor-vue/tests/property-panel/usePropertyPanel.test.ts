@@ -125,6 +125,21 @@ describe('usePropertyPanel（面板订阅为 computed 切片）', () => {
         expect(after!.position.x).toBe(55)
         scope.stop()
     })
+
+    it('openDocument 换文档重置：selection 镜像随 doc 通知重读（useSelection 同门）', () => {
+        // 两文档同层数：内核重置 selection 后镜像不重读，就会把旧路径解到
+        // 新文档同下标的层上——面板给已不被选中的层继续显示表单
+        //（canvas-web-layer-lock 工单 03 目验同族第三处收口）
+        const editor = makeEditor([textLayer(), textLayer({ text: '乙' })])
+        const { scope, panel } = bind(editor)
+        editor.setSelection(['layers', 1])
+        expect(panel.selection.value).toEqual(['layers', 1])
+
+        editor.openDocument({ width: 400, height: 300, layers: [textLayer(), textLayer({ text: '新乙' })] })
+        expect(panel.selection.value).toBeNull()
+        expect(panel.layer.value).toBeNull()
+        scope.stop()
+    })
 })
 
 describe('commit：面板唯一提交口（分派 updateSpec/updateData/updateCanvasProp）', () => {

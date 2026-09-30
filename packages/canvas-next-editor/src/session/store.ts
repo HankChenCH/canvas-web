@@ -119,6 +119,13 @@ export type EditorChange =
     | { scope: 'doc'; patches: Patch[]; inversePatches: Patch[] }
     | { scope: 'ui'; branch: keyof EditorUi }
 
+/**
+ * doc 通知契约注记（canvas-web-layer-lock 工单 03 目验同族三处收口）：openDocument
+ * 整体重建 uiValue（selection/hovered/renaming/lockedPaths 等重置）但只发 doc 通知、
+ * 不逐分支发 ui 通知——订阅侧凡镜像了会被 openDocument 重置的 ui 分支，必须在 doc
+ * 通知里一并重读（useSelection 先例，useLayerPanel/usePropertyPanel 同门）。
+ */
+
 /** undo 栈深度上限：更旧的事务被丢弃（不跨会话，会话内也只回溯有限步） */
 export const MAX_HISTORY_STEPS = 100
 

@@ -81,6 +81,33 @@ describe('useLayerPanel（图层面板切片桥）', () => {
         scope.stop()
         expect(() => unsubscribe()).not.toThrow()
     })
+
+    it('openDocument 换文档重置：锁定/选择镜像随 doc 通知重同步（useSelection 同门）', () => {
+        // 两个文档同层数：换文档后旧锁路径在新文档同下标可解析——
+        // 镜像不重读就会把旧锁误标到新文档的层上（工单 03 目验抓获）
+        const editor = makeEditor([textLayer(30, '甲'), textLayer(20, '乙'), textLayer(10, '丙')])
+        const scope = effectScope()
+        let binding: ReturnType<typeof useLayerPanel> | null = null
+        scope.run(() => {
+            binding = useLayerPanel(editor)
+        })
+
+        editor.toggleLayerLock(['layers', 2])
+        editor.setSelection(['layers', 0])
+        expect(binding!.outline.value[0]!.locked).toBe(true)
+        expect(binding!.selection.value).toEqual(['layers', 0])
+
+        editor.openDocument({
+            width: 400,
+            height: 300,
+            layers: [textLayer(30, '新甲'), textLayer(20, '新乙'), textLayer(10, '新丙')],
+        })
+        expect(binding!.outline.value.every((node) => !node.locked)).toBe(true)
+        expect(binding!.selection.value).toBeNull()
+        expect(binding!.hovered.value).toBeNull()
+        expect(binding!.renaming.value).toBeNull()
+        scope.stop()
+    })
 })
 
 // ---- 工票 03：模板态表格的大纲边界（TableLayer V2） ----
