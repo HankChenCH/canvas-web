@@ -22,6 +22,10 @@
 // layer-align-snap 工单 03：对齐浮条宿主接线——canvas 域 AlignFloatBar 挂画布
 // 容器顶部居中（原型 FIG.2 落位），宿主只做定位；逐键 data-align-* 钩子由组件
 // 自带（工单 02），根钩子 data-align-float 供目验定位。缩放浮条右下落位不动。
+// content-completion 工单 11：样例换装证书 form-data schema（与工单 08 内核
+// fixture 同源）+ demoGraph 表达式键树对齐 + 注入面板编译诊断展示（直取
+// parseExpressionSchema 返回面，D12；内核 console.warn 收口不变），注入键扩为
+// 注入/非法/断链/清除四键（data-schema-* 钩子原位保留 + 新增 data-schema-diagnostic）。
 // ruler-guides-snap 工单 04：标尺/参考线/吸附线接线——canvas 域 Ruler 挂画布容器
 // 顶+左贴边（宿主出 absolute inset:0 壳，条外缘与内容区贴边 = 手势坐标换算前提）、
 // GuidesOverlay 直挂（root 自带 inset:0，与 .surface 同矩形浮于画布之上）；从标尺
@@ -40,8 +44,8 @@ import {
     exportPreviewPng,
 } from '@hankchen/canvas-next-browser-renderer'
 import type { ResourceState } from '@hankchen/canvas-next-browser-renderer'
-import { EditorSession } from '@hankchen/canvas-next-editor'
-import type { FontCatalogEntry, UploadFile } from '@hankchen/canvas-next-editor'
+import { EditorSession, parseExpressionSchema } from '@hankchen/canvas-next-editor'
+import type { ExpressionSchemaDiagnostic, FontCatalogEntry, UploadFile } from '@hankchen/canvas-next-editor'
 import {
     FONT_PICKER_KEY,
     StatusBar,
@@ -70,7 +74,7 @@ import { DEMO_GRAPH_JSON } from './demoGraph'
 // 桌面网格底纹（原型）：内容层 begin 后垫网格线（只画纸面外桌面），区分纸面与
 // 背景；导出不经此路
 import { GridBackdropBackend } from './gridBackdrop'
-import { INVALID_DATASET_SCHEMA, SAMPLE_DATASET_SCHEMA } from './sampleDatasetSchema'
+import { DIAGNOSTIC_DATASET_SCHEMA, INVALID_DATASET_SCHEMA, SAMPLE_DATASET_SCHEMA } from './sampleDatasetSchema'
 import { buildVisualCheckGraph } from './visualCheckGraph'
 
 // 缩放范围可配置（缺省即 5%–800%）；适应画布留 48px 呼吸边。
@@ -84,11 +88,53 @@ const editor = new EditorSession({
     fontCatalog: [{ label: 'Open Sans（演示字体）', ref: '/fonts/open-sans.ttf' }],
 })
 
-// 数据源 schema 声明（content-completion 工单 03，D2 宿主随会话注入）：playground
-// 以宿主身份在会话建立即注入样例载荷 schema。声明只进编辑器会话态（store ui 分支），
-// 不进 graph、不落 localStorage、不动 wire；三键目验收进帮助抽屉开发者区（工单 02），
-// 注入/非法降级/清除，声明态读数归状态栏 schema 段。
-editor.setDataSourceSchema(SAMPLE_DATASET_SCHEMA)
+// 数据源 schema 声明（content-completion 工单 03/11，D2 宿主随会话注入）：playground
+// 以宿主身份在会话建立即注入证书 form-data schema（与工单 08 内核 fixture 同源）。
+// 声明只进编辑器会话态（store ui 分支），不进 graph、不落 localStorage、不动 wire；
+// 注入四键与编译诊断面板收进帮助抽屉开发者区（工单 02/11），声明态读数归状态栏
+// schema 段。
+
+/** 注入面板编译诊断读数（工单 11，D12）：直取 parseExpressionSchema 纯函数返回面，
+ *  供宿主开发期排查方言问题；内核 console.warn 单点收口不变（此处只做可见化，
+ *  不重复告警）。kind：idle=未注入 / rejected=根级整份拒绝 / compiled=已编译
+ *  （diagnostics 空 = 全树无诊断，非空 = 局部降级逐条） */
+type SchemaParseReport = {
+    kind: 'idle' | 'rejected' | 'compiled'
+    text: string
+    diagnostics: readonly ExpressionSchemaDiagnostic[]
+}
+
+const SCHEMA_REPORT_IDLE: SchemaParseReport = { kind: 'idle', text: '未注入声明（无候选）', diagnostics: [] }
+const schemaReport = ref<SchemaParseReport>(SCHEMA_REPORT_IDLE)
+
+/** 注入前直取纯函数诊断：合法 → 无诊断/逐条局部降级；根级拒绝 → 拒绝原因。
+ *  与 editor.setDataSourceSchema 内部的 normalizeExpressionSchemaSource 同源独立
+ *  调用（纯函数无副作用，双调无害） */
+function readSchemaReport(raw: unknown): SchemaParseReport {
+    const parsed = parseExpressionSchema(raw)
+    if (!parsed.ok) {
+        return { kind: 'rejected', text: `声明被拒（${parsed.reason}）→ 降级无候选：${parsed.detail}`, diagnostics: [] }
+    }
+    if (parsed.diagnostics.length === 0) {
+        return { kind: 'compiled', text: '已编译，无诊断', diagnostics: [] }
+    }
+    return {
+        kind: 'compiled',
+        text: `已编译，${parsed.diagnostics.length} 条局部降级（故障节点为叶子，其余照常服务）：`,
+        diagnostics: parsed.diagnostics,
+    }
+}
+
+/** 注入动作收口：注入 + 面板诊断读数同步刷新，保证面板永远显示当前注入声明的
+ *  编译结果（二者不同步 = 面板说谎）；note 非空时同步状态栏反馈段——会话建立时
+ *  的初始注入不发反馈，只有目验按键动作发 */
+function applyDataSourceSchema(raw: unknown, note = ''): void {
+    editor.setDataSourceSchema(raw)
+    schemaReport.value = raw === null ? SCHEMA_REPORT_IDLE : readSchemaReport(raw)
+    if (note !== '') docNote.value = note
+}
+
+applyDataSourceSchema(SAMPLE_DATASET_SCHEMA)
 
 /** data URL 兜底上传：本机字节 → 内联引用（物化管线可装载，无需网络） */
 async function uploadToDataUrl(file: UploadFile): Promise<string> {
@@ -290,24 +336,28 @@ function loadVisualCheckGraph(): void {
     docNote.value = '已载入目验样图（php visual-check 同场景：中文禁则/表格/QR/priority 叠放）'
 }
 
-// ---- 数据源 schema 注入入口（工单 03 目验）：宿主随会话注入的三态演示 ----
+// ---- 数据源 schema 注入入口（工单 03/11 目验）：宿主随会话注入三态 + 编译诊断面板 ----
 
-/** 注入样例声明：载荷形态（D1），顶层键 = 根上下文候选（补全浮层呈现归工单 04/05） */
+/** 注入样例声明（证书 form-data，工单 11）：载荷形态（D1），顶层键 = 根上下文候选；
+ *  全树 deref 零诊断 → 面板「已编译，无诊断」（读数由 applyDataSourceSchema 直取） */
 function injectSampleSchema(): void {
-    editor.setDataSourceSchema(SAMPLE_DATASET_SCHEMA)
-    docNote.value = '已注入样例数据源 schema（载荷顶层键 = 根上下文候选；浮层呈现归工单 04/05）'
+    applyDataSourceSchema(SAMPLE_DATASET_SCHEMA, '已注入证书 form-data schema（根级 13 键 = 根上下文候选；编译读数见注入面板）')
 }
 
-/** 注入非法声明（根级保留键 row）：降级无候选 + console 警告，不弹错不抛错 */
+/** 注入非法声明（根级保留键 row）：整份拒绝降级无候选 + console 警告，不弹错不抛错 */
 function injectInvalidSchema(): void {
-    editor.setDataSourceSchema(INVALID_DATASET_SCHEMA)
-    docNote.value = '已注入非法声明（根级保留键 row）→ 降级无候选；警告走 console.warn，不弹错'
+    applyDataSourceSchema(INVALID_DATASET_SCHEMA, '已注入非法声明（根级保留键 row）→ 声明被拒降级无候选；警告走 console.warn，不弹错')
+}
+
+/** 注入断链/环诊断样例（工单 11，D12）：$ref 四类局部故障节点降级为叶子，
+ *  面板逐条显示诊断，健康分支照常出候选；编辑器只降级不弹错 */
+function injectDiagnosticSchema(): void {
+    applyDataSourceSchema(DIAGNOSTIC_DATASET_SCHEMA, '已注入断链/环诊断样例（局部降级逐条见注入面板；健康分支照常出候选，console.warn 汇总一次）')
 }
 
 /** 清除声明：未注入 = 无候选（清除不告警） */
 function clearDataSourceSchema(): void {
-    editor.setDataSourceSchema(null)
-    docNote.value = '已清除数据源 schema 声明（未注入 = 无候选）'
+    applyDataSourceSchema(null, '已清除数据源 schema 声明（未注入 = 无候选）')
 }
 
 // ---- 导出（工单 13，ADR 0004）：浏览器 PNG 是预览图，非终图 ----
@@ -676,8 +726,8 @@ onBeforeUnmount(() => {
                                 <li>顶部读数显示选中路径与 x/y/锚点（拖动时数值联动，与属性面板读同一文档数据）</li>
                                 <li>工单 02–04 目验样例保留：priority 叠放 / cover / 中文禁则断行 / 表格 / 失败资源（右上红框）/ QR 固定选项（右下，贴角负边距）</li>
                                 <li><b>目验样图（工单 15）</b>：工具栏「目验样图」一键载入 <b>php-canvas-image-renderer visual-check 同场景</b>（400×400）——头图色块 + 居中标题、长中文段落（<b>禁则</b>：行首不出现句号/逗号等收尾标点、英文词边界断行）、三行两列<b>表格</b>（表头底色 + 全边框）、<b>QR</b>（纠错 High/无静区/黑白）、双色图片条与页脚；<b>priority 叠放</b>（白底 11 → 头图 10 → 标题 5 → 内容层 4）。人工核对预览观感：预览断行允许与终图不同（决策 A），位置与盒尺寸应一致</li>
-                                <li><b>表格模板态与表达式标记（TableLayer V2，工票 03）</b>：中列 V2 目验区自上而下——<b>标记图片</b>（src 为表达式镜像字面 <span v-pre>{{assets.banner}}</span>，按字面引用装载失败 → 占位 + 红叉，不崩渲染）、<b>标记二维码</b>（内容为字面 <span v-pre>{{orderNo}}</span>，按字面出码）、<b>标记文本</b>（显示镜像字面 <span v-pre>订单 {{orderNo}} · 共 {{$count}} 件</span>，编辑器不求值——终图由服务端展开求值）、<b>模板态表格</b>（<b>空壳渲染</b>：表壳 bg/border 照画、行区零高——rows 为空、模板行不实例化）；模板子树不进大纲/不可选中/不参与物化，双击或面板编辑标记文本即解除标记回字面（保存后需重打标，spec §3.7）</li>
-                                <li><b>数据源 schema 注入缝（content-completion 工单 03）</b>：<b>宿主随会话注入</b>（D2）——本页建立会话即注入样例载荷 schema，工具栏三键可重演：<b>注入 schema</b>（载荷形态，D1：声明即 <code>compile(canvas, dataset)</code> 的 data 载荷形状，顶层键 = 根上下文候选；键树与演示 graph 表达式对齐，description 全中文供浮层元信息目验）、<b>注入非法 schema</b>（根级保留键 <code>row</code> → 声明被拒：<b>降级无候选 + console.warn 警告，不弹错不抛错</b>，前移填充期 reserved_root_key 硬错误）、<b>清除声明</b>（未注入 = 无候选，清除不告警）；声明只进编辑器会话态（store ui 分支）——<b>不进 graph、不落 localStorage、不动 wire</b>，换文档不重置；页头读数显示声明态（已注入键数 / 无候选）</li>
+                                <li><b>表格模板态与表达式标记（TableLayer V2，工票 03）</b>：中列 V2 目验区自上而下——<b>标记图片</b>（src 为表达式镜像字面 <span v-pre>{{org.logo}}</span>，按字面引用装载失败 → 占位 + 红叉，不崩渲染）、<b>标记二维码</b>（内容为字面 <span v-pre>{{certNo}}</span>，按字面出码）、<b>标记文本</b>（显示镜像字面 <span v-pre>证书 {{certName}} · 编号 {{certNo}}</span>，编辑器不求值——终图由服务端展开求值）、<b>模板态表格</b>（<b>空壳渲染</b>：表壳 bg/border 照画、行区零高——rows 为空、模板行不实例化）；模板子树不进大纲/不可选中/不参与物化，双击或面板编辑标记文本即解除标记回字面（保存后需重打标，spec §3.7）</li>
+                                <li><b>数据源 schema 注入缝（content-completion 工单 03/11）</b>：<b>宿主随会话注入</b>（D2）——本页建立会话即注入<b>证书 form-data schema</b>（draft-07：$ref/definitions、嵌套对象树、数组、<b>additionalProperties: true</b> 开放映射；根级 13 键 = 根上下文候选，D1 声明即 <code>compile(canvas, dataset)</code> 的 data 载荷形状；表达式键树与演示 graph 对齐，见工票 03 条目）。开发者区注入键可重演：<b>注入 schema</b>（证书样例：机构/学员/培训/章节树/课件嵌套分支全可达；<code>fields</code> 开放映射无键候选但浮层出占位提示，<code>originCertificates</code> 徽标 array 无具名子候选；已编译无诊断）、<b>注入非法 schema</b>（根级保留键 <code>row</code> → 声明被拒：<b>整份拒绝降级无候选 + console.warn，不弹错不抛错</b>，前移填充期 reserved_root_key 硬错误）、<b>注入断链样例</b>（$ref 断链/外部指针/环引用/目标形态不符 → 故障节点<b>局部降级为叶子</b>，健康分支照常出候选）、<b>清除声明</b>（未注入 = 无候选，清除不告警）；<b>编译诊断面板</b>（工单 11，D12）直取 parseExpressionSchema 纯函数返回面——合法注入显示「已编译，无诊断」，局部降级逐条列出 path/诊断码/明细，供开发期排查方言问题（内核 console.warn 单点收口不变，编辑器始终降级不弹错）；声明只进编辑器会话态（store ui 分支）——<b>不进 graph、不落 localStorage、不动 wire</b>，换文档不重置；页头读数显示声明态（已注入键数 / 无候选）</li>
                                 <li><b>表达式路径补全三字段接线（content-completion 工单 05）</b>：<b>仅表达式态生效</b>（ValueTypeSegmented 表达式段点亮）——选中标记文本/图片/二维码层，在 内容/资源地址 输入框键入 <code v-pre>{{</code> 自动弹出候选浮层（portal 到 body，不破 288px 面板）；<b>上下文感知</b>：根层 = 根候选集（载荷顶层键 + <code>$root</code>），模板表格<b>格内容层</b> = 行候选集（+ <code>row.*</code> / <code>$index</code>，<code>row.</code> 下钻 items 键树）；片段内 <code>.</code> 刷新候选、↑↓ 移动、Enter/Tab 接受（补全剩余路径段）、鼠标点选同效；接受 = 文本替换走既有 input/change 提交——<b>表达式 + 镜像同改、一步历史</b>，Ctrl/Cmd+Z 撤销一步恢复镜像；Esc/失焦/点外/<code v-pre>}}</code> 关闭；静态态与未注入声明零补全；中文输入法合成期按键不误触发（IME 守卫）；全角 <code>｛｛</code> 不触发属已知限制（Ctrl/Cmd+Space 手动触发兜底）</li>
                                 <li><b>标尺 / 参考线 / 吸附线（ruler-guides-snap 工单 04）</b>：画布顶+左常显<b>标尺</b>（px 刻度、0 点=画布左上、随平移缩放联动；<b>⇧R</b> 开关收起/展开）；<b>从标尺拖出参考线</b>（顶条出垂直线、左条出水平线，拖出途中自动吸附近旁图层缘/中心与画布中轴，抬手落线）；参考线贯穿画布（天青实线、驻留）<b>拖回标尺即删除</b>（悬到标尺转红色预告）；<b>拖动图层</b>靠近其他图层的缘/中心、画布水平/垂直中轴时自动吸附，命中轴显示玫红虚线<b>吸附线</b>（瞬时回显、松手即消失；一次拖动至多吸一横一纵，隐藏层不供轴）；参考线与吸附线是<b>会话级</b>能力——不进历史（撤销/重做不回退）、不写文档（保存产物零改动），换文档即清空</li>
                                 <li><b>桌面网格（原型）</b>：工具栏「网格」开关画布背景网格线——<b>只画纸面之外的桌面</b>（垫在图层之下、evenodd 挖掉纸面矩形），桌面有纹理、纸面保持平滑，「画布 vs 背景」之辨不随模板底图有无而失效；随平移缩放联动（线宽恒 1 物理像素、步长随缩放自适应倍增）；开关是<b>编辑器会话态</b>（不进 graph、不进导出——导出 PNG 经 fork 后端恒无网格）</li>
@@ -685,7 +735,7 @@ onBeforeUnmount(() => {
                         </section>
                         <section class="help-section" aria-label="开发者">
                             <h3>开发者</h3>
-                            <p class="help-ticket">工票 03：TableLayer V2 目验样例——模板态表格空壳渲染、表达式标记镜像字面与按字面物化降级（中列）。工单 15：加固与契约——contextlost 可恢复重绘、DPR 变更即时适配、布局快照 fixture 三端契约钉死（v1 + 预期差异白名单 + 同步校验）、点位取样补全（priority 叠加/QR 角点）；工具栏「目验样图」一键载入 php visual-check 同场景。工单 03（content-completion）：数据源 schema 注入缝——工具栏三键目验 注入/非法降级/清除，声明只进会话态。工单 14/13 与更早目验保留。ruler-guides-snap 工单 04：标尺/参考线接线目验——⇧R 随内核注册表（宿主零键位）、data-ruler-*/data-guide-*/data-snap-* 钩子自动化锚点，动线走查 列对位吸附/参考线拖出拖回/undo 隔离/保存零改动</p>
+                            <p class="help-ticket">工票 03：TableLayer V2 目验样例——模板态表格空壳渲染、表达式标记镜像字面与按字面物化降级（中列）。工单 15：加固与契约——contextlost 可恢复重绘、DPR 变更即时适配、布局快照 fixture 三端契约钉死（v1 + 预期差异白名单 + 同步校验）、点位取样补全（priority 叠加/QR 角点）；工具栏「目验样图」一键载入 php visual-check 同场景。工单 03（content-completion）：数据源 schema 注入缝——工具栏三键目验 注入/非法降级/清除，声明只进会话态。工单 11（content-completion）：样例换装证书 form-data schema（与工单 08 内核 fixture 同源，draft-07 全侧面）+ demoGraph 表达式键树对齐 + 注入面板编译诊断展示（parseExpressionSchema 直取，D12）。工单 14/13 与更早目验保留。ruler-guides-snap 工单 04：标尺/参考线接线目验——⇧R 随内核注册表（宿主零键位）、data-ruler-*/data-guide-*/data-snap-* 钩子自动化锚点，动线走查 列对位吸附/参考线拖出拖回/undo 隔离/保存零改动</p>
                             <div class="help-dev-actions">
                                 <button
                                     type="button"
@@ -698,7 +748,7 @@ onBeforeUnmount(() => {
                                 <button
                                     type="button"
                                     data-schema-sample
-                                    title="注入样例数据源 schema（载荷形态，中文 description；宿主随会话注入，工单 03）"
+                                    title="注入证书 form-data schema（draft-07：$ref/嵌套对象树/数组/开放映射，根级 13 键；与工单 08 内核 fixture 同源）"
                                     @click="injectSampleSchema"
                                 >
                                     注入 schema
@@ -706,10 +756,18 @@ onBeforeUnmount(() => {
                                 <button
                                     type="button"
                                     data-schema-invalid
-                                    title="注入非法声明（根级保留键 row）→ 降级无候选 + console 警告，不弹错"
+                                    title="注入非法声明（根级保留键 row）→ 整份拒绝降级无候选 + console 警告，不弹错"
                                     @click="injectInvalidSchema"
                                 >
                                     注入非法 schema
+                                </button>
+                                <button
+                                    type="button"
+                                    data-schema-diagnostic
+                                    title="注入断链/环诊断样例（$ref 断链/外部指针/环引用/目标形态不符 → 局部降级为叶子，面板逐条显示编译诊断，工单 11）"
+                                    @click="injectDiagnosticSchema"
+                                >
+                                    注入断链样例
                                 </button>
                                 <button
                                     type="button"
@@ -719,6 +777,21 @@ onBeforeUnmount(() => {
                                 >
                                     清除声明
                                 </button>
+                            </div>
+                            <!-- 编译诊断面板（工单 11，D12）：直取 parseExpressionSchema 纯函数
+                                 返回面——合法注入「已编译，无诊断」，局部降级逐条列出
+                                 path/code/detail 供开发期排查方言问题；内核 console.warn 收口不变 -->
+                            <div class="help-schema-report" data-schema-report :data-schema-report-kind="schemaReport.kind">
+                                <p data-schema-report-summary>{{ schemaReport.text }}</p>
+                                <ul v-if="schemaReport.diagnostics.length > 0">
+                                    <li
+                                        v-for="(diagnostic, index) in schemaReport.diagnostics"
+                                        :key="index"
+                                        data-schema-diagnostic-item
+                                    >
+                                        <code>{{ diagnostic.path }}</code> · {{ diagnostic.code }} —— {{ diagnostic.detail }}
+                                    </li>
+                                </ul>
                             </div>
                         </section>
                     </div>
@@ -1174,5 +1247,39 @@ onBeforeUnmount(() => {
 .help-dev-actions button:hover {
     border-color: var(--shell-line-strong);
     color: var(--shell-fg);
+}
+
+/* 编译诊断面板（工单 11）：注入动作的开发期读数——摘要一行 + 诊断逐条（path 等宽
+   字体）；合法注入只显示「已编译，无诊断」一行，清除后回落「未注入」占位 */
+.help-schema-report {
+    margin-top: 10px;
+}
+
+.help-schema-report p {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.8;
+    color: var(--shell-fg-2);
+}
+
+.help-schema-report ul {
+    margin: 2px 0 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.help-schema-report li {
+    font-family: var(--shell-font-mono);
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--shell-fg-3);
+    overflow-wrap: anywhere;
+}
+
+.help-schema-report code {
+    color: var(--shell-fg-2);
 }
 </style>

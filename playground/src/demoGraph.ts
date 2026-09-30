@@ -7,13 +7,16 @@
  *   emoji 字素簇）、表格、失败演示资源
  * - 右区（x≈1200–2200）：大字展示文本、第二段落、第二张 cover 图
  * - 中列（x≈816 起）工票 03 增补的 V2 目验区（自上而下）：
- *   - 标记图片：ExpressionValue 三键、value 恒镜像 expression（`{{assets.banner}}`），
+ *   - 标记图片：ExpressionValue 三键、value 恒镜像 expression（`{{org.logo}}`），
  *     预览按字面引用装载失败 → 占位 + 红叉（既有物化失败态机，不崩渲染）
- *   - 标记二维码：字面 `{{orderNo}}` 按字面出码（编辑器不求值）
- *   - 标记文本：显示镜像字面 `订单 {{orderNo}} · 共 {{$count}} 件`（spec §3.7 降级形态）
+ *   - 标记二维码：字面 `{{certNo}}` 按字面出码（编辑器不求值）
+ *   - 标记文本：显示镜像字面 `证书 {{certName}} · 编号 {{certNo}}`（spec §3.7 降级形态）
  *   - 模板态表格：data 键值仅 rowsPath + template 内嵌行模板（标记 Text/Image/Qr
  *     内容层各一；行/格声明高与 autoHeight 混合 = 高度豁免的 wire 形态演练），
  *     rows 不写键 → 渲染为空壳（bg/border 照画、行区零高，spec §4.4 同门）
+ * - 表达式键树与样例 schema（sampleDatasetSchema.ts 证书 form-data，工单 11）对齐：
+ *   根层 certNo/certName、嵌套 org.logo、rowsPath = originCertificates（行上下文
+ *   row.certName/row.fileUrl/row.certNo + $index）
  * - QR 挂画布 bottom-right（-32,-32 负溢出不钳位）
  * - priority 叠放（数组头先画垫底）：100 背景 → 40 → 38 → 35 → 30 → 25 → 20 →
  *   15 → 14 → 13 → 12 → 11 → 10 QR → 9 最上
@@ -170,7 +173,7 @@ export const DEMO_GRAPH_JSON = `{
         },
         "position": { "x": 816, "y": 1120, "position": "top-left" }
       },
-      "data": { "rowsPath": "order.items" },
+      "data": { "rowsPath": "originCertificates" },
       "template": {
         "type": "TableRowTemplate",
         "spec": { "shape": { "width": 600, "height": 0, "autoHeight": true } },
@@ -184,7 +187,7 @@ export const DEMO_GRAPH_JSON = `{
                 "shape": { "width": 240, "height": "auto", "padding": { "top": 6, "bottom": 6, "left": 12, "right": 12 } },
                 "fontFamily": { "fontSize": 16, "fontColor": "#e0f2fe" }
               },
-              "data": { "valueType": "ExpressionValue", "expression": "姓名：{{row.name}}（{{$index}}）", "value": "姓名：{{row.name}}（{{$index}}）" }
+              "data": { "valueType": "ExpressionValue", "expression": "证书：{{row.certName}}（{{$index}}）", "value": "证书：{{row.certName}}（{{$index}}）" }
             }
           },
           {
@@ -193,7 +196,7 @@ export const DEMO_GRAPH_JSON = `{
             "content": {
               "type": "ImageLayer",
               "spec": { "shape": { "width": 180, "height": 48 } },
-              "data": { "valueType": "ExpressionValue", "expression": "{{row.avatar}}", "value": "{{row.avatar}}" }
+              "data": { "valueType": "ExpressionValue", "expression": "{{row.fileUrl}}", "value": "{{row.fileUrl}}" }
             }
           },
           {
@@ -202,7 +205,7 @@ export const DEMO_GRAPH_JSON = `{
             "content": {
               "type": "QrCodeLayer",
               "spec": { "shape": { "width": 180, "height": 48 } },
-              "data": { "valueType": "ExpressionValue", "expression": "{{row.code}}", "value": "{{row.code}}" }
+              "data": { "valueType": "ExpressionValue", "expression": "{{row.certNo}}", "value": "{{row.certNo}}" }
             }
           }
         ]
@@ -218,7 +221,7 @@ export const DEMO_GRAPH_JSON = `{
         },
         "position": { "x": 816, "y": 96, "position": "top-left" }
       },
-      "data": { "valueType": "ExpressionValue", "expression": "{{assets.banner}}", "value": "{{assets.banner}}" }
+      "data": { "valueType": "ExpressionValue", "expression": "{{org.logo}}", "value": "{{org.logo}}" }
     },
     {
       "type": "ImageLayer",
@@ -241,7 +244,7 @@ export const DEMO_GRAPH_JSON = `{
         "position": { "x": 816, "y": 500, "position": "top-left" },
         "fontFamily": { "fontSize": 24, "fontColor": "#67e8f9" }
       },
-      "data": { "valueType": "ExpressionValue", "expression": "订单 {{orderNo}} · 共 {{$count}} 件", "value": "订单 {{orderNo}} · 共 {{$count}} 件" }
+      "data": { "valueType": "ExpressionValue", "expression": "证书 {{certName}} · 编号 {{certNo}}", "value": "证书 {{certName}} · 编号 {{certNo}}" }
     },
     {
       "type": "QrCodeLayer",
@@ -262,7 +265,7 @@ export const DEMO_GRAPH_JSON = `{
         "shape": { "width": 144, "backgroundColor": "#155e75" },
         "position": { "x": 816, "y": 300, "position": "top-left" }
       },
-      "data": { "valueType": "ExpressionValue", "expression": "{{orderNo}}", "value": "{{orderNo}}" }
+      "data": { "valueType": "ExpressionValue", "expression": "{{certNo}}", "value": "{{certNo}}" }
     }
   ]
 }`
