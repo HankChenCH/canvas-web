@@ -6,6 +6,7 @@
  */
 export {
     isLayerPath,
+    isLockedPath,
     isRootLayerPath,
     isTemplateSubtreePath,
     layerBoxByPath,

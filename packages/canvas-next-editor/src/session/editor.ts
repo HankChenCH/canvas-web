@@ -54,6 +54,7 @@ import {
 } from '../spatial/snap'
 import {
     isTemplateSubtreePath,
+    isLockedPath,
     layerBoxByPath,
     isRootLayerPath,
     pathStartsWith,
@@ -353,11 +354,15 @@ export class EditorSession {
     /**
      * 场景点命中查询（不产生副作用）：在预览视图上执行——模板态表格的预览行
      * 可命中，命中路径经视图→文档映射落回模板子树身份（选中/属性编辑写文档）。
+     * 锁定集合（canvas-web-layer-lock 工单 01）随 ui 分支传入纯函数：锁定的根层
+     * 整子树退出命中面，selectAt/hoverAt/右键/双击全经此一条缝自动生效。
      */
     hitTest(sceneX: number, sceneY: number): LayerPath | null {
         const view = this.previewCanvas
         if (!view) return null
-        const hit = hitTestAt(view, sceneX, sceneY, this.textPolicies)
+        const hit = hitTestAt(view, sceneX, sceneY, this.textPolicies, {
+            lockedPaths: this.store.ui.lockedPaths,
+        })
         if (hit === null) return null
         const docPath = viewPathToDocPath(view, hit)
         return docPath ? (docPath as LayerPath) : null
@@ -399,10 +404,14 @@ export class EditorSession {
 
     /**
      * 开始拖动会话：记录目标路径、起点场景坐标、起始 position 偏移与起始盒
-     * （吸附求位基准，ui 分支）。已在拖动中、路径或盒几何无法解析时返回 false。
+     * （吸附求位基准，ui 分支）。已在拖动中、路径或盒几何无法解析时返回 false；
+     * 路径落在锁定子树同样拒绝（canvas-web-layer-lock 工单 01：拖动是变更类
+     * 动作的 guard 入口——画布命中面已过滤锁定层，此守卫兜住其余手势来源，
+     * 缩放手势接入 resize feature 时同用此门）。
      */
     beginDrag(path: LayerPath, sceneX: number, sceneY: number): boolean {
         if (this.store.ui.drag) return false
+        if (this.isLocked(path)) return false
         const doc = this.store.doc
         const layer = doc ? resolveLayer(doc, path) : null
         if (!layer) return false
@@ -867,9 +876,12 @@ export class EditorSession {
      * 模板子树删除面（spec §3.2）：cells/content 两级放行（内核两型 union），
      * 仅行模板替身（template 收尾路径）拦截——删行模板 = 表退出模板态，归转换
      * 入口（convertTableToRows），不混入删除。
+     * 锁定 guard（canvas-web-layer-lock 工单 01）：路径落在锁定子树（锁定的根层
+     * 及其行/格/内容）即静默空转——Delete/⌫ 与面板删除按钮的权威挡点，无历史步。
      */
     deleteLayer(path: LayerPath): void {
         if (!this.store.doc || path[path.length - 1] === 'template') return
+        if (this.isLocked(path)) return
         const removed: TxOut<DeletedLayerRef | null> = { v: null }
         this.store.transact((draft) => {
             removed.v = deleteLayerInDraft(draft, path)
@@ -947,6 +959,34 @@ export class EditorSession {
             if (!layer) return
             layer.visible = !layer.visible
         })
+    }
+
+    /**
+     * 切换根图层锁定（canvas-web-layer-lock 工单 01）：会话级锁定态，ui 分支
+     * 变更——不进历史、不写 graph、wire 零键（红线 3 同门），openDocument 重置。
+     * 仅根图层——行/格是容器内结构（锁定语义只在 LayerBase 面），路径非根或
+     * 不可解析一律空转（renameLayer/toggleLayerVisibility 同门）。
+     * 下游语义：锁定层整子树退出画布命中面（hitTest 过滤）、拖动起点/删除在
+     * 内核空转（方向键微调随 kbd-nav 工单 02 接入同一谓词）；属性编辑/duplicate/
+     * 显隐/改名/z 序等刻意通道不受限；⌘D 副本新路径天然无锁。
+     */
+    toggleLayerLock(path: LayerPath): void {
+        if (!this.store.doc || !isRootLayerPath(path)) return
+        if (resolveLayer(this.store.doc, path) === null) return
+        const current = this.store.ui.lockedPaths
+        const next = current.some((locked) => pathsEqual(locked, path))
+            ? current.filter((locked) => !pathsEqual(locked, path))
+            : [...current, path]
+        this.store.setLockedPaths(next)
+    }
+
+    /**
+     * 锁定谓词（canvas-web-layer-lock 工单 01，ui 分支读取口）：路径落在锁定
+     * 子树即 true，判定收口 isLockedPath——hitTest 过滤、动作 guard、gizmo、
+     * 面板投影共用，绑定层不得自行手写锁定路径比对。
+     */
+    isLocked(path: LayerPath | null): boolean {
+        return path !== null && isLockedPath(path, this.store.ui.lockedPaths)
     }
 
     // ---- 剪贴板与置顶/置底（工单 14）：子树深拷贝语义见 clipboard.ts ----
@@ -1310,9 +1350,11 @@ export class EditorSession {
     // ---- 内部：合帧与重绘 ----
 
     /**
-     * 结构变更后重映射 ui 分支的路径态（选择/悬停/重命名会话）：路径是数组下标
-     * 身份，容器 splice 后按 remapPathAfterSplice 平移，被移出子树的路径落地为
-     * 清除。ui 整体替换、不进历史；值未变的路径 set* 内部值等短路。
+     * 结构变更后重映射 ui 分支的路径态（选择/悬停/重命名会话/锁定集合）：路径是
+     * 数组下标身份，容器 splice 后按 remapPathAfterSplice 平移，被移出子树的路径
+     * 落地为清除。ui 整体替换、不进历史；值未变的路径 set* 内部值等短路。
+     * 锁定集合（canvas-web-layer-lock 工单 01）作为集合平移——锁「胶在层上」走过
+     * splice（兄弟增删/根层重排后锁仍指原层），被移出容器的锁定路径落地解锁。
      */
     private remapPathSlices(
         containerPath: LayerPath,
@@ -1328,17 +1370,39 @@ export class EditorSession {
         if (hovered !== this.store.ui.hovered) this.store.setHovered(hovered)
         const renaming = remap(this.store.ui.renaming)
         if (renaming !== this.store.ui.renaming) this.store.setRenaming(renaming)
+        this.store.setLockedPaths(this.remappedLocks(this.store.ui.lockedPaths, remap))
     }
 
     /**
-     * 跨容器移动后的选择/悬停重映射（工单 12）：先做源容器纯删除与目标容器纯
-     * 插入的索引平移（移动子树内的路径在源删除步被置 null，不参与平移），再把
-     * 移动前落在移动子树内的路径按前缀重挂到新位置（子树内部相对结构不变，
-     * 仅容器段整体替换）。
+     * 锁定集合经映射平移（canvas-web-layer-lock 工单 01）：逐路径过 map、滤除
+     * 落地 null 的悬空路径；集合未变时 setLockedPaths 内容等短路（无锁/未变
+     * 不通知）。remapPathSlices 的 splice 平移与 remapMovedSubtree 的前缀重挂
+     * 共用同一形状——后者必须传移动前捕获的集合（源 splice 步已丢掉移动子树
+     * 内的锁）。
+     */
+    private remappedLocks(
+        paths: readonly LayerPath[],
+        map: (path: LayerPath) => LayerPath | null,
+    ): LayerPath[] {
+        return paths.reduce<LayerPath[]>((kept, locked) => {
+            const mapped = map(locked)
+            if (mapped !== null) kept.push(mapped)
+            return kept
+        }, [])
+    }
+
+    /**
+     * 跨容器移动后的选择/悬停/锁定集合重映射（工单 12 + canvas-web-layer-lock
+     * 工单 01）：先做源容器纯删除与目标容器纯插入的索引平移（移动子树内的路径
+     * 在源删除步被置 null，不参与平移），再把移动前落在移动子树内的路径按前缀
+     * 重挂到新位置（子树内部相对结构不变，仅容器段整体替换）。锁定集合的重挂
+     * 当前是不变量兜底——锁定恒为根层路径、跨容器移动的子树恒为行/格子树，两集
+     * 天然不相交；将来锁面扩展或根层跨容器移动接入时语义已在。
      */
     private remapMovedSubtree(moved: MovedSubtreeRef): void {
         const selectionBefore = this.store.ui.selection
         const hoveredBefore = this.store.ui.hovered
+        const lockedBefore = this.store.ui.lockedPaths
         this.remapPathSlices(moved.source.containerPath, moved.source.key, moved.source.from, moved.source.to)
         this.remapPathSlices(moved.target.containerPath, moved.target.key, moved.target.from, moved.target.to)
         const rebase = (before: LayerPath | null): LayerPath | null => {
@@ -1353,9 +1417,19 @@ export class EditorSession {
         if (hovered !== null && !pathsEqual(this.store.ui.hovered, hovered)) {
             this.store.setHovered(hovered)
         }
+        const rebasedLocks = this.remappedLocks(lockedBefore, rebase)
+        if (rebasedLocks.length > 0) {
+            this.store.setLockedPaths([...this.store.ui.lockedPaths, ...rebasedLocks])
+        }
     }
 
-    /** 悬空路径清理：选择/悬停/重命名会话指向已不存在的图层即清空（撤销/重做与采纳类收口共用） */
+    /**
+     * 悬空路径清理：选择/悬停/重命名会话指向已不存在的图层即清空（撤销/重做与
+     * 采纳类收口共用）。锁定集合同门（canvas-web-layer-lock 工单 01）：锁定路径
+     * 悬空即解锁。已知限制（spec §3 记档不修）：undo/redo 只有 prune 无平移——
+     * 跨结构步撤销后锁可能错位（路径仍可解析、指到别的层）或清失，锁定钮常显
+     * 可目视纠正；wire 持久化（锁长在层对象上）根治。
+     */
     private pruneDanglingPaths(): void {
         const doc = this.store.doc
         if (!doc) return
@@ -1363,6 +1437,9 @@ export class EditorSession {
         if (selection !== null && resolveLayer(doc, selection) === null) this.store.setSelection(null)
         if (hovered !== null && resolveLayer(doc, hovered) === null) this.store.setHovered(null)
         if (renaming !== null && resolveLayer(doc, renaming) === null) this.store.setRenaming(null)
+        this.store.setLockedPaths(
+            this.store.ui.lockedPaths.filter((locked) => resolveLayer(doc, locked) !== null),
+        )
     }
 
     private onStoreChange(change: EditorChange): void {
@@ -1372,7 +1449,8 @@ export class EditorSession {
         else if (change.branch === 'editing') this.invalidate('both')
         // schema 声明不触达像素（候选消费在绑定层补全面），不参与重绘脏标
         else if (change.branch === 'dataSourceSchema') return
-        // 选择/悬停/拖动会话只影响 gizmo（拖动中的图层位移走 doc 分支另触发双层）
+        // 选择/悬停/拖动会话/重命名/锁定集合只影响 gizmo（锁定不改渲染产物——
+        // 命中面是事件侧语义；拖动中的图层位移走 doc 分支另触发双层）
         else this.invalidate('overlay')
     }
 

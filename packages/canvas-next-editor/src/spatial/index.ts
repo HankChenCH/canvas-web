@@ -21,7 +21,7 @@ export {
     type Viewport,
     type ZoomBounds,
 } from './camera'
-export { hitTest } from './hitTest'
+export { hitTest, type HitTestOptions } from './hitTest'
 export {
     SNAP_THRESHOLD_SCREEN_PX,
     resolveSnap,

@@ -95,6 +95,16 @@ export interface EditorUi {
      * 供 canvas 域画贯穿吸附线——瞬时回显，松手即清空（endDrag），非拖动态为空。
      */
     snapAxes: readonly SnapAxis[]
+    /**
+     * 锁定根层路径集合（canvas-web-layer-lock 工单 01）：会话级锁定态——锁定的
+     * 根层整子树退出画布命中面，变更类动作（拖动起点/删除；微调随
+     * kbd-nav 工单 02 接入）在内核空转，属性编辑/显隐/改名/z 序等刻意通道
+     * 不受限。零契约面：不进历史、不写 graph、wire 零键、渲染产物不变
+     * （红线 3 同门）；openDocument 换文档重置（guides 同门——锁定是文档内容
+     * 防护非面板偏好，跨文档路径悬空会误锁他人）。锁定恒为根层路径，子树
+     * 命中按前缀判定收口 isLockedPath。
+     */
+    lockedPaths: readonly LayerPath[]
 }
 
 /** 一步历史：一次（或同键合并的多次）文档事务的正向/逆向 patch 组 */
@@ -134,6 +144,16 @@ function snapAxesEqual(a: readonly SnapAxis[], b: readonly SnapAxis[]): boolean 
     return true
 }
 
+/** 锁定集合内容等（逐路径值等，toggleLayerLock/重映射路径的短路比较） */
+function lockedPathsEqual(a: readonly LayerPath[], b: readonly LayerPath[]): boolean {
+    if (a === b) return true
+    if (a.length !== b.length) return false
+    for (let i = 0; i < a.length; i += 1) {
+        if (!pathsEqual(a[i]!, b[i]!)) return false
+    }
+    return true
+}
+
 export class EditorStore {
     private docValue: Canvas | null = null
     private uiValue: EditorUi = {
@@ -148,6 +168,7 @@ export class EditorStore {
         guides: [],
         rulersVisible: true,
         snapAxes: [],
+        lockedPaths: [],
     }
     /** undo 栈：已提交步，栈尾最新 */
     private undoSteps: HistoryStep[] = []
@@ -177,7 +198,7 @@ export class EditorStore {
     }
 
     /** 打开/替换文档：ui 选择/编辑/重命名会话与双向历史一并重置（新文档不继承旧路径/旧事务）；
-     *  参考线随当次会话清空（对位轴不跨文档），标尺显隐作为偏好保留 */
+     *  参考线与锁定集合随当次会话清空（对位轴/文档内容防护不跨文档），标尺显隐作为偏好保留 */
     openDocument(canvas: Canvas): void {
         this.docValue = canvas
         this.undoSteps = []
@@ -191,6 +212,7 @@ export class EditorStore {
             renaming: null,
             guides: [],
             snapAxes: [],
+            lockedPaths: [],
         }
         this.notify({ scope: 'doc', patches: [], inversePatches: [] })
     }
@@ -336,6 +358,13 @@ export class EditorStore {
         if (snapAxesEqual(this.uiValue.snapAxes, axes)) return
         this.uiValue = { ...this.uiValue, snapAxes: axes }
         this.notify({ scope: 'ui', branch: 'snapAxes' })
+    }
+
+    /** 锁定集合替换（toggleLayerLock 收口，翻转逻辑在会话门面）；内容等短路（集合未变不重绘） */
+    setLockedPaths(paths: readonly LayerPath[]): void {
+        if (lockedPathsEqual(this.uiValue.lockedPaths, paths)) return
+        this.uiValue = { ...this.uiValue, lockedPaths: paths }
+        this.notify({ scope: 'ui', branch: 'lockedPaths' })
     }
 
     subscribe(listener: Listener): () => void {

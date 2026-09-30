@@ -209,3 +209,88 @@ describe('隐藏层命中过滤（layer-panel-ux 工单 10）：visible=false �
         expect(hitTest(canvas, 1200, 1000)).toBeNull()
     })
 })
+
+describe('锁定层命中过滤（canvas-web-layer-lock 工单 01）：locked 根层整子树退出命中面，与 visible 同门', () => {
+    it('锁定顶层不被命中：重叠区穿透命中下方层，仅锁定层覆盖处无命中', () => {
+        const canvas = doc([
+            textLayer({ position: { anchor: 'top-left', x: 0, y: 0 }, shape: { width: 100, height: 100 } }),
+            textLayer({ position: { anchor: 'top-left', x: 50, y: 0 }, shape: { width: 100, height: 100 } }),
+        ])
+        const locked = [['layers', 1] as const]
+        expect(hitTest(canvas, 75, 50, undefined, { lockedPaths: locked })).toEqual(['layers', 0])
+        expect(hitTest(canvas, 120, 50, undefined, { lockedPaths: locked })).toBeNull()
+        // 未传锁定集合（缺省）行为同现状：照常命中
+        expect(hitTest(canvas, 120, 50)).toEqual(['layers', 1])
+    })
+
+    it('锁定表格整子树不可命中：行/格/格内容随根层一起退出', () => {
+        const canvas = doc([
+            tableLayer(
+                [
+                    rowLayer(
+                        [
+                            cellLayer(
+                                textLayer({
+                                    shape: { width: 100, height: 40 },
+                                    position: { anchor: 'top-left', x: 5, y: 5 },
+                                }),
+                                { shape: { width: 150, height: 90 } },
+                            ),
+                        ],
+                        { shape: { width: 300, height: 90 } },
+                    ),
+                ],
+                { shape: { width: 300, height: 200 }, position: { anchor: 'top-left', x: 96, y: 1120 } },
+            ),
+        ])
+        const locked = [['layers', 0] as const]
+        expect(hitTest(canvas, 75, 35 + 1120, undefined, { lockedPaths: locked })).toBeNull() // 格内容
+        expect(hitTest(canvas, 200, 35 + 1120, undefined, { lockedPaths: locked })).toBeNull() // 格
+        expect(hitTest(canvas, 200, 150 + 1120, undefined, { lockedPaths: locked })).toBeNull() // 表自留区
+    })
+
+    it('锁定与 visible 叠加：两过滤同层不冲突，异层各自退出', () => {
+        const canvas = doc([
+            textLayer({ position: { anchor: 'top-left', x: 0, y: 0 }, shape: { width: 100, height: 100 } }),
+            textLayer({ visible: false, position: { anchor: 'top-left', x: 50, y: 0 }, shape: { width: 100, height: 100 } }),
+        ])
+        // 顶层既隐藏又锁定：两门任一都整层退出
+        expect(hitTest(canvas, 120, 50, undefined, { lockedPaths: [['layers', 1] as const] })).toBeNull()
+        // 锁定底层：其区域穿透为 null（顶层已隐藏），隐藏过滤照常生效
+        expect(hitTest(canvas, 25, 50, undefined, { lockedPaths: [['layers', 0] as const] })).toBeNull()
+    })
+
+    it('与底图豁免叠加：锁定的全幅底表整子树退出（锁优先于「豁免只跳自身盒」）', () => {
+        const fullBleedTable = () =>
+            tableLayer(
+                [
+                    rowLayer(
+                        [
+                            cellLayer(
+                                textLayer({
+                                    shape: { width: 100, height: 40 },
+                                    position: { anchor: 'top-left', x: 5, y: 5 },
+                                }),
+                                { shape: { width: 150, height: 90 } },
+                            ),
+                        ],
+                        { shape: { width: 600, height: 90 } },
+                    ),
+                ],
+                { shape: { width: 2400, height: 1500 } },
+            )
+        // 未锁：豁免只跳自身盒，行/格/格内容照常可命中（既有语义）
+        expect(hitTest(doc([fullBleedTable()]), 75, 35)).toEqual(['layers', 0, 'rows', 0, 'cells', 0, 'content'])
+        // 锁定：整子树退出命中面
+        expect(hitTest(doc([fullBleedTable()]), 75, 35, undefined, { lockedPaths: [['layers', 0] as const] })).toBeNull()
+
+        // 锁定全幅底图 + 上方普通层：上方照常命中，底图区域为 null
+        const stacked = doc([
+            imageLayer({ shape: { width: 2400, height: 1500 } }),
+            textLayer({ position: { anchor: 'top-left', x: 100, y: 100 }, shape: { width: 100, height: 100 } }),
+        ])
+        const lockedBg = { lockedPaths: [['layers', 0] as const] }
+        expect(hitTest(stacked, 150, 150, undefined, lockedBg)).toEqual(['layers', 1])
+        expect(hitTest(stacked, 1200, 1000, undefined, lockedBg)).toBeNull()
+    })
+})

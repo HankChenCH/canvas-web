@@ -91,6 +91,16 @@ export function pathStartsWith(path: LayerPath, prefix: LayerPath): boolean {
     return true
 }
 
+/**
+ * 路径是否处于锁定子树（canvas-web-layer-lock 工单 01）：lockedPaths 中存在其
+ * 前缀路径即锁定（锁定恒为根层路径，即根祖先被锁）。谓词收口一处——hitTest
+ * 过滤、动作 guard（beginDrag/deleteLayer）、gizmo、面板投影共用，防各处手写
+ * 路径比对；语义与 spec §2 同源：锁根层即整子树受保护。
+ */
+export function isLockedPath(path: LayerPath, lockedPaths: readonly LayerPath[]): boolean {
+    return lockedPaths.some((locked) => pathStartsWith(path, locked))
+}
+
 /** 沿路径导航（根可为 immer draft：同一套下降逻辑同时服务只读解析与事务写入） */
 function navigate(root: unknown, path: LayerPath): unknown {
     // (属性名, 索引) 成对推进；'template' 与尾段 'content' 无索引，落到节点本身

@@ -7,7 +7,7 @@
  */
 import { resolveChildAt, resolveLayerBox, type Canvas, type Layer, type LayerBox, type TextLayoutPolicies } from '@hankchen/canvas-next'
 
-import type { LayerPath } from '../shared/layerPath'
+import { isLockedPath, type LayerPath } from '../shared/layerPath'
 
 /** 半开区间包含 [x, x+w) × [y, y+h)：相邻格边界恰好归一格，零尺寸不可命中 */
 function contains(box: LayerBox, x: number, y: number): boolean {
@@ -17,6 +17,16 @@ function contains(box: LayerBox, x: number, y: number): boolean {
         && x < box.x + box.width
         && y >= box.y
         && y < box.y + box.height
+}
+
+/** 命中选项：过滤集合由调用方注入（内核 ui 分支只读投影，纯函数不自取状态） */
+export interface HitTestOptions {
+    /**
+     * 锁定根层路径集合（canvas-web-layer-lock 工单 01）：锁定的根层整子树退出
+     * 命中面、命中穿透下方层，与 visible 过滤同门；与底图豁免叠加时锁优先
+     * （豁免只跳自身盒，锁整子树退出）。
+     */
+    readonly lockedPaths?: readonly LayerPath[]
 }
 
 /**
@@ -82,22 +92,27 @@ function hitWalk(
 
 /**
  * 场景坐标命中：返回视觉最上被中图层的路径（未中返回 null）。
- * 隐藏根层（layer-panel-ux 工单 10）整子树退出命中面——渲染端整层跳过
- * （render.ts 同门），不可见即不可点选，命中穿透其下方的可见层。
+ * 隐藏根层（layer-panel-ux 工单 10）与锁定根层（canvas-web-layer-lock 工单 01）
+ * 整子树退出命中面——渲染端整层跳过 / 锁定层只退交互面（渲染照常），不可见/
+ * 被锁定即不可点选，命中穿透其下方的层。
  */
 export function hitTest(
     canvas: Canvas,
     sceneX: number,
     sceneY: number,
     policies?: TextLayoutPolicies,
+    options?: HitTestOptions,
 ): LayerPath | null {
+    const lockedPaths = options?.lockedPaths
     for (let i = canvas.layers.length - 1; i >= 0; i -= 1) {
         const layer = canvas.layers[i]!
         if (layer.visible === false) continue
+        const rootPath: LayerPath = ['layers', i]
+        if (lockedPaths !== undefined && isLockedPath(rootPath, lockedPaths)) continue
         const box = resolveLayerBox(layer, 0, 0, canvas.width, canvas.height, policies)
         // 全幅底层豁免只跳过自身盒测试（不能对整层 continue）：全幅底表的行/格/格内容照常可命中
         const skipOwnBox = i === 0 && coversCanvas(box, canvas.width, canvas.height)
-        const hit = hitWalk(layer, ['layers', i], box, sceneX, sceneY, policies, skipOwnBox)
+        const hit = hitWalk(layer, rootPath, box, sceneX, sceneY, policies, skipOwnBox)
         if (hit) return hit
     }
     return null
