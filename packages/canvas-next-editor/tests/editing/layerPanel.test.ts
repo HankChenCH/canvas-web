@@ -137,6 +137,31 @@ describe('buildLayerOutline：面板大纲（面板顶部 = 视觉最上层 = �
         const outline = buildLayerOutline(doc)
         expect(outline.map((node) => node.visible)).toEqual([false, true])
     })
+
+    it('节点携带锁定投影（canvas-web-layer-lock 工单 02，内核收 ui 分支入参）：锁定根层 true、其余 false、缺省入参全 false', () => {
+        const doc = {
+            width: 800,
+            height: 600,
+            layers: [
+                textLayer({ priority: 20 }),
+                textLayer({ priority: 10 }),
+            ],
+        }
+        // 缺省入参 = 无锁：面板未喂 lockedPaths 时投影退化全 false
+        expect(buildLayerOutline(doc).map((node) => node.locked)).toEqual([false, false])
+        // 面板序 = 数组逆序：锁定数组头（面板底），前缀判定只命中该子树
+        expect(buildLayerOutline(doc, [['layers', 0]]).map((node) => node.locked)).toEqual([false, true])
+    })
+
+    it('锁定投影按前缀判定贯穿子树（锁定根层 = 行/格/内容全携 locked），未锁兄弟树不受累', () => {
+        const doc = { width: 800, height: 600, layers: [tableDoc(), textLayer({ priority: 5 })] }
+        // 面板序 = 数组逆序：[text（未锁）, table（锁定）]
+        const [text, table] = buildLayerOutline(doc, [['layers', 0]])
+        expect(text!.locked).toBe(false)
+        const allLocked = (nodes: readonly LayerOutlineNode[]): boolean =>
+            nodes.every((node) => node.locked && allLocked(node.children))
+        expect(allLocked([table!])).toBe(true)
+    })
 })
 
 describe('expressionPrefix：表达式前置投影（layer-panel-expression-prefix 工单 01）', () => {

@@ -66,6 +66,9 @@ const isTemplateTableSelection = computed(
 /** 行模板替身选中（替身路径收尾段）：删除项置灰（spec §2.5） */
 const isTemplateRowSelection = computed(() => selection.value?.[selection.value.length - 1] === 'template')
 
+/** 选中路径落在锁定子树（canvas-web-layer-lock 工单 02，内核谓词读取口一次求值）：删除项置灰 */
+const lockedSelection = computed(() => selection.value !== null && props.editor.isLocked(selection.value))
+
 /** 转换可用态（spec §2.3 C2）：末行存在且非空——空表/空末行置灰 + title 说明 */
 const canConvertToTemplate = computed(() => {
     const layer = selectedRootLayer.value
@@ -180,8 +183,14 @@ const items = computed<MenuItem[]>(() => [
     {
         key: 'delete',
         label: '删除',
-        enabled: selection.value !== null && !isTemplateRowSelection.value,
-        title: isTemplateRowSelection.value ? '行模板由表持有——转换回普通表请用 V2 转换入口' : undefined,
+        // 锁定子树置灰（canvas-web-layer-lock 工单 02）：内核 deleteLayer 空转为
+        // 权威（画布右键经命中面天然够不到锁定层——本项兜住面板选中后重开的菜单）
+        enabled: selection.value !== null && !isTemplateRowSelection.value && !lockedSelection.value,
+        title: isTemplateRowSelection.value
+            ? '行模板由表持有——转换回普通表请用 V2 转换入口'
+            : lockedSelection.value
+                ? '图层已锁定（⇧⌘L 解锁后可删除）'
+                : undefined,
         run: () => {
             const path = selection.value
             if (path) props.editor.deleteLayer(path)

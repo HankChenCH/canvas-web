@@ -252,3 +252,45 @@ describe('ContextMenu：显示/隐藏（工单 10）', () => {
         wrapper.unmount()
     })
 })
+
+describe('ContextMenu：锁定层删除项置灰（canvas-web-layer-lock 工单 02）', () => {
+    it('锁定根层选中：删除项 disabled + title 说明，其余项不受累；解锁恢复', async () => {
+        const editor = makeEditor([textLayer({ priority: 10 })])
+        editor.toggleLayerLock(['layers', 0]) // 内核空转为权威——锁定层退出命中面，
+        editor.setSelection(['layers', 0]) // 画布右键够不到；面板选中后菜单可达（spec §2）
+        const wrapper = mountMenu(editor)
+        await wrapper.vm.openAt(10, 10)
+        const del = itemButtons(wrapper).find((b) => b.text() === '删除')!
+        expect(del.attributes('disabled')).toBeDefined()
+        expect(del.attributes('title')).toContain('锁定')
+        // 锁定只挡误操作：显隐/置顶照常可用（刻意通道不受限）
+        expect(itemButtons(wrapper)[0]!.attributes('disabled')).toBeUndefined()
+        wrapper.unmount()
+
+        editor.toggleLayerLock(['layers', 0])
+        const wrapper2 = mountMenu(editor)
+        await wrapper2.vm.openAt(10, 10)
+        expect(itemButtons(wrapper2).find((b) => b.text() === '删除')!.attributes('disabled')).toBeUndefined()
+        wrapper2.unmount()
+    })
+
+    it('锁定根层的行/格子树：右键不可达路径兜底（面板选中行）删除项同样 disabled', async () => {
+        const editor = makeEditor([
+            tableLayer(
+                [rowLayer([cellLayer(null, { shape: { width: 200, height: 60 } })], { shape: { width: 200, height: 60 } })],
+                { shape: { width: 200, height: 60 } },
+            ),
+        ])
+        editor.toggleLayerLock(['layers', 0])
+        editor.setSelection(['layers', 0, 'rows', 0])
+        const wrapper = mountMenu(editor)
+        await wrapper.vm.openAt(10, 10)
+        const del = itemButtons(wrapper).find((b) => b.text() === '删除')!
+        expect(del.attributes('disabled')).toBeDefined()
+        // 点击零历史步（disabled 拦截 + 内核 deleteLayer 空转双保险）
+        await del.trigger('click')
+        expect(editor.store.doc!.layers).toHaveLength(1)
+        expect(editor.canUndo).toBe(false)
+        wrapper.unmount()
+    })
+})

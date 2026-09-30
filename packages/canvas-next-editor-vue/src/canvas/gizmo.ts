@@ -8,6 +8,13 @@
  * applyViewportTransform 保持一致——两侧消费同一呈现视口，不会漂移）。
  * 盒几何经 EditorSession.layerBoxAt 取自内核（与命中/绘制同一套布局策略），
  * 五原语后端与文档模型零感知（gizmo 不污染渲染契约）。
+ *
+ * 锁定锁样式（canvas-web-layer-lock 工单 02）：锁定的选中层**只画选中框**——
+ * 「可定位、不可变换」的镜像（面板可选/属性可改，框照画）；锁定层上的 hover
+ * 高亮不画（命中面已过滤锁定层，这里兜「先 hover 后锁定」的 ui 态残留，与
+ * hidden 过滤同缝）。柄面：当前无八柄（resize feature 未立项），接入时柄随
+ * 选中框按同一 locked 谓词折叠（工单 03 目验「有框无柄」；手势起点已有
+ * beginDrag 的 isLocked 门，工单 01）。
  */
 import type { EditorSession, OverlayPaintArgs, OverlayPainter } from '@hankchen/canvas-next-editor'
 import { pathsEqual, rootLayerOf, type LayerPath } from '@hankchen/canvas-next-editor'
@@ -51,7 +58,7 @@ export function drawSelectionGizmo(
     const doc = args.doc
     if (!doc) return
 
-    if (hovered && !pathsEqual(hovered, selection) && !isRootHidden(doc, hovered)) {
+    if (hovered && !pathsEqual(hovered, selection) && !isRootHidden(doc, hovered) && !editor.isLocked(hovered)) {
         const box = editor.layerBoxAt(hovered)
         if (box) {
             ctx.strokeStyle = opts.hoverColor

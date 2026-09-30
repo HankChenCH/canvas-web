@@ -718,3 +718,93 @@ describe('LayerPanel：表达式前置（layer-panel-expression-prefix 工单 02
         wrapper.unmount()
     })
 })
+
+// ---- 锁定（canvas-web-layer-lock 工单 02）：锁定钮/删除禁用/行透明度语义 ----
+
+describe('LayerPanel：锁定（canvas-web-layer-lock 工单 02）', () => {
+    it('锁定钮仅根层行（与眼睛同门，行/格/内容不设锁）；点击走 toggleLayerLock：ui 变更零历史步、不选中行', async () => {
+        const editor = makeEditor([textLayer(30, '底'), tableLayer([rowLayer(30), rowLayer(20)])])
+        const wrapper = mount(LayerPanel, { props: { editor } })
+        // 面板序：表(根)、行、行、文本(根)——锁钮只落两个根层行
+        expect(wrapper.findAll('[data-lock]')).toHaveLength(2)
+        const rows = wrapper.findAll('.cn-layers__row')
+        expect(rows[1]!.find('[data-lock]').exists()).toBe(false)
+        expect(rows[2]!.find('[data-lock]').exists()).toBe(false)
+
+        // 点底行（数组头 ['layers',0]）锁钮 → 锁定；ui 变更不进历史、不触发行选中
+        await rows[3]!.find('[data-lock]').trigger('click')
+        expect(editor.store.ui.lockedPaths).toEqual([['layers', 0]])
+        expect(editor.store.history).toHaveLength(0)
+        expect(editor.store.ui.selection).toBeNull()
+        // 常显闭锁态（aria-pressed 翻转）
+        expect(rows[3]!.find('[data-lock]').attributes('aria-pressed')).toBe('true')
+
+        // 再点解锁
+        await rows[3]!.find('[data-lock]').trigger('click')
+        expect(editor.store.ui.lockedPaths).toEqual([])
+        wrapper.unmount()
+    })
+
+    it('未锁行 hover 门控（hidden 类等待 group-hover），锁定行闭锁常显（无 hidden 类）', async () => {
+        const editor = makeEditor([textLayer(30, '底'), textLayer(10, '顶')])
+        editor.toggleLayerLock(['layers', 0]) // 面板底行锁定
+        const wrapper = mount(LayerPanel, { props: { editor } })
+        const locks = wrapper.findAll('[data-lock]')
+        // 面板顶 = 数组尾（未锁）：hover 门控；面板底（锁定）：常显
+        expect(locks[0]!.classes()).toContain('hidden')
+        expect(locks[0]!.attributes('aria-pressed')).toBe('false')
+        expect(locks[1]!.classes()).not.toContain('hidden')
+        expect(locks[1]!.attributes('aria-pressed')).toBe('true')
+        wrapper.unmount()
+    })
+
+    it('锁定行不降不透明度：--hidden 类只随显隐走（锁定 ≠ 隐藏，两态独立可叠加）', async () => {
+        const editor = makeEditor([{ ...textLayer(30, '底'), visible: false }, textLayer(10, '顶')])
+        editor.toggleLayerLock(['layers', 0]) // 底行锁定 + 隐藏叠加
+        const wrapper = mount(LayerPanel, { props: { editor } })
+        const rows = wrapper.findAll('.cn-layers__row')
+        // 锁定 + 隐藏：--hidden 来自显隐语义（降不透明度表达「不出现」）
+        expect(rows[1]!.classes()).toContain('cn-layers__row--hidden')
+        expect(rows[1]!.find('[data-lock]').attributes('aria-pressed')).toBe('true')
+        // 锁定的可见行不加任何透明度类（locked 表达「出现但受保护」）
+        editor.toggleLayerLock(['layers', 1])
+        await wrapper.vm.$nextTick()
+        expect(rows[0]!.classes()).not.toContain('cn-layers__row--hidden')
+        wrapper.unmount()
+    })
+
+    it('删除钮对锁定子树全树 disabled（根层 + 行/格，内核 deleteLayer 空转为权威）；解锁恢复', async () => {
+        const editor = makeEditor([
+            tableLayer([rowLayer(30, [cellLayer(300), cellLayer(300)]), rowLayer(20)]),
+            textLayer(5, '邻'),
+        ])
+        editor.toggleLayerLock(['layers', 0]) // 锁定表（整子树受保护）
+        const wrapper = mount(LayerPanel, { props: { editor } })
+        const rows = wrapper.findAll('.cn-layers__row')
+        // 面板序：邻(未锁根)、表(锁根)、行0、格、格、行1
+        const removeOf = (row: DOMWrapper<Element>) =>
+            row.findAll('button').find((button) => button.text() === '✕')!
+        expect(removeOf(rows[0]!).attributes('disabled')).toBeUndefined()
+        for (const row of rows.slice(1)) {
+            expect(removeOf(row)!.attributes('disabled')).toBeDefined()
+            expect(removeOf(row)!.attributes('title')).toContain('锁定')
+        }
+
+        // 解锁后恢复可用
+        editor.toggleLayerLock(['layers', 0])
+        await wrapper.vm.$nextTick()
+        expect(rows.map((row) => removeOf(row)!.attributes('disabled')).filter(Boolean)).toHaveLength(0)
+        wrapper.unmount()
+    })
+
+    it('锁定子树的删除钮点击不落内核（disabled 属性拦截，无历史步）', async () => {
+        const editor = makeEditor([textLayer(10, '顶')])
+        editor.toggleLayerLock(['layers', 0])
+        const wrapper = mount(LayerPanel, { props: { editor } })
+        const remove = wrapper.findAll('button').find((button) => button.text() === '✕')!
+        await remove.trigger('click')
+        expect(editor.store.doc!.layers).toHaveLength(1)
+        expect(editor.store.history).toHaveLength(0)
+        wrapper.unmount()
+    })
+})

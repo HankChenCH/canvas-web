@@ -7,6 +7,8 @@
  * - selection/hovered/renaming：与画布命中共享同一 ui 分支——面板点选与画布点选
  *   同源，面板行高亮即画布 gizmo 选中态的镜像；renaming 是行内重命名会话
  *   （工单 09，beginRename/commitRename 漏斗在内核）。
+ * - outline 的 locked 投影入参 = ui.lockedPaths（canvas-web-layer-lock 工单 02）：
+ *   锁定态住 ui 分支，经订阅随锁定/解锁实时喂进内核纯投影。
  * - 拖放落点判定的纯函数面（isUpperHalf/dropTargetIndex）随桥导出供单测。
  */
 import { computed, onScopeDispose, shallowRef, type ComputedRef } from 'vue'
@@ -32,17 +34,23 @@ export function useLayerPanel(editor: EditorSession): LayerPanelBinding {
     const selection = shallowRef<LayerPath | null>(editor.store.ui.selection)
     const hovered = shallowRef<LayerPath | null>(editor.store.ui.hovered)
     const renaming = shallowRef<LayerPath | null>(editor.store.ui.renaming)
+    // 锁定集合（canvas-web-layer-lock 工单 02）：outline 的 locked 投影入参——
+    // ui 分支态经这里喂进内核纯投影，锁定/解锁后大纲行立即翻转
+    const lockedPaths = shallowRef<readonly LayerPath[]>(editor.store.ui.lockedPaths)
 
     const unsubscribe = editor.subscribe((change) => {
         if (change.scope === 'doc') doc.value = editor.store.doc
         else if (change.branch === 'selection') selection.value = editor.store.ui.selection
         else if (change.branch === 'hovered') hovered.value = editor.store.ui.hovered
         else if (change.branch === 'renaming') renaming.value = editor.store.ui.renaming
+        else if (change.branch === 'lockedPaths') lockedPaths.value = editor.store.ui.lockedPaths
     })
     // failSilently：测试可在无 effect scope 的环境调用
     onScopeDispose(unsubscribe, true)
 
-    const outline = computed(() => (doc.value ? buildLayerOutline(doc.value) : []))
+    const outline = computed(() =>
+        doc.value ? buildLayerOutline(doc.value, lockedPaths.value) : [],
+    )
 
     return {
         outline,

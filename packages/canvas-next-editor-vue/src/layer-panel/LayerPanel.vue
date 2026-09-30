@@ -19,7 +19,7 @@
  */
 import { computed, nextTick, ref, watch, type ComponentPublicInstance } from 'vue'
 
-import { Eye, EyeOff, GripVertical, Pencil } from '@lucide/vue'
+import { Eye, EyeOff, GripVertical, Lock, LockOpen, Pencil } from '@lucide/vue'
 
 import {
     isTemplateSubtreePath,
@@ -197,6 +197,16 @@ function remove(row: FlatRow): void {
 /** 切换根层可见性：隐藏 = 渲染跳过 + 画布不可点选（内核/契约层语义），一步历史 */
 function toggleVisibility(row: FlatRow): void {
     props.editor.toggleLayerVisibility(row.node.path)
+}
+
+// ---- 锁定（canvas-web-layer-lock 工单 02：仅根层；ui 变更不进历史） ----
+
+/**
+ * 切换根层锁定：整子树退出画布命中面 + 误操作防护（拖动起点/删除在内核空转），
+ * 渲染产物不变（锁定 ≠ 隐藏——照常渲染输出）；不进历史（会话级 ui 态）。
+ */
+function toggleLock(row: FlatRow): void {
+    props.editor.toggleLayerLock(row.node.path)
 }
 
 // ---- 拖放重排（根层/行/格三套落点，坐标折算与同步全在内核） ----
@@ -528,6 +538,21 @@ watch(panel.renaming, async (path) => {
                 >
                     <PanelIcon :icon="row.node.visible ? Eye : EyeOff" :size="11" :stroke-width="2" />
                 </button>
+                <!-- 锁定钮（canvas-web-layer-lock 工单 02）：眼睛同款 hover 门控，锁定态
+                     常显闭锁（aria-pressed = locked）；锁定行不加透明度类——锁定 ≠ 隐藏
+                     （hidden 降不透明度表达「不出现」，locked 表达「出现但受保护」） -->
+                <button
+                    v-if="isRootRow(row)"
+                    type="button"
+                    data-lock
+                    class="cn-layers__lock size-5 shrink-0 items-center justify-center rounded text-cn-muted hover:bg-cn-accent/15 hover:text-cn-accent"
+                    :class="row.node.locked ? 'flex' : 'hidden group-hover:flex'"
+                    :title="row.node.locked ? '解锁图层（⇧⌘L）' : '锁定图层（画布不可点选/拖动/删除，渲染照常）'"
+                    :aria-pressed="row.node.locked"
+                    @click.stop="toggleLock(row)"
+                >
+                    <PanelIcon :icon="row.node.locked ? Lock : LockOpen" :size="11" :stroke-width="2" />
+                </button>
                 <button
                     v-if="isRootRow(row)"
                     type="button"
@@ -569,11 +594,17 @@ watch(panel.renaming, async (path) => {
                 >
                     +格
                 </button>
+                <!-- 删除钮：模板替身与锁定子树（root 携 locked 即整棵子树）置灰——
+                     内核 deleteLayer 空转为权威，UI 呈现一致（工单 02） -->
                 <button
                     type="button"
                     class="cn-layers__delete hidden size-5 shrink-0 items-center justify-center rounded text-[10px] leading-none text-cn-muted hover:bg-cn-danger/15 hover:text-cn-danger group-hover:flex disabled:cursor-not-allowed disabled:text-cn-muted/50 disabled:hover:bg-transparent disabled:hover:text-cn-muted/50"
-                    :disabled="row.node.role === 'templateRow'"
-                    :title="row.node.role === 'templateRow' ? '行模板由表持有——转换回普通表请用 V2 转换入口' : '删除（含子层）'"
+                    :disabled="row.node.role === 'templateRow' || row.node.locked"
+                    :title="row.node.role === 'templateRow'
+                        ? '行模板由表持有——转换回普通表请用 V2 转换入口'
+                        : row.node.locked
+                            ? '图层已锁定（⇧⌘L 解锁后可删除）'
+                            : '删除（含子层）'"
                     @click.stop="remove(row)"
                 >
                     ✕

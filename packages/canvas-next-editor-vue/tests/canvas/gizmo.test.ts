@@ -139,4 +139,30 @@ describe('createGizmoOverlayPainter（gizmo 覆盖层画笔：选择框 + hover�
         session.setSelection(null)
         session.setHovered(null)
     })
+
+    it('锁定 gizmo 锁样式（canvas-web-layer-lock 工单 02）：锁定选中层只画选中框（可定位、不可变换——有框无柄）', () => {
+        session.setHovered(null)
+        session.setSelection(['layers', 0])
+        session.toggleLayerLock(['layers', 0])
+        const ctx = mockCtx()
+        createGizmoOverlayPainter(session, ctx)({ ...args, doc: session.store.doc })
+        // 框照画（锁定 ≠ 隐藏——「可定位」的镜像；柄面随 resize feature 接入时按
+        // 同一 locked 折叠，工单 03 目验「有框无柄」）
+        expect(strokes(ctx)).toEqual(['stroke:100,200,100,50'])
+        expect(ctx.lineWidths).toEqual([1]) // 选中框线宽语义不变
+        session.toggleLayerLock(['layers', 0])
+        session.setSelection(null)
+    })
+
+    it('锁定层上的 hover 残留不画高亮（锁定先于 hover：ui 态残留兜底，与 hidden 过滤同缝）', () => {
+        session.setSelection(['layers', 0])
+        session.setHovered(['layers', 1])
+        session.toggleLayerLock(['layers', 1]) // hover 已设上再锁定——残留态
+        const ctx = mockCtx()
+        createGizmoOverlayPainter(session, ctx)({ ...args, doc: session.store.doc })
+        expect(strokes(ctx)).toEqual(['stroke:100,200,100,50']) // 只剩选中框
+        session.toggleLayerLock(['layers', 1])
+        session.setHovered(null)
+        session.setSelection(null)
+    })
 })

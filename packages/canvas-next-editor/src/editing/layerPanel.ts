@@ -19,7 +19,7 @@
 import type { Canvas, Layer, LayerType, TableLayer, TableCellLayer, TextLayer, TableRowLayer, TableRowTemplateLayer } from '@hankchen/canvas-next'
 import type { Draft } from 'immer'
 
-import { isLayerPath, resolveLayer, type LayerPath } from '../shared/layerPath'
+import { isLayerPath, isLockedPath, resolveLayer, type LayerPath } from '../shared/layerPath'
 import { scanExpressionFragments } from '../shared/expressionScan'
 
 /** 图层在容器树里的角色（决定面板缩进与可拖动性）；templateRow = 行模板替身节点 */
@@ -41,6 +41,13 @@ export interface LayerOutlineNode {
      * 语义只在 LayerBase 面）。
      */
     readonly visible: boolean
+    /**
+     * 锁定投影（canvas-web-layer-lock 工单 02）：isLockedPath 前缀判定——锁定的
+     * 根层及其整棵子树（行/格/内容）都携 true。锁定态住 ui 分支（会话级、零
+     * wire 键），经 buildLayerOutline 的 ui 分支入参喂入；面板锁定钮状态、锁定
+     * 行样式与删除钮/菜单删除项置灰据此投影（内核空转为权威，UI 呈现一致）。
+     */
+    readonly locked: boolean
     /**
      * 表达式前置（layer-panel-expression-prefix 工单 01）：带标记内容层（三内容层
      * 且 expression !== null）的全部闭合片段按 expr 重构 `{{…}}` 外壳、单空格连接，
@@ -106,7 +113,12 @@ function expressionPrefixFor(layer: Layer): string {
     return exprs.map((expr) => `{{${expr}}}`).join(' ')
 }
 
-function outlineWalk(layer: Layer, path: LayerPath, role: LayerOutlineRole): LayerOutlineNode {
+function outlineWalk(
+    layer: Layer,
+    path: LayerPath,
+    role: LayerOutlineRole,
+    lockedPaths: readonly LayerPath[],
+): LayerOutlineNode {
     const children: LayerOutlineNode[] = []
     for (const { key, layers } of childLists(layer)) {
         for (let i = 0; i < layers.length; i += 1) {
@@ -119,7 +131,7 @@ function outlineWalk(layer: Layer, path: LayerPath, role: LayerOutlineRole): Lay
                     : key === 'template'
                         ? [...path, 'template']
                         : [...path, key, i]
-            children.push(outlineWalk(layers[i]!, childPath, roleOfChild))
+            children.push(outlineWalk(layers[i]!, childPath, roleOfChild, lockedPaths))
         }
     }
     return {
@@ -128,6 +140,7 @@ function outlineWalk(layer: Layer, path: LayerPath, role: LayerOutlineRole): Lay
         role,
         name: layer.name,
         visible: layer.visible,
+        locked: isLockedPath(path, lockedPaths),
         expressionPrefix: expressionPrefixFor(layer),
         ...(layer.type === 'TableLayer' ? { templated: layer.template !== null } : null),
         children,
@@ -137,11 +150,16 @@ function outlineWalk(layer: Layer, path: LayerPath, role: LayerOutlineRole): Lay
 /**
  * 面板大纲：根层按视觉层级排列（数组逆序——面板顶部 = 视觉最上层 = 数组尾），
  * 表格内行/格/内容保持数组序（行 0 在视觉顶部、格 0 在左）。
+ * lockedPaths 为 ui 分支入参（canvas-web-layer-lock 工单 02）：锁定态不写 graph，
+ * 投影按 isLockedPath 前缀判定携带到锁定子树全树；缺省 []（无锁投影）。
  */
-export function buildLayerOutline(doc: Canvas): readonly LayerOutlineNode[] {
+export function buildLayerOutline(
+    doc: Canvas,
+    lockedPaths: readonly LayerPath[] = [],
+): readonly LayerOutlineNode[] {
     const roots: LayerOutlineNode[] = []
     for (let i = doc.layers.length - 1; i >= 0; i -= 1) {
-        roots.push(outlineWalk(doc.layers[i]!, ['layers', i], 'root'))
+        roots.push(outlineWalk(doc.layers[i]!, ['layers', i], 'root', lockedPaths))
     }
     return roots
 }

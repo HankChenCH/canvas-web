@@ -29,6 +29,8 @@ export type EditorShortcutAction =
     | 'delete'
     | 'rename'
     | 'toggleRulers'
+    | 'toggleLayerLock'
+    | 'toggleLayerVisibility'
 
 /** 键位组合声明：key 为 KeyboardEvent.key 的小写归一形态；mod/shift 精确匹配 */
 export interface ShortcutCombo {
@@ -61,6 +63,11 @@ export const DEFAULT_EDITOR_SHORTCUTS: readonly EditorShortcutBinding[] = [
     // 标尺显隐（ruler-guides-snap 工单 01）：裸键 + shift（mod 变体不占用，
     // 不抢浏览器刷新等既有语义）
     { combo: { key: 'r', mod: false, shift: true }, action: 'toggleRulers' },
+    // 锁定 ⇧⌘L / 显隐 ⇧⌘H（canvas-web-layer-lock 工单 02，显隐键位系 feature-status
+    // §一挂账补位）：行业趋同（Figma/Sketch 同款）；mod+shift 组合不抢浏览器
+    // ⌘L 地址栏、⌘H 历史页既有语义
+    { combo: { key: 'l', mod: true, shift: true }, action: 'toggleLayerLock' },
+    { combo: { key: 'h', mod: true, shift: true }, action: 'toggleLayerVisibility' },
 ]
 
 /** 快捷键输入：绑定层从 KeyboardEvent 与会话状态折算（本类型不出现任何 DOM 类型） */

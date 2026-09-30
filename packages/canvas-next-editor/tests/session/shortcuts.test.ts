@@ -77,6 +77,18 @@ describe('classifyEditorShortcut：缺省注册表（excalidraw 惯例、v1 单�
         expect(classifyEditorShortcut(input({ key: 'r', mod: true, shift: true }))).toBeNull()
     })
 
+    it('锁定/显隐：⇧⌘L / ⇧⌘H（canvas-web-layer-lock 工单 02，行业趋同键位；mod+shift 精确匹配）', () => {
+        expect(classifyEditorShortcut(input({ key: 'l', mod: true, shift: true }))).toBe('toggleLayerLock')
+        expect(classifyEditorShortcut(input({ key: 'L', mod: true, shift: true }))).toBe('toggleLayerLock')
+        expect(classifyEditorShortcut(input({ key: 'h', mod: true, shift: true }))).toBe('toggleLayerVisibility')
+        expect(classifyEditorShortcut(input({ key: 'H', mod: true, shift: true }))).toBe('toggleLayerVisibility')
+        // 裸键 / 只 mod / 只 shift 不入表（⌘L 浏览器地址栏、⌘H 浏览器历史不抢）
+        expect(classifyEditorShortcut(input({ key: 'l', mod: true, shift: false }))).toBeNull()
+        expect(classifyEditorShortcut(input({ key: 'l', mod: false, shift: true }))).toBeNull()
+        expect(classifyEditorShortcut(input({ key: 'h', mod: true, shift: false }))).toBeNull()
+        expect(classifyEditorShortcut(input({ key: 'h', mod: false, shift: true }))).toBeNull()
+    })
+
     it('key 大小写归一（大写锁定/Shift 折算后匹配）', () => {
         expect(classifyEditorShortcut(input({ key: 'Z', mod: true, shift: false }))).toBe('undo')
         expect(classifyEditorShortcut(input({ key: 'C', mod: true, shift: false }))).toBe('copy')
@@ -195,5 +207,40 @@ describe('executeShortcut：action → 会话动作分派', () => {
         expect(session.store.ui.rulersVisible).toBe(false)
         expect(session.executeShortcut(action!)).toBe(true)
         expect(session.store.ui.rulersVisible).toBe(true)
+    })
+
+    it('toggleLayerLock 分派锁定翻转（ui 变更零历史步）；无选择/非根为 false（工单 02）', () => {
+        const session = makeSession()
+        expect(session.executeShortcut('toggleLayerLock')).toBe(false) // 无选择空转
+        expect(session.store.ui.lockedPaths).toEqual([])
+        session.setSelection(['layers', 0])
+        expect(session.executeShortcut('toggleLayerLock')).toBe(true)
+        expect(session.store.ui.lockedPaths).toEqual([['layers', 0]])
+        expect(session.store.history).toHaveLength(0) // ui 变更不进历史
+        expect(session.executeShortcut('toggleLayerLock')).toBe(true)
+        expect(session.store.ui.lockedPaths).toEqual([]) // 再按解锁
+        // 非根形状空转（kernel 面向根层，分派口按可用态裁剪返回 false）
+        session.setSelection(['layers', 0, 'rows', 0])
+        expect(session.executeShortcut('toggleLayerLock')).toBe(false)
+        expect(session.store.ui.lockedPaths).toEqual([])
+        // 悬空根路径同样空转为 false（prune 窗口外的兜底，分派口与内核空转同口径）
+        session.setSelection(['layers', 9])
+        expect(session.executeShortcut('toggleLayerLock')).toBe(false)
+        expect(session.store.ui.lockedPaths).toEqual([])
+    })
+
+    it('toggleLayerVisibility 分派显隐翻转（一步历史）；无选择/非根为 false（工单 02 挂账补位）', () => {
+        const session = makeSession()
+        expect(session.executeShortcut('toggleLayerVisibility')).toBe(false)
+        session.setSelection(['layers', 0])
+        expect(session.executeShortcut('toggleLayerVisibility')).toBe(true)
+        expect(session.store.doc!.layers[0]!.visible).toBe(false)
+        expect(session.store.history).toHaveLength(1)
+        session.setSelection(['layers', 0, 'rows', 0])
+        expect(session.executeShortcut('toggleLayerVisibility')).toBe(false)
+        expect(session.store.doc!.layers[0]!.visible).toBe(false)
+        session.setSelection(['layers', 9])
+        expect(session.executeShortcut('toggleLayerVisibility')).toBe(false)
+        expect(session.store.doc!.layers[0]!.visible).toBe(false)
     })
 })

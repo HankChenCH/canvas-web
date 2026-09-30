@@ -1102,13 +1102,27 @@ export class EditorSession {
         return doc.layers.length - 1 - (path[1] as number)
     }
 
+    /**
+     * 可分派的选中根层路径（⇧⌘L/⇧⌘H 分派口守卫，工单 02）：无选择/无文档/非根
+     * 形状/悬空（不可解析）一律 null——分派口「空转返回 false」与内核 action 的
+     * 静默空转同口径（悬空窗口来自 prune 之外的结构步，兜底裁定可用态）。
+     */
+    private selectableRootPath(): LayerPath | null {
+        const path = this.store.ui.selection
+        const doc = this.store.doc
+        if (path === null || doc === null || !isRootLayerPath(path)) return null
+        return resolveLayer(doc, path) === null ? null : path
+    }
+
     // ---- 快捷键分派（工单 14）：注册表分类（shortcuts.ts）→ 这里执行 ----
 
     /**
      * 执行快捷键动作（注册表分类的出口）：undo/redo/delete/copy/paste/duplicate/
-     * rename 的统一分派面。让路规则在分类器（classifyEditorShortcut）裁决，到达
-     * 这里的动作不再重复判态；动作为空转（无选择/空剪贴板/非根层）返回 false，
-     * 其余 true。rename 开选中根层的重命名会话（F2，工单 09），不直接写文档。
+     * rename/toggleLayerLock/toggleLayerVisibility 的统一分派面。让路规则在分类器
+     * （classifyEditorShortcut）裁决，到达这里的动作不再重复判态；动作为空转
+     * （无选择/空剪贴板/非根层）返回 false，其余 true。rename 开选中根层的重命名
+     * 会话（F2，工单 09），不直接写文档；锁定/显隐作用于选中根层（canvas-web-layer-lock
+     * 工单 02 + feature-status 显隐键位挂账补位），非根/无选择按可用态裁剪返回 false。
      */
     executeShortcut(action: EditorShortcutAction): boolean {
         switch (action) {
@@ -1129,6 +1143,18 @@ export class EditorSession {
             case 'toggleRulers':
                 this.toggleRulers()
                 return true
+            case 'toggleLayerLock': {
+                const path = this.selectableRootPath()
+                if (path === null) return false
+                this.toggleLayerLock(path)
+                return true
+            }
+            case 'toggleLayerVisibility': {
+                const path = this.selectableRootPath()
+                if (path === null) return false
+                this.toggleLayerVisibility(path)
+                return true
+            }
             case 'delete': {
                 const path = this.store.ui.selection
                 if (!path) return false
