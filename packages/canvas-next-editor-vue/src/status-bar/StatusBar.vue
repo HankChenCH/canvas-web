@@ -17,7 +17,9 @@
  *   pendingCount 注入模式，缺省隐藏；
  * - 保存态段：宿主注入 saveState prop（● 未保存 / ○ 已保存），未接线隐藏；
  * - schema 声明态段：组件直读 ui 分支（已注入顶层 N 键 / 无候选），恒显；
- * - 瞬时反馈段：宿主注入动作结果/错误文案 prop，缺省隐藏。
+ * - 瞬时反馈段：宿主注入动作结果/错误文案 prop + 包内瞬时反馈单例
+ *   （useTransientFeedback，kbd-nav 工单 05——canvas 域拖放被忽略的降级提示等
+ *   包内来源），宿主文案优先、包内瞬时补位，缺省隐藏。
  *
  * kbd-nav 工单 04 新增「快捷键」段按钮：useShortcutsHelp 单例开合（帮助面板
  * 第二入口，⌘/ 走 useShortcuts 桥同态；HelpDialog 由宿主挂载渲染）。
@@ -36,6 +38,7 @@ import { useDataSourceSchema } from './useDataSourceSchema'
 import { useDoc } from './useDoc'
 import { useSelection } from '../shared/useSelection'
 import { useShortcutsHelp } from '../shared/useShortcutsHelp'
+import { useTransientFeedback } from '../shared/useTransientFeedback'
 import { useViewport } from '../shared/useViewport'
 
 const props = withDefaults(
@@ -90,6 +93,12 @@ const zoomMenuOpen = ref(false)
 
 /** 帮助面板单例开合（「快捷键」段按钮；⌘/ 走 useShortcuts 桥共享同一 open 态） */
 const { toggle: toggleHelp } = useShortcutsHelp()
+
+/** 包内瞬时反馈单例（kbd-nav 工单 05）：canvas 域拖放降级等直写，这里补位显示 */
+const transient = useTransientFeedback()
+
+/** 反馈段读数：宿主注入文案优先（宿主动作语义、长驻），否则包内瞬时反馈补位 */
+const feedbackText = computed(() => (props.feedback !== '' ? props.feedback : transient.message.value))
 
 /** 缩放步进（playground 浮条先例收编）：以视口中心为锚 ×/÷ 因子，平移不跳变 */
 function zoomBy(factor: number): void {
@@ -185,9 +194,9 @@ onBeforeUnmount(() => {
         </template>
         <span class="cn-statusbar__divider" aria-hidden="true"></span>
         <span class="cn-statusbar__segment" data-schema>{{ schemaLabel }}</span>
-        <template v-if="props.feedback !== ''">
+        <template v-if="feedbackText !== ''">
             <span class="cn-statusbar__divider" aria-hidden="true"></span>
-            <span class="cn-statusbar__segment" data-feedback>{{ props.feedback }}</span>
+            <span class="cn-statusbar__segment" data-feedback>{{ feedbackText }}</span>
         </template>
         <span class="cn-statusbar__divider" aria-hidden="true"></span>
         <button

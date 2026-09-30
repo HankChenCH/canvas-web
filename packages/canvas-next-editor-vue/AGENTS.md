@@ -4,11 +4,11 @@ Vue 3 薄绑定：composables 切片桥、画布表面组件、schema 驱动属�
 
 ## Layout（src 按领域分域，2026-09 起）
 
-- `src/canvas/` — 画布表面域：CanvasSurface（双层 canvas + 事件桥）与其内挂 overlay（TextEditingOverlay、ContextMenu）、浮于画布的呈现件 AlignFloatBar（对齐画布浮条，无自身页面定位——挂载点归宿主）、gizmo 画笔、rAF 调度（scheduler）、DPR 桥（useDpr）、文本编辑切片（useTextEditing）。
+- `src/canvas/` — 画布表面域：CanvasSurface（双层 canvas + 事件桥，含拖文件入画布——只收 image/*、DOM Image 解码自然尺寸 1:1 落盒、多文件 +16px 级联）与其内挂 overlay（TextEditingOverlay、ContextMenu）、浮于画布的呈现件 AlignFloatBar（对齐画布浮条，无自身页面定位——挂载点归宿主）、gizmo 画笔、rAF 调度（scheduler）、DPR 桥（useDpr）、文本编辑切片（useTextEditing）。
 - `src/property-panel/` — 属性面板域：fieldSchema（字段描述注册表 + 领域类型）、PropertyPanel/PropertyField、controls（`<component :is>` 注册表）、controlStyles（Tailwind 类名常量，包内私有）、fontPicker 注入缝；`fields/` 收字段控件与行内辅助件（注册表控件经域内 barrel 供 controls 收集；行内辅助件如 BorderWidthInput / ShorthandModeButton / ValueTypeSegmented 由消费方直引；均不进包级公共出口）。
 - `src/layer-panel/` — 图层面板域：LayerPanel + useLayerPanel。
 - `src/status-bar/` — 状态栏域：StatusBar（缩放 % 段自带弹层菜单，`data-zoom-*` 目验钩子沿 playground 浮条命名）+ layerPathLabel/layerGeometryLabel（读数格式化）。
-- `src/shared/` — 跨域切片桥：useSelection / useViewport / useHistory / useShortcuts / useShortcutsHelp（快捷键帮助单例开合态，⌘/ 桥路由与状态栏按钮双入口共享）/ editableTarget、
+- `src/shared/` — 跨域切片桥：useSelection / useViewport / useHistory / useShortcuts / useShortcutsHelp（快捷键帮助单例开合态，⌘/ 桥路由与状态栏按钮双入口共享）/ useTransientFeedback（状态栏瞬时反馈单例，包内来源直写、StatusBar 补位显示）/ uploadFileFromDom（DOM File → 上传文件描述，canvas 拖放与字体控件两域共用）/ editableTarget、
   HelpDialog（帮助面板展示件，Teleport body、注册表 bindings/platform 双注入缝）与 shortcutsHelp（分组展示名/平台键位符号纯函数）、
   面板图标统一封装 PanelIcon（lucide 图标经 icon prop 注入，统一尺寸/描边默认，
   封装不引 lucide 运行时以保 tree-shake）——唯一允许被各域引用的层。

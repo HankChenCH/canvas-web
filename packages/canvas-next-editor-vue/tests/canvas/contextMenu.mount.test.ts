@@ -91,14 +91,22 @@ describe('ContextMenu：定位与钳位', () => {
 })
 
 describe('ContextMenu：可用态裁剪（v1 单选 + 根层语义）', () => {
-    it('根层文本层：五项全可用（显示/隐藏按当前态出标签）', async () => {
+    it('根层文本层：七项全可用（显示/隐藏按当前态出标签；前移/后移置于置顶/置底之上）', async () => {
         const editor = makeEditor([textLayer({ priority: 10 })])
         editor.setSelection(['layers', 0])
         const wrapper = mountMenu(editor)
         await wrapper.vm.openAt(10, 10)
         const buttons = itemButtons(wrapper)
-        expect(buttons).toHaveLength(5)
-        expect(buttons.map((b) => b.text())).toEqual(['隐藏', '创建副本', '置顶', '置底', '删除'])
+        expect(buttons).toHaveLength(7)
+        expect(buttons.map((b) => b.text())).toEqual([
+            '隐藏',
+            '创建副本',
+            '前移一层',
+            '后移一层',
+            '置顶',
+            '置底',
+            '删除',
+        ])
         expect(buttons.every((b) => !b.attributes('disabled'))).toBe(true)
         wrapper.unmount()
     })
@@ -114,8 +122,8 @@ describe('ContextMenu：可用态裁剪（v1 单选 + 根层语义）', () => {
         const wrapper = mountMenu(editor)
         await wrapper.vm.openAt(10, 10)
         const disabled = itemButtons(wrapper).map((b) => b.attributes('disabled') !== undefined)
-        // [隐藏, 副本, 置顶, 置底, 转为模板表…（所属 V1 表末行有格 → 可用）, 删除]
-        expect(disabled).toEqual([true, true, true, true, false, false])
+        // [隐藏, 副本, 前移, 后移, 置顶, 置底, 转为模板表…（所属 V1 表末行有格 → 可用）, 删除]
+        expect(disabled).toEqual([true, true, true, true, true, true, false, false])
         const labels = itemButtons(wrapper).map((b) => b.text())
         expect(labels).toContain('转为模板表…')
         wrapper.unmount()
@@ -132,8 +140,8 @@ describe('ContextMenu：可用态裁剪（v1 单选 + 根层语义）', () => {
         const wrapper = mountMenu(editor)
         await wrapper.vm.openAt(10, 10)
         const disabled = itemButtons(wrapper).map((b) => b.attributes('disabled') !== undefined)
-        // [隐藏, 副本, 置顶, 置底, 转为模板表…（所属表判定，spec §2.3）, 删除]
-        expect(disabled).toEqual([true, false, true, true, false, false])
+        // [隐藏, 副本, 前移, 后移, 置顶, 置底, 转为模板表…（所属表判定，spec §2.3）, 删除]
+        expect(disabled).toEqual([true, false, true, true, true, true, false, false])
         wrapper.unmount()
     })
 
@@ -190,6 +198,68 @@ describe('ContextMenu：动作执行', () => {
         expect(editor.store.doc!.layers.map((l) => (l as { text: string }).text)).toEqual(['底', '中', '顶'])
         expect(editor.store.doc!.layers[0]!.priority).toBe(21) // 现表 max(20) + 1
         wrapper.unmount()
+    })
+
+    it('前移一层/后移一层：单格重排（kbd-nav 工单 05，直调内核 bringForward/sendBackward）', async () => {
+        const editor = makeEditor([
+            textLayer({ priority: 30, text: '底' }),
+            textLayer({ priority: 20, text: '中' }),
+            textLayer({ priority: 10, text: '顶' }),
+        ])
+        const wrapper = mountMenu(editor)
+
+        // 前移：视觉底层的「底」上挪一格（与「中」换位）
+        editor.setSelection(['layers', 0]) // 底
+        await wrapper.vm.openAt(10, 10)
+        await itemButtons(wrapper).find((b) => b.text() === '前移一层')!.trigger('click')
+        expect(editor.store.doc!.layers.map((l) => (l as { text: string }).text)).toEqual(['中', '底', '顶'])
+        expect(editor.canUndo).toBe(true)
+        expect(wrapper.find('.cn-context-menu').exists()).toBe(false)
+
+        // 后移：视觉顶层的「顶」下挪一格（panel [顶,底,中] → [底,顶,中]）
+        editor.setSelection(['layers', 2]) // 顶
+        await wrapper.vm.openAt(10, 10)
+        await itemButtons(wrapper).find((b) => b.text() === '后移一层')!.trigger('click')
+        expect(editor.store.doc!.layers.map((l) => (l as { text: string }).text)).toEqual(['中', '顶', '底'])
+        wrapper.unmount()
+    })
+
+    it('前移/后移：非根置灰 + title 同置顶/置底现状；边界不置灰（内核空转为权威）', async () => {
+        const editor = makeEditor([
+            textLayer({ priority: 20, text: '甲' }),
+            textLayer({ priority: 10, text: '乙' }),
+        ])
+        const wrapper = mountMenu(editor)
+
+        // 边界不置灰：视觉顶层「乙」的前移一层仍可点，点击内核空转（无历史步）
+        editor.setSelection(['layers', 1]) // 乙（视觉最上层）
+        await wrapper.vm.openAt(10, 10)
+        const forward = itemButtons(wrapper).find((b) => b.text() === '前移一层')!
+        expect(forward.attributes('disabled')).toBeUndefined()
+        await forward.trigger('click')
+        expect(editor.store.doc!.layers.map((l) => (l as { text: string }).text)).toEqual(['甲', '乙'])
+        expect(editor.canUndo).toBe(false)
+        expect(wrapper.find('.cn-context-menu').exists()).toBe(false)
+        wrapper.unmount()
+
+        // 非根置灰 + title（行选择）
+        const tableEditor = makeEditor([
+            tableLayer(
+                [rowLayer([cellLayer(null, { shape: { width: 200, height: 60 } })], { shape: { width: 200, height: 60 } })],
+                { shape: { width: 200, height: 60 } },
+            ),
+        ])
+        tableEditor.setSelection(['layers', 0, 'rows', 0])
+        const tableWrapper = mountMenu(tableEditor)
+        await tableWrapper.vm.openAt(10, 10)
+        for (const label of ['前移一层', '后移一层']) {
+            const item = itemButtons(tableWrapper).find((b) => b.text() === label)!
+            expect(item.attributes('disabled')).toBeDefined()
+            expect(item.attributes('title')).toContain('根图层')
+        }
+        await itemButtons(tableWrapper).find((b) => b.text() === '前移一层')!.trigger('click')
+        expect(tableEditor.canUndo).toBe(false)
+        tableWrapper.unmount()
     })
 
     it('禁用项点击不产生副作用', async () => {

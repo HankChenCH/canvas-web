@@ -23,6 +23,18 @@ export interface UploadFile {
 /** 本机资源 → 可物化引用（URL / data URL / 宿主存储地址，渲染端物化管线可装载的引用） */
 export type UploadHandler = (file: UploadFile) => Promise<string>
 
+/**
+ * 上传建层的摆位覆盖（kbd-nav 工单 05，拖文件入画布语义）：缺省（两键皆缺）=
+ * 编辑器缺省盒（createDefaultLayer 的 ImageLayer 形态 200×150 落 0,0）。
+ * - `at`：图层盒左上角的场景坐标（缺省 top-left 锚不改，改写锚点偏移）；
+ * - `size`：盒尺寸 1:1 落值不缩放（拖放语义传解码出的图片自然尺寸，溢出画布
+ *   属预期——Figma 同构）。
+ */
+export interface UploadImagePlacement {
+    readonly at?: { x: number; y: number }
+    readonly size?: { width: number; height: number }
+}
+
 /** 上传条目的展示名：去扩展名的文件名基名（空退化全名） */
 export function uploadDisplayName(file: UploadFile): string {
     const base = file.name.replace(/\.[^.]+$/, '')

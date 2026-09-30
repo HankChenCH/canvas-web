@@ -102,7 +102,13 @@ import {
 import { EditorStore, type EditorChange, type TransactOptions } from './store'
 import type { EditorShortcutAction } from './shortcuts'
 import { FontCatalog, type FontCatalogEntry } from '../editing/fontCatalog'
-import { UploadHandlerMissingError, uploadDisplayName, type UploadFile, type UploadHandler } from '../editing/upload'
+import {
+    UploadHandlerMissingError,
+    uploadDisplayName,
+    type UploadFile,
+    type UploadHandler,
+    type UploadImagePlacement,
+} from '../editing/upload'
 
 /** transact 回调向外传值的容器：TS 会把闭包内赋值的 let 窄化回初值类型，盒属性访问不受影响 */
 type TxOut<T> = { v: T }
@@ -840,16 +846,24 @@ export class EditorSession {
      * 本机图片 → 新增图片图层并写入可物化引用（全流程 = 一步历史）：上传经注入
      * 实现，引用与 addRootLayerInDraft 落同一事务（撤销一次即回退整个上传建层），
      * 完成后自动选中新层。文档未打开直接返回 null（不产生上传副作用——字节不离开
-     * 本机）；上传失败异常上抛、文档不动。
+     * 本机）；上传失败异常上抛、文档不动。placement（kbd-nav 工单 05）缺省 =
+     * 编辑器缺省盒；`at` 图层盒左上角对准场景点、`size` 1:1 落盒不缩放（拖文件
+     * 入画布语义，自然尺寸由绑定层解码传入——内核无 DOM）。
      */
-    async uploadImageAsLayer(file: UploadFile): Promise<LayerPath | null> {
+    async uploadImageAsLayer(file: UploadFile, placement: UploadImagePlacement = {}): Promise<LayerPath | null> {
         if (!this.store.doc) return null
         const ref = await this.requireUpload(file)
         const index: TxOut<number> = { v: -1 }
         this.store.transact((draft) => {
             index.v = addRootLayerInDraft(draft, 'ImageLayer')
             if (index.v < 0) return
-            ;(draft.layers[index.v] as Draft<ImageLayer>).src = ref
+            const layer = draft.layers[index.v] as Draft<ImageLayer>
+            layer.src = ref
+            if (placement.at) layer.position = { ...layer.position, x: placement.at.x, y: placement.at.y }
+            if (placement.size) {
+                layer.shape.width = placement.size.width
+                layer.shape.height = placement.size.height
+            }
         })
         if (index.v < 0) return null
         const path: LayerPath = ['layers', index.v]

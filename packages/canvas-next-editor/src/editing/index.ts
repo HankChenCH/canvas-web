@@ -55,4 +55,5 @@ export {
     uploadDisplayName,
     type UploadFile,
     type UploadHandler,
+    type UploadImagePlacement,
 } from './upload'

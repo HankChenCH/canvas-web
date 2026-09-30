@@ -16,6 +16,7 @@ import { EditorSession, type FrameScheduler } from '@hankchen/canvas-next-editor
 
 import StatusBar from '../../src/status-bar/StatusBar.vue'
 import { useShortcutsHelp } from '../../src/shared/useShortcutsHelp'
+import { useTransientFeedback } from '../../src/shared/useTransientFeedback'
 import { textLayer } from '../../../canvas-next-editor/tests/support/fixtures'
 
 const nullScheduler: FrameScheduler = () => () => {}
@@ -365,6 +366,37 @@ describe('StatusBar：瞬时反馈段（宿主注入）', () => {
 
         await wrapper.setProps({ feedback: '' })
         expect(wrapper.find('[data-feedback]').exists()).toBe(false)
+        wrapper.unmount()
+    })
+})
+
+describe('StatusBar：瞬时反馈段（包内单例补位，kbd-nav 工单 05）', () => {
+    it('宿主沉默时显示 useTransientFeedback 瞬时文案（canvas 域拖放降级等），清空即隐藏', async () => {
+        const editor = makeEditor()
+        const wrapper = mountBar(editor)
+        expect(wrapper.find('[data-feedback]').exists()).toBe(false)
+
+        const feedback = useTransientFeedback()
+        feedback.show('上传不可用：未接入上传实现，图片未添加')
+        await wrapper.vm.$nextTick()
+        expect(wrapper.find('[data-feedback]').text()).toBe('上传不可用：未接入上传实现，图片未添加')
+
+        feedback.clear()
+        await wrapper.vm.$nextTick()
+        expect(wrapper.find('[data-feedback]').exists()).toBe(false)
+        wrapper.unmount()
+    })
+
+    it('宿主注入文案优先（两路并存不互相覆盖），宿主清空后瞬时文案补位', async () => {
+        const editor = makeEditor()
+        const feedback = useTransientFeedback()
+        feedback.show('包内瞬时')
+        const wrapper = mountBar(editor, { feedback: '宿主动作读数' })
+        expect(wrapper.find('[data-feedback]').text()).toBe('宿主动作读数')
+
+        await wrapper.setProps({ feedback: '' })
+        await wrapper.vm.$nextTick()
+        expect(wrapper.find('[data-feedback]').text()).toBe('包内瞬时')
         wrapper.unmount()
     })
 })

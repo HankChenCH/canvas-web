@@ -26,11 +26,3 @@ export const FONT_PICKER_KEY: InjectionKey<FontPickerContext> = Symbol('canvas-n
 export function injectFontPicker(): FontPickerContext | null {
     return inject(FONT_PICKER_KEY, null)
 }
-
-/**
- * DOM File → 上传文件描述（共享组装：playground 工具栏与本包 FontField 同款）。
- * 本包是浏览器绑定层，触 DOM File 类型在此收口（内核 upload.ts 保持 DOM 无关）。
- */
-export async function uploadFileFromDom(file: File): Promise<UploadFile> {
-    return { name: file.name, mime: file.type, bytes: new Uint8Array(await file.arrayBuffer()) }
-}

@@ -18,7 +18,7 @@ export {
     type LayerRole,
 } from './fieldSchema'
 export { controlRegistry } from './controls'
-export { FONT_PICKER_KEY, injectFontPicker, uploadFileFromDom, type FontPickerContext } from './fontPicker'
+export { FONT_PICKER_KEY, injectFontPicker, type FontPickerContext } from './fontPicker'
 export { usePropertyPanel, type PropertyPanelBinding } from './usePropertyPanel'
 export { default as PropertyField } from './PropertyField.vue'
 export { default as PropertyPanel } from './PropertyPanel.vue'

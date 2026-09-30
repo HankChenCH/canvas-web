@@ -11,7 +11,8 @@
  */
 import { computed, ref } from 'vue'
 
-import { injectFontPicker, uploadFileFromDom } from '../fontPicker'
+import { injectFontPicker } from '../fontPicker'
+import { uploadFileFromDom } from '../../shared/uploadFile'
 import { fieldBase, textField } from '../controlStyles'
 import type { FieldDef } from '../fieldSchema'
 

@@ -12,6 +12,11 @@
  *   编辑中点 textarea 外先提交再点选、textarea 内指针归编辑光标。
  * - 右键菜单（工单 14）：contextmenu → 场景命中即右键选中 → 视口坐标开菜单
  *   （ContextMenu 内挂组件）；Escape/画布点按/动作执行即关。
+ * - 拖文件入画布（kbd-nav 工单 05）：dragover 只收 image/*（声明可放置 + 高亮
+ *   overlay 提示可松手）；drop 释放点折算场景点，逐个 DOM Image 解码自然尺寸后
+ *   调 uploadImageAsLayer({at, size})——图层盒左上角对准释放点、1:1 不缩放，
+ *   多文件按序 +16 场景 px 级联；canUpload=false 静默忽略 + 状态栏瞬时反馈；
+ *   文本编辑会话中先提交编辑（右键菜单同款前置）。
  * - 呈现环境：ResizeObserver 重设视口尺寸、matchMedia 监听 dpr 变更并重设物理
  *   缓冲（缩放物理像素清晰）；contextlost/restored 强制全量重绘。
  * - DOM 装配完成后 emit ready（带两层 canvas），宿主在其回调里构建渲染后端、
@@ -24,12 +29,17 @@ import { classifyWheel, type EditorSession } from '@hankchen/canvas-next-editor'
 import ContextMenu from './ContextMenu.vue'
 import { isEditableEventTarget } from '../shared/editableTarget'
 import TextEditingOverlay from './TextEditingOverlay.vue'
+import { uploadFileFromDom } from '../shared/uploadFile'
+import { useTransientFeedback } from '../shared/useTransientFeedback'
 import { watchDprChanges } from './useDpr'
 
 export interface CanvasSurfaceReady {
     contentCanvas: HTMLCanvasElement
     overlayCanvas: HTMLCanvasElement
 }
+
+/** 多文件拖放的级联偏移（场景 px，spec 决策 6） */
+const DROP_CASCADE_PX = 16
 
 const props = defineProps<{ editor: EditorSession }>()
 
@@ -46,6 +56,30 @@ const panning = ref(false)
 const cursorClass = computed(() =>
     panning.value ? 'cn-surface--panning' : spaceHeld.value ? 'cn-surface--pannable' : '',
 )
+
+/** 拖文件悬停高亮（dragover 期间提示可松手，drop/离开即撤） */
+const dragActive = ref(false)
+const dropFeedback = useTransientFeedback()
+
+/**
+ * DOM Image 解码图片自然尺寸（1:1 落盒的 size 来源；绑定层允 DOM，内核无 DOM）。
+ * 解码失败 reject，由调用方统一反馈。
+ */
+function decodeImageSize(file: File): Promise<{ width: number; height: number }> {
+    return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file)
+        const image = new Image()
+        image.onload = () => {
+            URL.revokeObjectURL(url)
+            resolve({ width: image.naturalWidth, height: image.naturalHeight })
+        }
+        image.onerror = () => {
+            URL.revokeObjectURL(url)
+            reject(new Error(`无法解码图片：${file.name}`))
+        }
+        image.src = url
+    })
+}
 
 const teardown: (() => void)[] = []
 
@@ -279,6 +313,86 @@ onMounted(() => {
     host.addEventListener('contextmenu', onContextMenu)
     teardown.push(() => host.removeEventListener('contextmenu', onContextMenu))
 
+    // ---- 拖文件入画布（kbd-nav 工单 05）：只收 image/*，松手处上传建层 ----
+
+    /** dataTransfer 是否携带图片文件（dragover 期 items 只可读 kind/type，够过滤用） */
+    const carriesImageFile = (e: DragEvent): boolean => {
+        const items = e.dataTransfer?.items
+        if (!items) return false
+        for (let i = 0; i < items.length; i += 1) {
+            const item = items[i]
+            if (item !== undefined && item.kind === 'file' && item.type.startsWith('image/')) return true
+        }
+        return false
+    }
+
+    const onDragOver = (e: DragEvent) => {
+        if (!carriesImageFile(e)) return // 非图片拖拽不接管：不声明可放置即无 drop
+        e.preventDefault()
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+        dragActive.value = true
+    }
+
+    const onDragLeave = (e: DragEvent) => {
+        // 掠过宿主内子元素（canvas/overlay）也派发 dragleave：仍在宿主内不撤高亮
+        if (e.relatedTarget !== null && host.contains(e.relatedTarget as Node)) return
+        dragActive.value = false
+    }
+
+    const onDrop = (e: DragEvent) => {
+        // 浏览器缺省把拖放的图片当导航打开——无论内容如何都拦下
+        e.preventDefault()
+        dragActive.value = false
+        const files: File[] = []
+        const list = e.dataTransfer?.files
+        for (let i = 0; list !== undefined && i < list.length; i += 1) {
+            const file = list[i]
+            if (file !== undefined && file.type.startsWith('image/')) files.push(file)
+        }
+        if (files.length === 0) return // 非图片拖放：静默忽略
+        if (!editor.canUpload) {
+            // 宿主未注入上传实现：静默忽略 + 状态栏瞬时反馈（对外只用「上传」语义）
+            dropFeedback.show('上传不可用：未接入上传实现，图片未添加')
+            return
+        }
+        // 文本编辑会话中先提交编辑（右键菜单 onContextMenu 同款前置；drop 没有
+        // 原生文本操作面，textarea 上松手同样提交）
+        if (textEditRef.value?.isEditing()) textEditRef.value.commitEditing()
+        void dropFilesAsLayers(files, hostPoint(e))
+    }
+
+    /**
+     * 逐个解码自然尺寸后按序上传：盒左上角对准释放点、1:1 不缩放，多文件级联偏移。
+     * 批处理语义：任一文件解码/上传失败即中止剩余文件（已完成的层保留、各自成步），
+     * 错误进状态栏瞬时反馈——与内核「上传失败异常上抛、文档不动」的对接口径一致。
+     */
+    const dropFilesAsLayers = async (files: readonly File[], point: { x: number; y: number }) => {
+        const scene = editor.toScenePoint(point.x, point.y)
+        for (let i = 0; i < files.length; i += 1) {
+            const file = files[i]
+            if (!file) continue
+            try {
+                const size = await decodeImageSize(file)
+                await editor.uploadImageAsLayer(await uploadFileFromDom(file), {
+                    at: { x: scene.x + i * DROP_CASCADE_PX, y: scene.y + i * DROP_CASCADE_PX },
+                    size,
+                })
+            } catch (error) {
+                dropFeedback.show(`上传失败：${error instanceof Error ? error.message : String(error)}`)
+                return
+            }
+        }
+    }
+
+    host.addEventListener('dragover', onDragOver)
+    host.addEventListener('dragleave', onDragLeave)
+    host.addEventListener('drop', onDrop)
+    teardown.push(() => {
+        host.removeEventListener('dragover', onDragOver)
+        host.removeEventListener('dragleave', onDragLeave)
+        host.removeEventListener('drop', onDrop)
+    })
+
     // 2D context 丢失（GPU 进程崩溃等）：preventDefault() 声明可恢复（MDN——不拦即
     // 永久丢失，contextrestored 不会来）；恢复后绘图缓冲被清空，强制全量重绘补视口。
     // 缓冲尺寸（width/height 属性）在丢恢复间保持，无需重设；期间的 dpr 变更由
@@ -312,6 +426,10 @@ onBeforeUnmount(() => {
         <canvas ref="overlayRef" class="cn-surface__canvas cn-surface__canvas--overlay"></canvas>
         <TextEditingOverlay ref="textEditRef" :editor="editor" />
         <ContextMenu ref="contextMenuRef" :editor="editor" />
+        <!-- 拖文件悬停高亮（kbd-nav 工单 05）：提示可松手；不拦事件（drop 落宿主） -->
+        <div v-if="dragActive" class="cn-surface__drop-hint" data-drop-hint>
+            <span class="cn-surface__drop-hint-text">松开以上传图片</span>
+        </div>
     </div>
 </template>
 
@@ -342,5 +460,29 @@ onBeforeUnmount(() => {
 
 .cn-surface--panning {
     cursor: grabbing;
+}
+
+/* 拖文件悬停高亮（kbd-nav 工单 05）：令牌与 ContextMenu 同值（自带主题不依赖宿主），
+   dashed 边框 + 半透明底浮在内容上，pointer-events:none 不拦 drop 落点 */
+.cn-surface__drop-hint {
+    position: absolute;
+    inset: 8px;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(56, 189, 248, 0.08);
+    border: 2px dashed rgba(56, 189, 248, 0.6);
+    border-radius: 12px;
+    pointer-events: none;
+}
+
+.cn-surface__drop-hint-text {
+    padding: 6px 14px;
+    border-radius: 8px;
+    background: #0b1220;
+    color: #38bdf8;
+    font-size: 13px;
+    line-height: 1.4;
 }
 </style>

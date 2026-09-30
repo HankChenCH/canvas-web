@@ -6,11 +6,13 @@
  *   **视口坐标**（表面本地 css 像素）定位——菜单是屏幕空间弹出层，定位换算只在
  *   打开时发生一次，pan/zoom 不跟随；越界钳位（打开后量实际尺寸）保证画布边缘
  *   完整可见。
- * - 动作全部经内核 action（toggleLayerVisibility/duplicateSelection/bringToFront/
- *   sendToBack/deleteLayer），组件零文档写语义；可用态按选中路径裁剪（内核语义，
- *   v1 单选）：显示/隐藏 = 根层选择（visible 住 LayerBase 面）；删除 = 有选择；
- *   副本 = 可复制（可落根层的类型，见 canCopySelection）；置顶/置底 = 根层选择
- *   （isRootLayerPath——容器内行/格是数组序语义，无此操作）。
+ * - 动作全部经内核 action（toggleLayerVisibility/duplicateSelection/bringForward/
+ *   sendBackward/bringToFront/sendToBack/deleteLayer），组件零文档写语义；可用态
+ *   按选中路径裁剪（内核语义，v1 单选）：显示/隐藏 = 根层选择（visible 住
+ *   LayerBase 面）；删除 = 有选择；副本 = 可复制（可落根层的类型，见
+ *   canCopySelection）；前移一层/后移一层与置顶/置底 = 根层选择（isRootLayerPath
+ *   ——容器内行/格是数组序语义，无此操作；kbd-nav 工单 05 补前移/后移置于
+ *   置顶/置底之上，边界不置灰——内核空转为权威）。
  * - 关闭时机：执行任一动作、画布 pointerdown（表面组件转发 close）、Escape
  *   （表面组件转发）。菜单根拦截 pointerdown 冒泡（点菜单项不触发画布点选）与
  *   contextmenu（菜单上右键不换目标重开）。
@@ -107,7 +109,7 @@ function confirmConvert(): void {
 }
 
 interface MenuItem {
-    key: 'visibility' | 'duplicate' | 'front' | 'back' | 'delete' | 'to-template' | 'to-rows'
+    key: 'visibility' | 'duplicate' | 'forward' | 'backward' | 'front' | 'back' | 'delete' | 'to-template' | 'to-rows'
     label: string
     enabled: boolean
     /** 禁用/说明文案（spec §2.5 反馈规范：置灰 + title 统一） */
@@ -134,6 +136,22 @@ const items = computed<MenuItem[]>(() => [
         enabled: canDuplicate.value,
         title: canDuplicate.value ? undefined : '行/格/行模板是容器内结构，不可复制',
         run: () => props.editor.duplicateSelection(),
+    },
+    // 前移/后移一层（kbd-nav 工单 05，spec 决策 2）：置于置顶/置底之上；非根置灰
+    // + title 同现状；边界不置灰——已最前/最后内核空转为权威（无历史步）
+    {
+        key: 'forward',
+        label: '前移一层',
+        enabled: isRoot.value,
+        title: isRoot.value ? undefined : '前移/后移仅对根图层生效',
+        run: () => props.editor.bringForward(),
+    },
+    {
+        key: 'backward',
+        label: '后移一层',
+        enabled: isRoot.value,
+        title: isRoot.value ? undefined : '前移/后移仅对根图层生效',
+        run: () => props.editor.sendBackward(),
     },
     {
         key: 'front',

@@ -125,3 +125,54 @@ describe('uploadHandler 注入点：core 不内置上传实现', () => {
         expect(editor.canUndo).toBe(false)
     })
 })
+
+describe('uploadImageAsLayer 摆位覆盖 {at?, size?}（kbd-nav 工单 05：拖放落点语义）', () => {
+    const sessionWithUpload = () =>
+        sessionWith({ uploadHandler: async () => 'https://cdn.example.com/a.png' })
+
+    it('缺省参数行为不变：编辑器缺省盒（200×150）落 0,0（top-left 锚）', async () => {
+        const editor = sessionWithUpload()
+        editor.openDocument(decodeGraph({ canvas: { width: 800, height: 600 }, layers: [] }))
+        await editor.uploadImageAsLayer(file('a.png'))
+        const layer = editor.store.doc!.layers[0]!
+        expect(layer.position).toEqual({ anchor: 'top-left', x: 0, y: 0 })
+        expect(layer.shape.width).toBe(200)
+        expect(layer.shape.height).toBe(150)
+    })
+
+    it('at：图层盒左上角对准场景点（改写 x/y，锚保持 top-left）', async () => {
+        const editor = sessionWithUpload()
+        editor.openDocument(decodeGraph({ canvas: { width: 800, height: 600 }, layers: [] }))
+        await editor.uploadImageAsLayer(file('a.png'), { at: { x: 37, y: -5 } })
+        expect(editor.store.doc!.layers[0]!.position).toEqual({ anchor: 'top-left', x: 37, y: -5 })
+    })
+
+    it('size：盒尺寸 1:1 落传入尺寸（不缩放，autoWidth/autoHeight 保持 false）', async () => {
+        const editor = sessionWithUpload()
+        editor.openDocument(decodeGraph({ canvas: { width: 800, height: 600 }, layers: [] }))
+        await editor.uploadImageAsLayer(file('a.png'), { size: { width: 640, height: 480 } })
+        const shape = editor.store.doc!.layers[0]!.shape
+        expect(shape.width).toBe(640)
+        expect(shape.height).toBe(480)
+        expect(shape.autoWidth).toBe(false)
+        expect(shape.autoHeight).toBe(false)
+    })
+
+    it('at+size 同传：摆位与尺寸同事务落盒，上传+建层+选中仍一步历史', async () => {
+        const editor = sessionWithUpload()
+        editor.openDocument(decodeGraph({ canvas: { width: 800, height: 600 }, layers: [] }))
+        const path = await editor.uploadImageAsLayer(file('a.png'), {
+            at: { x: 10, y: 20 },
+            size: { width: 300, height: 200 },
+        })
+        expect(path).toEqual(['layers', 0])
+        expect(editor.store.ui.selection).toEqual(['layers', 0])
+        expect(editor.store.history).toHaveLength(1)
+        const layer = editor.store.doc!.layers[0]!
+        expect(layer.position).toEqual({ anchor: 'top-left', x: 10, y: 20 })
+        expect(layer.shape.width).toBe(300)
+        expect(layer.shape.height).toBe(200)
+        editor.undo()
+        expect(editor.store.doc?.layers).toHaveLength(0)
+    })
+})
