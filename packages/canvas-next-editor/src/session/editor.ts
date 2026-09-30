@@ -308,6 +308,16 @@ export class EditorSession {
         this.store.setViewport(zoomAtPoint(viewport, screenX, screenY, nextZoom, this.zoomBounds))
     }
 
+    /**
+     * 缩放复位 100%（⌘0，kbd-nav 工单 01）：以视口中心为锚回到 1.0——中心场景点
+     * 不动、平移不跳变（Sketch Actual Size 同构，playground zoomTo100 先例收编为
+     * 内核面）；已在 100% 时 zoomAtPoint 恒等短路。视口走 ui 分支不进历史。
+     */
+    resetZoom(): void {
+        const { width, height } = this.surfaceSize
+        this.zoomAt(width / 2, height / 2, 1)
+    }
+
     /** 一键适应画布：整页可见、居中（表面尺寸未知时 no-op） */
     fitToSurface(): void {
         const doc = this.store.doc
@@ -1076,22 +1086,49 @@ export class EditorSession {
     }
 
     /**
-     * 置顶/置底（右键菜单语义）：根层重排到面板两端（priority 中点插值同款——
-     * 置顶 = min−1、置底 = max+1，数组序保持 priority 降序不变量），v1 只作用
-     * 根层（行/格是数组序语义）。复用 moveRootLayer（含选择路径重映射）；已在
-     * 端点为无操作（不产生历史步）。
+     * z 序四件套（右键菜单语义 + kbd-nav 工单 01 键位）：根层重排，v1 只作用根层
+     * （行/格是数组序语义）。全部复用 moveRootLayer（priority 中点插值同款——
+     * 置顶 = min−1、置底 = max+1、无整数间隙全表归一化兜底），一次调用 = 一步
+     * 历史；已在目标端为无操作（不产生历史步）。返回是否发生移动（executeShortcut
+     * 的可用态口径；右键菜单直调忽略返回值）。锁定层 z 序放行（锁定谓词的刻意
+     * 通道，canvas-web-layer-lock 工单 01 同口径）。
      */
-    bringToFront(): void {
+    bringToFront(): boolean {
         const panel = this.selectedRootPanelIndex()
-        if (panel === null || panel === 0) return
+        if (panel === null || panel === 0) return false
         this.moveRootLayer(panel, 0)
+        return true
     }
 
-    sendToBack(): void {
+    sendToBack(): boolean {
         const panel = this.selectedRootPanelIndex()
         const count = this.store.doc?.layers.length ?? 0
-        if (panel === null || panel === count - 1) return
+        if (panel === null || panel === count - 1) return false
         this.moveRootLayer(panel, count)
+        return true
+    }
+
+    /**
+     * 前移/后移一格（kbd-nav 工单 01）：面板序号 ±1 的单格重排——与置顶/置底、
+     * 面板拖动同一 moveRootLayer 语义（中点插值优先、无间隙全表归一化兜底），仅
+     * 根层（isRoot 同门），已最前/最后空转。连按各成一步历史（无 mergeKey，
+     * shortcut action 不合步的先例）。落点按「insert-before 原始序号」折算：
+     * 前移 = 插到原 panel−1 层之前（to = panel−1），后移 = 插到原 panel+1 层之后
+     * （to = panel+2）。
+     */
+    bringForward(): boolean {
+        const panel = this.selectedRootPanelIndex()
+        if (panel === null || panel <= 0) return false
+        this.moveRootLayer(panel, panel - 1)
+        return true
+    }
+
+    sendBackward(): boolean {
+        const panel = this.selectedRootPanelIndex()
+        const count = this.store.doc?.layers.length ?? 0
+        if (panel === null || panel >= count - 1) return false
+        this.moveRootLayer(panel, panel + 2)
+        return true
     }
 
     /** 选中根层的面板序号（0 = 视觉最上层）；非根层选择/无文档为 null */
@@ -1118,11 +1155,15 @@ export class EditorSession {
 
     /**
      * 执行快捷键动作（注册表分类的出口）：undo/redo/delete/copy/paste/duplicate/
-     * rename/toggleLayerLock/toggleLayerVisibility 的统一分派面。让路规则在分类器
-     * （classifyEditorShortcut）裁决，到达这里的动作不再重复判态；动作为空转
-     * （无选择/空剪贴板/非根层）返回 false，其余 true。rename 开选中根层的重命名
-     * 会话（F2，工单 09），不直接写文档；锁定/显隐作用于选中根层（canvas-web-layer-lock
-     * 工单 02 + feature-status 显隐键位挂账补位），非根/无选择按可用态裁剪返回 false。
+     * rename/toggleRulers/toggleLayerLock/toggleLayerVisibility 的统一分派面，以及
+     * z 序四件套与缩放三件（kbd-nav 工单 01：bringForward/sendBackward/
+     * bringToFront/sendToBack/zoomReset/fitToSurface/fitToSelection）。让路规则在
+     * 分类器（classifyEditorShortcut）裁决，到达这里的动作不再重复判态；动作为
+     * 空转（无选择/空剪贴板/非根层/已在端点）返回 false，其余 true。rename 开
+     * 选中根层的重命名会话（F2，工单 09），不直接写文档；锁定/显隐作用于选中根层
+     * （canvas-web-layer-lock 工单 02 + feature-status 显隐键位挂账补位），非根/
+     * 无选择按可用态裁剪返回 false；相机三件不进历史、恒 true（surface 未知时
+     * 内核静默空转，同 toggleRulers 的无条件口径）。
      */
     executeShortcut(action: EditorShortcutAction): boolean {
         switch (action) {
@@ -1155,6 +1196,23 @@ export class EditorSession {
                 this.toggleLayerVisibility(path)
                 return true
             }
+            case 'bringForward':
+                return this.bringForward()
+            case 'sendBackward':
+                return this.sendBackward()
+            case 'bringToFront':
+                return this.bringToFront()
+            case 'sendToBack':
+                return this.sendToBack()
+            case 'zoomReset':
+                this.resetZoom()
+                return true
+            case 'fitToSurface':
+                this.fitToSurface()
+                return true
+            case 'fitToSelection':
+                this.fitToSelection()
+                return true
             case 'delete': {
                 const path = this.store.ui.selection
                 if (!path) return false

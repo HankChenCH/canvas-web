@@ -17,6 +17,7 @@ export {
     DEFAULT_EDITOR_SHORTCUTS,
     type EditorShortcutAction,
     type EditorShortcutBinding,
+    type EditorShortcutGroup,
     type EditorShortcutInput,
     type ShortcutCombo,
 } from './shortcuts'

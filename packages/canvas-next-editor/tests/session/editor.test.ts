@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import type { Canvas, RenderBackend } from '@hankchen/canvas-next'
+import type { Canvas, RenderBackend, TextLayer } from '@hankchen/canvas-next'
 
 import { EditorSession, type FrameScheduler, type OverlayPainter } from '../../src/session/editor'
+import { textLayer } from '../support/fixtures'
 
 /** 录制后端：只数 begin（每次内容重绘恰一次），其余原语空实现 */
 function recordingBackend(): RenderBackend & { beginCount: () => number; resetBeginCount: () => void } {
@@ -232,6 +233,151 @@ describe('相机动作（经纯函数 + store.setViewport，不进历史）', ()
         }
         expect(center.x).toBeCloseTo(1200, 6)
         expect(center.y).toBeCloseTo(750, 6)
+    })
+})
+
+describe('前移/后移（bringForward/sendBackward）：面板序 ±1 的 z 序单格重排（kbd-nav 工单 01）', () => {
+    const threeLayers = (): Canvas => ({
+        width: 800,
+        height: 600,
+        layers: [
+            textLayer({ priority: 30, text: '底' }),
+            textLayer({ priority: 20, text: '中' }),
+            textLayer({ priority: 10, text: '顶' }),
+        ],
+    })
+    const texts = (session: EditorSession): string[] =>
+        session.store.doc!.layers.map((layer) => (layer as TextLayer).text)
+
+    it('前移一格：中间层向视觉顶层挪一格，priority = min−1，选择跟随重映射', () => {
+        const { session } = makeSession()
+        session.openDocument(threeLayers())
+        session.setSelection(['layers', 1]) // 中（面板序 1）
+        expect(session.bringForward()).toBe(true)
+        expect(texts(session)).toEqual(['底', '顶', '中'])
+        expect(session.store.doc!.layers[2]!.priority).toBe(9)
+        expect(session.store.ui.selection).toEqual(['layers', 2])
+    })
+
+    it('后移一格：顶层向视觉底层挪一格，双邻整数间隙取中点插值', () => {
+        const { session } = makeSession()
+        session.openDocument(threeLayers())
+        session.setSelection(['layers', 2]) // 顶（面板序 0）
+        expect(session.sendBackward()).toBe(true)
+        expect(texts(session)).toEqual(['底', '顶', '中'])
+        expect(session.store.doc!.layers[1]!.priority).toBe(25) // ⌊(30+20)/2⌋
+        expect(session.store.ui.selection).toEqual(['layers', 1])
+    })
+
+    it('已最前/最后：空转（返回 false，无历史步）', () => {
+        const { session } = makeSession()
+        session.openDocument(threeLayers())
+        session.setSelection(['layers', 2]) // 顶
+        expect(session.bringForward()).toBe(false)
+        expect(texts(session)).toEqual(['底', '中', '顶'])
+        expect(session.canUndo).toBe(false)
+        session.setSelection(['layers', 0]) // 底
+        expect(session.sendBackward()).toBe(false)
+        expect(texts(session)).toEqual(['底', '中', '顶'])
+        expect(session.canUndo).toBe(false)
+    })
+
+    it('仅根层：行/格/无选择/无文档空转（无历史步）', () => {
+        const { session } = makeSession()
+        session.openDocument({ width: 800, height: 600, layers: [textLayer({ priority: 10, text: '甲' })] })
+        const prioritiesBefore = session.store.doc!.layers.map((layer) => layer.priority)
+        session.setSelection(['layers', 0, 'rows', 0])
+        expect(session.bringForward()).toBe(false)
+        expect(session.sendBackward()).toBe(false)
+        session.setSelection(null)
+        expect(session.bringForward()).toBe(false)
+        expect(session.sendBackward()).toBe(false)
+        expect(session.store.doc!.layers.map((layer) => layer.priority)).toEqual(prioritiesBefore)
+        expect(session.canUndo).toBe(false)
+
+        const headless = makeSession().session
+        expect(headless.bringForward()).toBe(false)
+        expect(headless.sendBackward()).toBe(false)
+    })
+
+    it('连按各成一步历史：两次前移两步，undo 一次只回一步', () => {
+        const { session } = makeSession()
+        session.openDocument({
+            width: 800,
+            height: 600,
+            layers: [
+                textLayer({ priority: 40, text: '丁' }),
+                textLayer({ priority: 30, text: '丙' }),
+                textLayer({ priority: 20, text: '乙' }),
+                textLayer({ priority: 10, text: '甲' }),
+            ],
+        })
+        session.setSelection(['layers', 0]) // 丁（面板底）
+        expect(session.bringForward()).toBe(true)
+        expect(session.bringForward()).toBe(true)
+        expect(texts(session)).toEqual(['丙', '乙', '丁', '甲'])
+        expect(session.store.history).toHaveLength(2)
+        session.undo()
+        expect(texts(session)).toEqual(['丙', '丁', '乙', '甲'])
+        expect(session.canRedo).toBe(true)
+        session.redo()
+        expect(texts(session)).toEqual(['丙', '乙', '丁', '甲'])
+    })
+
+    it('无整数间隙时全表归一化兜底（按视觉序 (N−1−i)×1024 重赋）', () => {
+        const { session } = makeSession()
+        session.openDocument({
+            width: 800,
+            height: 600,
+            layers: [
+                textLayer({ priority: 10, text: '甲' }),
+                textLayer({ priority: 10, text: '乙' }),
+                textLayer({ priority: 10, text: '丙' }),
+                textLayer({ priority: 10, text: '丁' }),
+            ],
+        })
+        session.setSelection(['layers', 3]) // 丁（面板顶）
+        expect(session.sendBackward()).toBe(true) // 落乙丙之间，双邻同值无间隙 → 归一化
+        expect(texts(session)).toEqual(['甲', '乙', '丁', '丙'])
+        expect(session.store.doc!.layers.map((layer) => layer.priority)).toEqual([3072, 2048, 1024, 0])
+    })
+
+    it('锁定层 z 序放行（刻意通道）：锁定选中根层后前移照常生效，锁随层重映射', () => {
+        const { session } = makeSession()
+        session.openDocument(threeLayers())
+        session.setSelection(['layers', 1])
+        session.toggleLayerLock(['layers', 1])
+        expect(session.bringForward()).toBe(true)
+        expect(texts(session)).toEqual(['底', '顶', '中'])
+        expect(session.store.ui.lockedPaths).toEqual([['layers', 2]])
+    })
+})
+
+describe('resetZoom（缩放复位 100%：视口中心为锚，kbd-nav 工单 01）', () => {
+    it('zoom→1，视口中心的场景点不动（平移不跳变）', () => {
+        const { session } = makeSession()
+        session.openDocument(doc())
+        session.setSurfaceSize(800, 600)
+        session.zoomAt(200, 150, 2)
+        const before = session.store.ui.viewport
+        const centerBefore = {
+            x: 400 / before.zoom + before.x,
+            y: 300 / before.zoom + before.y,
+        }
+        session.resetZoom()
+        const after = session.store.ui.viewport
+        expect(after.zoom).toBe(1)
+        expect(400 / after.zoom + after.x).toBeCloseTo(centerBefore.x, 10)
+        expect(300 / after.zoom + after.y).toBeCloseTo(centerBefore.y, 10)
+    })
+
+    it('已在 100% 时复位为恒等（视口数值不变）', () => {
+        const { session } = makeSession()
+        session.openDocument(doc())
+        session.setSurfaceSize(800, 600)
+        const before = session.store.ui.viewport
+        session.resetZoom()
+        expect(session.store.ui.viewport).toEqual(before)
     })
 })
 

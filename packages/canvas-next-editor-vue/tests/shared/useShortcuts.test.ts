@@ -106,6 +106,36 @@ describe('useShortcuts：折算 → 分类 → 分派', () => {
         scope.stop()
     })
 
+    it('折算携带 alt/code：⌥⌘] 按 code 置顶、⇧1 按 code 适应画布（kbd-nav 工单 01）', () => {
+        const scope = effectScope()
+        const editor = new EditorSession({ scheduleFrame: nullScheduler })
+        editor.openDocument({
+            width: 800,
+            height: 600,
+            layers: [
+                textLayer({ priority: 20, text: '底' }),
+                textLayer({ priority: 10, text: '顶' }),
+            ],
+        })
+        scope.run(() => useShortcuts(editor))
+        editor.setSurfaceSize(800, 600)
+        editor.setSelection(['layers', 0])
+
+        // mac ⌥ 变体字符：key 不可靠，折算后的 code（BracketRight）是唯一匹配通道
+        expect(press({ key: '®', metaKey: true, altKey: true, code: 'BracketRight' })).toBe(true)
+        expect(editor.store.doc!.layers.map((layer) => (layer as { text: string }).text)).toEqual([
+            '顶',
+            '底',
+        ]) // 底置顶
+        expect(editor.store.doc!.layers[1]!.priority).toBe(9)
+
+        // US 布局 Shift+1 的 key 是 '!'，折算 code（Digit1）命中适应画布
+        editor.zoomAt(100, 100, 3)
+        expect(press({ key: '!', shiftKey: true, code: 'Digit1' })).toBe(true)
+        expect(editor.store.ui.viewport.zoom).toBeCloseTo(1, 9) // fit 800×600 → 800×600 画布为 1
+        scope.stop()
+    })
+
     it('scope 停止后监听注销', () => {
         const scope = effectScope()
         const editor = makeEditor()

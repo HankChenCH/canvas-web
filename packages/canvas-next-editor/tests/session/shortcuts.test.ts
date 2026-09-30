@@ -131,14 +131,14 @@ describe('自定义注册表：宿主可注入绑定集（注册表即数据）'
         expect(classifyEditorShortcut(input({ key: 'z', mod: true }), [])).toBeNull()
         expect(
             classifyEditorShortcut(input({ key: 'k', mod: true }), [
-                { combo: { key: 'k', mod: true, shift: false }, action: 'duplicate' },
+                { combo: { key: 'k', mod: true, shift: false }, action: 'duplicate', label: '副本', group: 'clipboard' },
             ]),
         ).toBe('duplicate')
     })
 
     it('缺省集本身不因注入被修改', () => {
         classifyEditorShortcut(input({ key: 'q', mod: true }), [
-            { combo: { key: 'q', mod: true, shift: false }, action: 'delete' },
+            { combo: { key: 'q', mod: true, shift: false }, action: 'delete', label: '删除', group: 'layer' },
         ])
         expect(classifyEditorShortcut(input({ key: 'q', mod: true }))).toBeNull()
         expect(DEFAULT_EDITOR_SHORTCUTS.length).toBeGreaterThan(0)
@@ -242,5 +242,133 @@ describe('executeShortcut：action → 会话动作分派', () => {
         session.setSelection(['layers', 9])
         expect(session.executeShortcut('toggleLayerVisibility')).toBe(false)
         expect(session.store.doc!.layers[0]!.visible).toBe(false)
+    })
+})
+
+describe('注册表新键位（kbd-nav 工单 01）：z 序与缩放', () => {
+    it('z 序键位：⌘]/⌘[ key 匹配前移/后移（mod 精确）', () => {
+        expect(classifyEditorShortcut(input({ key: ']', mod: true, shift: false }))).toBe('bringForward')
+        expect(classifyEditorShortcut(input({ key: '[', mod: true, shift: false }))).toBe('sendBackward')
+        expect(classifyEditorShortcut(input({ key: ']', mod: true, shift: true }))).toBeNull()
+        expect(classifyEditorShortcut(input({ key: ']', mod: false, shift: false }))).toBeNull()
+    })
+
+    it('置顶/置底按 code 匹配（mac ⌥ 下 event.key 变体字符，key 匹配不可靠）', () => {
+        expect(
+            classifyEditorShortcut(input({ key: '®', mod: true, shift: false, alt: true, code: 'BracketRight' })),
+        ).toBe('bringToFront')
+        expect(
+            classifyEditorShortcut(input({ key: 'œ', mod: true, shift: false, alt: true, code: 'BracketLeft' })),
+        ).toBe('sendToBack')
+        // 桥未折算 code（undefined）时不匹配——code 条目的唯一匹配通道
+        expect(classifyEditorShortcut(input({ key: ']', mod: true, shift: false, alt: true }))).toBeNull()
+        // 无 alt 的 ⌘] 仍 key 匹配前移，不串到置顶（alt 精确匹配）
+        expect(
+            classifyEditorShortcut(input({ key: ']', mod: true, shift: false, alt: false, code: 'BracketRight' })),
+        ).toBe('bringForward')
+    })
+
+    it('缩放键位：⌘0 复位、⇧1/⇧2 适应画布/选区（⇧ 数字 key 变体，按 code 匹配）', () => {
+        expect(classifyEditorShortcut(input({ key: '0', mod: true, shift: false }))).toBe('zoomReset')
+        expect(classifyEditorShortcut(input({ key: '0', mod: true, shift: true }))).toBeNull()
+        // US 布局 Shift+1 的 event.key 是 '!'、法国布局是 '1'——两形态都经 code 命中
+        expect(classifyEditorShortcut(input({ key: '!', mod: false, shift: true, code: 'Digit1' }))).toBe(
+            'fitToSurface',
+        )
+        expect(classifyEditorShortcut(input({ key: '1', mod: false, shift: true, code: 'Digit1' }))).toBe(
+            'fitToSurface',
+        )
+        expect(classifyEditorShortcut(input({ key: '@', mod: false, shift: true, code: 'Digit2' }))).toBe(
+            'fitToSelection',
+        )
+        expect(classifyEditorShortcut(input({ key: '2', mod: false, shift: true, code: 'Digit2' }))).toBe(
+            'fitToSelection',
+        )
+        // 无 shift 的裸 1/2 不入表
+        expect(classifyEditorShortcut(input({ key: '1', mod: false, shift: false, code: 'Digit1' }))).toBeNull()
+    })
+
+    it('alt 缺省视作 false：未声明 alt 的既有条目不因按下 ⌥ 失配之外串扰（⇧⌘L + ⌥ 不命中）', () => {
+        expect(classifyEditorShortcut(input({ key: 'l', mod: true, shift: true, alt: false }))).toBe(
+            'toggleLayerLock',
+        )
+        expect(classifyEditorShortcut(input({ key: 'l', mod: true, shift: true, alt: true }))).toBeNull()
+    })
+})
+
+describe('注册表元数据（kbd-nav 工单 01）：label/group 数据完备性', () => {
+    const GROUPS = new Set(['history', 'clipboard', 'layer', 'view', 'help'])
+
+    it('每条绑定都有非空 label 与合法 group', () => {
+        for (const binding of DEFAULT_EDITOR_SHORTCUTS) {
+            expect(binding.label.trim().length).toBeGreaterThan(0)
+            expect(GROUPS.has(binding.group)).toBe(true)
+        }
+    })
+
+    it('z 序四条目命名只用「前移/后移/置顶/置底」（不用上移/下移/提升/降低）', () => {
+        const labelsOf = (action: string): string[] =>
+            DEFAULT_EDITOR_SHORTCUTS.filter((binding) => binding.action === action).map((binding) => binding.label)
+        expect(labelsOf('bringForward')).toEqual(['前移一层'])
+        expect(labelsOf('sendBackward')).toEqual(['后移一层'])
+        expect(labelsOf('bringToFront')).toEqual(['置顶'])
+        expect(labelsOf('sendToBack')).toEqual(['置底'])
+        for (const action of ['bringForward', 'sendBackward', 'bringToFront', 'sendToBack']) {
+            for (const label of labelsOf(action)) {
+                for (const forbidden of ['上移', '下移', '提升', '降低']) {
+                    expect(label.includes(forbidden)).toBe(false)
+                }
+            }
+        }
+    })
+})
+
+describe('executeShortcut：z 序与缩放分派（kbd-nav 工单 01）', () => {
+    const makeZSession = () => {
+        const session = makeSession()
+        session.openDocument({
+            width: 800,
+            height: 600,
+            layers: [
+                textLayer({ priority: 30, text: '底' }),
+                textLayer({ priority: 20, text: '中' }),
+                textLayer({ priority: 10, text: '顶' }),
+            ],
+        })
+        return session
+    }
+    const texts = (session: ReturnType<typeof makeZSession>): string[] =>
+        session.store.doc!.layers.map((layer) => (layer as { text: string }).text)
+
+    it('bringForward/sendBackward 分派前移/后移；无选择为 false', () => {
+        const session = makeZSession()
+        expect(session.executeShortcut('bringForward')).toBe(false)
+        expect(session.executeShortcut('sendBackward')).toBe(false)
+        session.setSelection(['layers', 1])
+        expect(session.executeShortcut('bringForward')).toBe(true)
+        expect(texts(session)).toEqual(['底', '顶', '中'])
+        expect(session.executeShortcut('sendBackward')).toBe(true)
+        expect(texts(session)).toEqual(['底', '中', '顶'])
+    })
+
+    it('bringToFront/sendToBack 经分派面生效（注册表动作全覆盖）', () => {
+        const session = makeZSession()
+        session.setSelection(['layers', 1])
+        expect(session.executeShortcut('bringToFront')).toBe(true)
+        expect(texts(session)).toEqual(['底', '顶', '中'])
+        expect(session.store.doc!.layers[2]!.priority).toBe(9)
+        expect(session.executeShortcut('sendToBack')).toBe(true)
+        expect(texts(session)).toEqual(['中', '底', '顶'])
+    })
+
+    it('zoomReset/fitToSurface/fitToSelection 分派相机动作（不进历史）', () => {
+        const session = makeZSession()
+        session.setSurfaceSize(800, 600)
+        session.zoomAt(100, 100, 3)
+        expect(session.executeShortcut('zoomReset')).toBe(true)
+        expect(session.store.ui.viewport.zoom).toBe(1)
+        expect(session.store.history).toHaveLength(0)
+        expect(session.executeShortcut('fitToSurface')).toBe(true)
+        expect(session.executeShortcut('fitToSelection')).toBe(true) // 无选择回落适应画布
     })
 })
