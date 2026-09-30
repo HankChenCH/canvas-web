@@ -217,7 +217,7 @@ describe('ui 分支变更（选择/相机/悬停/拖动会话）不进历史', (
 
         store.setSelection(['layers', 0])
         store.setHovered(['layers', 0])
-        store.setDrag({ path: ['layers', 0], startScene: { x: 0, y: 0 }, startPosition: { x: 0, y: 0 } })
+        store.setDrag({ path: ['layers', 0], startScene: { x: 0, y: 0 }, startPosition: { x: 0, y: 0 }, startBox: { x: 0, y: 0, width: 0, height: 0, contentX: 0, contentY: 0, contentWidth: 0, contentHeight: 0 } })
         store.setViewport({ x: 10, y: 10, zoom: 2 })
         store.setSelection(null)
 

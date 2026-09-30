@@ -20,7 +20,15 @@
  */
 
 /** 快捷键动作（会话分派面 executeShortcut 的入参域） */
-export type EditorShortcutAction = 'undo' | 'redo' | 'copy' | 'paste' | 'duplicate' | 'delete' | 'rename'
+export type EditorShortcutAction =
+    | 'undo'
+    | 'redo'
+    | 'copy'
+    | 'paste'
+    | 'duplicate'
+    | 'delete'
+    | 'rename'
+    | 'toggleRulers'
 
 /** 键位组合声明：key 为 KeyboardEvent.key 的小写归一形态；mod/shift 精确匹配 */
 export interface ShortcutCombo {
@@ -50,6 +58,9 @@ export const DEFAULT_EDITOR_SHORTCUTS: readonly EditorShortcutBinding[] = [
     { combo: { key: 'delete', mod: false, shift: false }, action: 'delete' },
     { combo: { key: 'backspace', mod: false, shift: false }, action: 'delete' },
     { combo: { key: 'f2', mod: false, shift: false }, action: 'rename' },
+    // 标尺显隐（ruler-guides-snap 工单 01）：裸键 + shift（mod 变体不占用，
+    // 不抢浏览器刷新等既有语义）
+    { combo: { key: 'r', mod: false, shift: true }, action: 'toggleRulers' },
 ]
 
 /** 快捷键输入：绑定层从 KeyboardEvent 与会话状态折算（本类型不出现任何 DOM 类型） */

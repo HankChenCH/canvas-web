@@ -123,7 +123,7 @@ describe('ui 分支扩展：selection / hovered / drag（整体替换、永不�
 
         store.setSelection(['layers', 0])
         store.setHovered(['layers', 1])
-        store.setDrag({ path: ['layers', 0], startScene: { x: 1, y: 2 }, startPosition: { x: 3, y: 4 } })
+        store.setDrag({ path: ['layers', 0], startScene: { x: 1, y: 2 }, startPosition: { x: 3, y: 4 }, startBox: { x: 3, y: 4, width: 0, height: 0, contentX: 3, contentY: 4, contentWidth: 0, contentHeight: 0 } })
 
         expect(changes).toEqual([
             { scope: 'ui', branch: 'selection' },
@@ -150,7 +150,7 @@ describe('ui 分支扩展：selection / hovered / drag（整体替换、永不�
         store.openDocument(layerDoc())
         store.transact(moveX(40))
         store.setSelection(['layers', 0])
-        store.setDrag({ path: ['layers', 0], startScene: { x: 0, y: 0 }, startPosition: { x: 0, y: 0 } })
+        store.setDrag({ path: ['layers', 0], startScene: { x: 0, y: 0 }, startPosition: { x: 0, y: 0 }, startBox: { x: 0, y: 0, width: 0, height: 0, contentX: 0, contentY: 0, contentWidth: 0, contentHeight: 0 } })
 
         store.openDocument(layerDoc())
 

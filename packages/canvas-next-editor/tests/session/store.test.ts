@@ -97,6 +97,41 @@ describe('ui 分支：anchorExpanded（属性面板锚点折叠区会话记忆�
     })
 })
 
+describe('ui 分支：参考线/标尺/命中吸附轴（ruler-guides-snap 工单 01）', () => {
+    it('setSnapAxes 内容等短路：相同命中集不重复通知，清空后重复清空也不通知', () => {
+        const store = new EditorStore()
+        store.openDocument(doc())
+        const listener = vi.fn()
+        store.subscribe(listener)
+
+        const axes = [{ orientation: 'vertical' as const, position: 100, source: 'layer' as const }]
+        store.setSnapAxes(axes)
+        store.setSnapAxes([...axes]) // 内容等（新引用），跳过
+        expect(listener).toHaveBeenCalledTimes(1)
+
+        store.setSnapAxes([])
+        expect(listener).toHaveBeenCalledTimes(2)
+        store.setSnapAxes([]) // 已是空，跳过
+        expect(listener).toHaveBeenCalledTimes(2)
+        expect(store.ui.snapAxes).toEqual([])
+    })
+
+    it('setGuides/setRulersVisible 通知对应分支，均不进历史', () => {
+        const store = new EditorStore()
+        store.openDocument(doc())
+        const changes: EditorChange[] = []
+        store.subscribe((c) => changes.push(c))
+
+        store.setGuides([{ id: 1, orientation: 'vertical', position: 205 }])
+        store.setRulersVisible(false)
+        expect(changes).toEqual([
+            { scope: 'ui', branch: 'guides' },
+            { scope: 'ui', branch: 'rulersVisible' },
+        ])
+        expect(store.history).toHaveLength(0)
+    })
+})
+
 describe('订阅', () => {
     it('退订后不再通知', () => {
         const store = new EditorStore()

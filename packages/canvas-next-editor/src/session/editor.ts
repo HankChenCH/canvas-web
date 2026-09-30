@@ -44,6 +44,15 @@ import {
 import type { LayerBox, Layer, LayerType, ImageLayer } from '@hankchen/canvas-next'
 import { hitTest as hitTestAt } from '../spatial/hitTest'
 import {
+    resolveSnap,
+    snapAxesFromBoxes,
+    snapThresholdScene,
+    visibleRootBoxes,
+    type Guide,
+    type GuideOrientation,
+    type SnapAxis,
+} from '../spatial/snap'
+import {
     isTemplateSubtreePath,
     layerBoxByPath,
     isRootLayerPath,
@@ -210,6 +219,8 @@ export class EditorSession {
      * （条目是与源树断开引用的普通对象）。
      */
     private clipboardEntry: { layer: Layer; sourceBox: LayerBox; pasteCount: number } | null = null
+    /** 参考线 id 自增序（会话内唯一即可，不持久化——参考线不写 graph） */
+    private guideIdSeq = 0
 
     constructor(options: EditorSessionOptions) {
         this.scheduleFrame = options.scheduleFrame
@@ -387,47 +398,125 @@ export class EditorSession {
     }
 
     /**
-     * 开始拖动会话：记录目标路径、起点场景坐标与起始 position 偏移（ui 分支）。
-     * 已在拖动中或路径无法解析时返回 false。
+     * 开始拖动会话：记录目标路径、起点场景坐标、起始 position 偏移与起始盒
+     * （吸附求位基准，ui 分支）。已在拖动中、路径或盒几何无法解析时返回 false。
      */
     beginDrag(path: LayerPath, sceneX: number, sceneY: number): boolean {
         if (this.store.ui.drag) return false
         const doc = this.store.doc
         const layer = doc ? resolveLayer(doc, path) : null
         if (!layer) return false
+        const box = this.boxByPath(path)
+        if (!box) return false
         this.store.setDrag({
             path,
             startScene: { x: sceneX, y: sceneY },
             startPosition: { x: layer.position.x, y: layer.position.y },
+            startBox: box,
         })
         return true
     }
 
     /**
-     * 拖动进行中：position = 起点 + 场景位移。九锚点一视同仁——锚点偏移不动，
-     * 只累加 x/y（x += dx/zoom 的 zoom 折算已由 toScenePoint 收口）；一次拖动的
-     * 全部位移经同 mergeKey 事务并成一步历史，属性面板读同一文档数据即联动。
+     * 拖动进行中：position = 起点 + 场景位移，再按吸附修正（工单 01，ADR 0012）。
+     * 吸附求位：暂定盒（startBox + 本步位移）九点对轴集合——其他可见根层盒缘与
+     * 中心、画布水平/垂直中轴、参考线轴——屏幕 6px 阈值按当前缩放换算场景值，
+     * 多轴取最近，至多一垂直 + 一水平；修正并入同一位置事务（同一 mergeKey，
+     * 跟随拖动既有历史合并语义）。命中的吸附轴回写会话态供吸附线呈现（瞬时
+     * 回显，endDrag 清空）。九锚点一视同仁——锚点偏移不动，只累加 x/y（x += dx/
+     * zoom 的 zoom 折算已由 toScenePoint 收口）；一次拖动的全部位移经同 mergeKey
+     * 事务并成一步历史，属性面板读同一文档数据即联动。
      */
     dragTo(sceneX: number, sceneY: number): void {
         const drag = this.store.ui.drag
         if (!drag) return
+        // 拖动中图层被结构编辑移除的边缘态：整个求位空转（不发事务、不发布命中轴）
+        const doc = this.store.doc
+        if (!doc || resolveLayer(doc, drag.path) === null) return
         const dx = sceneX - drag.startScene.x
         const dy = sceneY - drag.startScene.y
+        const resolution = resolveSnap(
+            {
+                x: drag.startBox.x + dx,
+                y: drag.startBox.y + dy,
+                width: drag.startBox.width,
+                height: drag.startBox.height,
+            },
+            this.snapAxesForDrag(drag.path),
+            snapThresholdScene(this.store.ui.viewport.zoom),
+        )
         this.store.transact((draft) => {
             const layer = resolveLayer(draft, drag.path)
             if (!layer) return
             // immer draft 原位写 position；类型层的 readonly 由 draft 语义解除
             const position = layer.position as { x: number; y: number }
-            position.x = drag.startPosition.x + dx
-            position.y = drag.startPosition.y + dy
+            position.x = drag.startPosition.x + dx + resolution.dx
+            position.y = drag.startPosition.y + dy + resolution.dy
         }, { mergeKey: DRAG_MERGE_KEY })
+        this.store.setSnapAxes(resolution.axes)
     }
 
-    /** 结束拖动：闭合合并事务（下一步历史定格），会话态清空 */
+    /** 结束拖动：闭合合并事务（下一步历史定格），会话态与命中轴回显清空 */
     endDrag(): void {
         if (!this.store.ui.drag) return
         this.store.setDrag(null)
+        this.store.setSnapAxes([])
         this.store.closeMerge(DRAG_MERGE_KEY)
+    }
+
+    /**
+     * 拖动层可用的吸附轴集合（dragTo 每步重算，几何与其余消费同源）：可见根层盒
+     * （hitTest 同款 visible 过滤）排除拖动层自身根 + 画布中轴 + 当前参考线。
+     */
+    private snapAxesForDrag(dragPath: LayerPath): readonly SnapAxis[] {
+        const doc = this.store.doc
+        if (!doc) return []
+        const excludeRootIndex = dragPath[1]
+        if (typeof excludeRootIndex !== 'number') return []
+        return snapAxesFromBoxes(
+            doc.width,
+            doc.height,
+            visibleRootBoxes(doc, excludeRootIndex, this.textPolicies),
+            this.store.ui.guides,
+        )
+    }
+
+    /** 当次拖动命中的吸附轴（只读查询，吸附线呈现消费）；非拖动态/未命中为空 */
+    listSnapAxes(): readonly SnapAxis[] {
+        return this.store.ui.snapAxes
+    }
+
+    // ---- 参考线与标尺（ruler-guides-snap 工单 01）：会话态住 ui 分支，零契约面 ----
+
+    /**
+     * 新增参考线（标尺拖出落线的写入口，工单 03 消费）：水平/垂直轴、场景坐标。
+     * 住 ui 分支——不进历史、不写 graph（ADR 0012）；id 会话内自增供删除寻址。
+     * 非有限坐标空转返回 null（绑定层异常输入防御，不产生通知）。
+     */
+    addGuide(guide: { orientation: GuideOrientation; position: number }): Guide | null {
+        if (!Number.isFinite(guide.position)) return null
+        const stored: Guide = { id: ++this.guideIdSeq, orientation: guide.orientation, position: guide.position }
+        this.store.setGuides([...this.store.ui.guides, stored])
+        return stored
+    }
+
+    /** 删除参考线（拖回标尺语义）：按 id 移除；未知 id 空转返回 false */
+    removeGuide(id: number): boolean {
+        const guides = this.store.ui.guides
+        const next = guides.filter((guide) => guide.id !== id)
+        if (next.length === guides.length) return false
+        this.store.setGuides(next)
+        return true
+    }
+
+    /** 参考线列表（只读查询，呈现与吸附供轴同源） */
+    listGuides(): readonly Guide[] {
+        return this.store.ui.guides
+    }
+
+    /** 标尺显隐开关（⇧R 分派口）：翻转 ui 偏好，不进历史 */
+    toggleRulers(): void {
+        this.store.setRulersVisible(!this.store.ui.rulersVisible)
     }
 
     // ---- 对齐画布（layer-align-snap 工单 01）：图层盒整体对齐画布几何 ----
@@ -995,6 +1084,9 @@ export class EditorSession {
                 return this.duplicateSelection() !== null
             case 'rename':
                 return this.beginRename(this.store.ui.selection)
+            case 'toggleRulers':
+                this.toggleRulers()
+                return true
             case 'delete': {
                 const path = this.store.ui.selection
                 if (!path) return false

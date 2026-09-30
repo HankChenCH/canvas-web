@@ -67,6 +67,16 @@ describe('classifyEditorShortcut：缺省注册表（excalidraw 惯例、v1 单�
         expect(classifyEditorShortcut(input({ key: 'F2', mod: false, shift: true }))).toBeNull()
     })
 
+    it('标尺开关：⇧R（裸键 + shift，ruler-guides-snap 工单 01）', () => {
+        expect(classifyEditorShortcut(input({ key: 'r', mod: false, shift: true }))).toBe('toggleRulers')
+        // Shift 折算的大写形态同样命中（key 归一）
+        expect(classifyEditorShortcut(input({ key: 'R', mod: false, shift: true }))).toBe('toggleRulers')
+        // 裸 R / Ctrl+R / Ctrl+⇧R 不入表（不抢浏览器刷新等既有语义）
+        expect(classifyEditorShortcut(input({ key: 'r', mod: false, shift: false }))).toBeNull()
+        expect(classifyEditorShortcut(input({ key: 'r', mod: true, shift: false }))).toBeNull()
+        expect(classifyEditorShortcut(input({ key: 'r', mod: true, shift: true }))).toBeNull()
+    })
+
     it('key 大小写归一（大写锁定/Shift 折算后匹配）', () => {
         expect(classifyEditorShortcut(input({ key: 'Z', mod: true, shift: false }))).toBe('undo')
         expect(classifyEditorShortcut(input({ key: 'C', mod: true, shift: false }))).toBe('copy')
@@ -175,5 +185,15 @@ describe('executeShortcut：action → 会话动作分派', () => {
         expect(action).toBe('rename')
         expect(session.executeShortcut(action!)).toBe(true)
         expect(session.store.ui.renaming).toEqual(['layers', 0])
+    })
+
+    it('端到端：⇧R 分类为 toggleRulers 分派翻转标尺显隐（ruler-guides-snap 工单 01）', () => {
+        const session = makeSession()
+        const action = classifyEditorShortcut(input({ key: 'r', mod: false, shift: true }))
+        expect(action).toBe('toggleRulers')
+        expect(session.executeShortcut(action!)).toBe(true)
+        expect(session.store.ui.rulersVisible).toBe(false)
+        expect(session.executeShortcut(action!)).toBe(true)
+        expect(session.store.ui.rulersVisible).toBe(true)
     })
 })

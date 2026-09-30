@@ -13,9 +13,10 @@
  */
 import { applyPatches, enablePatches, produceWithPatches, setAutoFreeze, type Draft, type Patch } from 'immer'
 
-import type { Canvas } from '@hankchen/canvas-next'
+import type { Canvas, LayerBox } from '@hankchen/canvas-next'
 
 import type { Point, Viewport } from '../spatial/camera'
+import type { Guide, SnapAxis } from '../spatial/snap'
 import { pathsEqual, type LayerPath } from '../shared/layerPath'
 import type { ExpressionSchemaNode } from '../shared/expressionSchema'
 
@@ -27,11 +28,16 @@ enablePatches()
 // 防误改由唯一写入口 transact 的纪律保证。
 setAutoFreeze(false)
 
-/** 拖动会话（ui 分支）：目标路径 + 起点场景坐标 + 起始 position 偏移 */
+/** 拖动会话（ui 分支）：目标路径 + 起点场景坐标 + 起始 position 偏移 + 起始盒 */
 export interface DragGesture {
     path: LayerPath
     startScene: Point
     startPosition: { x: number; y: number }
+    /**
+     * 拖动开始时的绝对盒（吸附求位基准，工单 01）：盒坐标对 position 线性，
+     * 暂定盒 = startBox + 本步位移；住会话态，文档零接触。
+     */
+    startBox: LayerBox
 }
 
 /**
@@ -72,6 +78,22 @@ export interface EditorUi {
      * 文档不重置（声明随会话，重注入/清除走同一入口）。
      */
     dataSourceSchema: ExpressionSchemaNode | null
+    /**
+     * 参考线（ruler-guides-snap 工单 01，ADR 0012）：使用者从标尺拖出的会话级
+     * 对位轴（水平/垂直、场景坐标）。零契约面——不进历史、不写 graph、保存零
+     * 改动；openDocument 换文档重置（当次编辑会话语义）。
+     */
+    guides: readonly Guide[]
+    /**
+     * 标尺显隐（ruler-guides-snap 工单 01）：缺省常显，⇧R 经会话 toggleRulers
+     * 翻转。与视口同款的面板偏好——openDocument 换文档保留，永不进历史。
+     */
+    rulersVisible: boolean
+    /**
+     * 当次拖动命中的吸附轴（ruler-guides-snap 工单 01）：dragTo 求位的副产物，
+     * 供 canvas 域画贯穿吸附线——瞬时回显，松手即清空（endDrag），非拖动态为空。
+     */
+    snapAxes: readonly SnapAxis[]
 }
 
 /** 一步历史：一次（或同键合并的多次）文档事务的正向/逆向 patch 组 */
@@ -99,6 +121,18 @@ export interface TransactOptions {
     mergeKey?: string
 }
 
+/** 命中吸附轴内容等（拖动高频路径的短路比较，轴数至多 2） */
+function snapAxesEqual(a: readonly SnapAxis[], b: readonly SnapAxis[]): boolean {
+    if (a === b) return true
+    if (a.length !== b.length) return false
+    for (let i = 0; i < a.length; i += 1) {
+        const x = a[i]!
+        const y = b[i]!
+        if (x.orientation !== y.orientation || x.position !== y.position || x.source !== y.source) return false
+    }
+    return true
+}
+
 export class EditorStore {
     private docValue: Canvas | null = null
     private uiValue: EditorUi = {
@@ -110,6 +144,9 @@ export class EditorStore {
         renaming: null,
         anchorExpanded: false,
         dataSourceSchema: null,
+        guides: [],
+        rulersVisible: true,
+        snapAxes: [],
     }
     /** undo 栈：已提交步，栈尾最新 */
     private undoSteps: HistoryStep[] = []
@@ -138,12 +175,22 @@ export class EditorStore {
         return this.redoSteps.length > 0
     }
 
-    /** 打开/替换文档：ui 选择/编辑/重命名会话与双向历史一并重置（新文档不继承旧路径/旧事务） */
+    /** 打开/替换文档：ui 选择/编辑/重命名会话与双向历史一并重置（新文档不继承旧路径/旧事务）；
+     *  参考线随当次会话清空（对位轴不跨文档），标尺显隐作为偏好保留 */
     openDocument(canvas: Canvas): void {
         this.docValue = canvas
         this.undoSteps = []
         this.redoSteps = []
-        this.uiValue = { ...this.uiValue, selection: null, hovered: null, drag: null, editing: null, renaming: null }
+        this.uiValue = {
+            ...this.uiValue,
+            selection: null,
+            hovered: null,
+            drag: null,
+            editing: null,
+            renaming: null,
+            guides: [],
+            snapAxes: [],
+        }
         this.notify({ scope: 'doc', patches: [], inversePatches: [] })
     }
 
@@ -268,6 +315,26 @@ export class EditorStore {
         if (this.uiValue.dataSourceSchema === schema) return
         this.uiValue = { ...this.uiValue, dataSourceSchema: schema }
         this.notify({ scope: 'ui', branch: 'dataSourceSchema' })
+    }
+
+    /** 参考线列表替换（增删动作在会话门面收口）；仅 ui 通知，不参与历史 */
+    setGuides(guides: readonly Guide[]): void {
+        this.uiValue = { ...this.uiValue, guides }
+        this.notify({ scope: 'ui', branch: 'guides' })
+    }
+
+    /** 标尺显隐：布尔值等短路（重复置同态不重绘） */
+    setRulersVisible(visible: boolean): void {
+        if (this.uiValue.rulersVisible === visible) return
+        this.uiValue = { ...this.uiValue, rulersVisible: visible }
+        this.notify({ scope: 'ui', branch: 'rulersVisible' })
+    }
+
+    /** 当次命中吸附轴替换（dragTo 副产物 / endDrag 清空）；内容等短路（未命中步不重绘） */
+    setSnapAxes(axes: readonly SnapAxis[]): void {
+        if (snapAxesEqual(this.uiValue.snapAxes, axes)) return
+        this.uiValue = { ...this.uiValue, snapAxes: axes }
+        this.notify({ scope: 'ui', branch: 'snapAxes' })
     }
 
     subscribe(listener: Listener): () => void {
