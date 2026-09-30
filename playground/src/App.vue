@@ -22,6 +22,14 @@
 // layer-align-snap 工单 03：对齐浮条宿主接线——canvas 域 AlignFloatBar 挂画布
 // 容器顶部居中（原型 FIG.2 落位），宿主只做定位；逐键 data-align-* 钩子由组件
 // 自带（工单 02），根钩子 data-align-float 供目验定位。缩放浮条右下落位不动。
+// ruler-guides-snap 工单 04：标尺/参考线/吸附线接线——canvas 域 Ruler 挂画布容器
+// 顶+左贴边（宿主出 absolute inset:0 壳，条外缘与内容区贴边 = 手势坐标换算前提）、
+// GuidesOverlay 直挂（root 自带 inset:0，与 .surface 同矩形浮于画布之上）；从标尺
+// 拖出参考线的四事件 Ruler → 参考线层转发（载荷直传，工单 03 对接面）；⇧R 随内核
+// shortcuts 注册表自带（useShortcuts 已接），宿主零键位代码；data-ruler-* /
+// data-guide-* / data-snap-* 钩子组件自带。挂点次序：参考线层在标尺之前——拖回
+// 删除的落点判定（elementFromPoint 命中 data-ruler-*）要求标尺条盖在参考线命中条
+// 之上。对齐浮条顶部居中与缩放浮条右下落位不动。
 import { computed, nextTick, onBeforeUnmount, provide, ref, watch } from 'vue'
 
 import {
@@ -47,8 +55,10 @@ import {
     CanvasSurface,
     createRafScheduler,
     drawSelectionGizmo,
+    GuidesOverlay,
     LayerPanel,
     PropertyPanel,
+    Ruler,
     useHistory,
     useViewport,
     type CanvasSurfaceReady,
@@ -120,7 +130,12 @@ const { canUndo, canRedo } = useHistory(editor)
 // 快捷键注册表的绑定桥（工单 14）：撤销/重做/复制/粘贴/副本/删除走集中注册表；
 // Ctrl/Cmd+S 保存是宿主职责，仍在下方 onKeydown 自理。让路规则（文本编辑态/
 // 输入框/输入法）由内核分类器裁决，textarea 与属性面板输入框原生编辑优先。
+// ⇧R（标尺开关）同随注册表自带（ruler-guides-snap 工单 01 入表），宿主零键位代码。
 useShortcuts(editor)
+
+// 参考线层实例（ruler-guides-snap 工单 04）：承接 Ruler 拖出参考线四事件的转发
+// 目标（begin/move/end/cancel defineExpose 对接面见 GuidesOverlay.vue 头注）
+const guidesOverlayRef = ref<InstanceType<typeof GuidesOverlay> | null>(null)
 
 const assetsNote = ref('资源物化中…')
 /** 文档操作读数（保存/打开/导出/上传的状态与预览语义标注；状态栏反馈段显示） */
@@ -541,6 +556,30 @@ onBeforeUnmount(() => {
                  透进画布（不触发点选/平移），画布右下角浮条外的点击照常命中画布。 -->
             <div class="canvas-area">
                 <CanvasSurface class="surface" :editor="editor" @ready="onReady" />
+                <!-- 参考线/吸附线层（ruler-guides-snap 工单 04，spec 决策 4/5）：root
+                     自带 absolute inset:0 + pointer-events:none（只有参考线命中条收
+                     事件），与 .surface 同矩形直挂、浮于画布之上，线体与内容层同一
+                     呈现视口换算（挂载契约见组件头注）。data-guide-* / data-snap-*
+                     钩子、拖出预览/落线/拖回删除全在组件内，宿主只出挂点。挂点次序
+                     在标尺之前：拖回删除的落点判定（elementFromPoint 命中 data-ruler-*）
+                     要求标尺条盖在参考线命中条之上，标尺带内拖回才删得掉。 -->
+                <GuidesOverlay ref="guidesOverlayRef" :editor="editor" />
+                <!-- 标尺（ruler-guides-snap 工单 04，spec 决策 3/5）：画布容器顶+左
+                     贴边宿主挂载——壳 pointer-events:none 不拦画布事件（条自收），
+                     条外缘与内容区贴边对齐（手势坐标换算前提，挂载契约见 Ruler.vue
+                     头注）；⇧R 开关随内核注册表自带，宿主零键位代码。从标尺拖出
+                     参考线的四事件转发到参考线层（载荷直传，工单 03 对接面）；内联
+                     箭头保证每次触发都取当前 ref（成员表达式写法会把首渲染时的
+                     undefined 钉死在 prop 上）。data-ruler-* 钩子组件自带。 -->
+                <div class="ruler-shell">
+                    <Ruler
+                        :editor="editor"
+                        @guide-drag-start="(g) => guidesOverlayRef?.beginGuideDrag(g)"
+                        @guide-drag-move="(g) => guidesOverlayRef?.moveGuideDrag(g)"
+                        @guide-drag-end="(g) => guidesOverlayRef?.endGuideDrag(g)"
+                        @guide-drag-cancel="() => guidesOverlayRef?.cancelGuideDrag()"
+                    />
+                </div>
                 <!-- 对齐浮条（layer-align-snap 工单 03，spec 决策 3）：画布容器顶部
                      居中宿主级挂载（原型 FIG.2 .float.align 落位），浮于 CanvasSurface
                      之上。与缩放浮条同款兄弟挂点——画布事件桥全在 .cn-surface 上，
@@ -640,12 +679,13 @@ onBeforeUnmount(() => {
                                 <li><b>表格模板态与表达式标记（TableLayer V2，工票 03）</b>：中列 V2 目验区自上而下——<b>标记图片</b>（src 为表达式镜像字面 <span v-pre>{{assets.banner}}</span>，按字面引用装载失败 → 占位 + 红叉，不崩渲染）、<b>标记二维码</b>（内容为字面 <span v-pre>{{orderNo}}</span>，按字面出码）、<b>标记文本</b>（显示镜像字面 <span v-pre>订单 {{orderNo}} · 共 {{$count}} 件</span>，编辑器不求值——终图由服务端展开求值）、<b>模板态表格</b>（<b>空壳渲染</b>：表壳 bg/border 照画、行区零高——rows 为空、模板行不实例化）；模板子树不进大纲/不可选中/不参与物化，双击或面板编辑标记文本即解除标记回字面（保存后需重打标，spec §3.7）</li>
                                 <li><b>数据源 schema 注入缝（content-completion 工单 03）</b>：<b>宿主随会话注入</b>（D2）——本页建立会话即注入样例载荷 schema，工具栏三键可重演：<b>注入 schema</b>（载荷形态，D1：声明即 <code>compile(canvas, dataset)</code> 的 data 载荷形状，顶层键 = 根上下文候选；键树与演示 graph 表达式对齐，description 全中文供浮层元信息目验）、<b>注入非法 schema</b>（根级保留键 <code>row</code> → 声明被拒：<b>降级无候选 + console.warn 警告，不弹错不抛错</b>，前移填充期 reserved_root_key 硬错误）、<b>清除声明</b>（未注入 = 无候选，清除不告警）；声明只进编辑器会话态（store ui 分支）——<b>不进 graph、不落 localStorage、不动 wire</b>，换文档不重置；页头读数显示声明态（已注入键数 / 无候选）</li>
                                 <li><b>表达式路径补全三字段接线（content-completion 工单 05）</b>：<b>仅表达式态生效</b>（ValueTypeSegmented 表达式段点亮）——选中标记文本/图片/二维码层，在 内容/资源地址 输入框键入 <code v-pre>{{</code> 自动弹出候选浮层（portal 到 body，不破 288px 面板）；<b>上下文感知</b>：根层 = 根候选集（载荷顶层键 + <code>$root</code>），模板表格<b>格内容层</b> = 行候选集（+ <code>row.*</code> / <code>$index</code>，<code>row.</code> 下钻 items 键树）；片段内 <code>.</code> 刷新候选、↑↓ 移动、Enter/Tab 接受（补全剩余路径段）、鼠标点选同效；接受 = 文本替换走既有 input/change 提交——<b>表达式 + 镜像同改、一步历史</b>，Ctrl/Cmd+Z 撤销一步恢复镜像；Esc/失焦/点外/<code v-pre>}}</code> 关闭；静态态与未注入声明零补全；中文输入法合成期按键不误触发（IME 守卫）；全角 <code>｛｛</code> 不触发属已知限制（Ctrl/Cmd+Space 手动触发兜底）</li>
+                                <li><b>标尺 / 参考线 / 吸附线（ruler-guides-snap 工单 04）</b>：画布顶+左常显<b>标尺</b>（px 刻度、0 点=画布左上、随平移缩放联动；<b>⇧R</b> 开关收起/展开）；<b>从标尺拖出参考线</b>（顶条出垂直线、左条出水平线，拖出途中自动吸附近旁图层缘/中心与画布中轴，抬手落线）；参考线贯穿画布（天青实线、驻留）<b>拖回标尺即删除</b>（悬到标尺转红色预告）；<b>拖动图层</b>靠近其他图层的缘/中心、画布水平/垂直中轴时自动吸附，命中轴显示玫红虚线<b>吸附线</b>（瞬时回显、松手即消失；一次拖动至多吸一横一纵，隐藏层不供轴）；参考线与吸附线是<b>会话级</b>能力——不进历史（撤销/重做不回退）、不写文档（保存产物零改动），换文档即清空</li>
                                 <li><b>桌面网格（原型）</b>：工具栏「网格」开关画布背景网格线——<b>只画纸面之外的桌面</b>（垫在图层之下、evenodd 挖掉纸面矩形），桌面有纹理、纸面保持平滑，「画布 vs 背景」之辨不随模板底图有无而失效；随平移缩放联动（线宽恒 1 物理像素、步长随缩放自适应倍增）；开关是<b>编辑器会话态</b>（不进 graph、不进导出——导出 PNG 经 fork 后端恒无网格）</li>
                             </ul>
                         </section>
                         <section class="help-section" aria-label="开发者">
                             <h3>开发者</h3>
-                            <p class="help-ticket">工票 03：TableLayer V2 目验样例——模板态表格空壳渲染、表达式标记镜像字面与按字面物化降级（中列）。工单 15：加固与契约——contextlost 可恢复重绘、DPR 变更即时适配、布局快照 fixture 三端契约钉死（v1 + 预期差异白名单 + 同步校验）、点位取样补全（priority 叠加/QR 角点）；工具栏「目验样图」一键载入 php visual-check 同场景。工单 03（content-completion）：数据源 schema 注入缝——工具栏三键目验 注入/非法降级/清除，声明只进会话态。工单 14/13 与更早目验保留</p>
+                            <p class="help-ticket">工票 03：TableLayer V2 目验样例——模板态表格空壳渲染、表达式标记镜像字面与按字面物化降级（中列）。工单 15：加固与契约——contextlost 可恢复重绘、DPR 变更即时适配、布局快照 fixture 三端契约钉死（v1 + 预期差异白名单 + 同步校验）、点位取样补全（priority 叠加/QR 角点）；工具栏「目验样图」一键载入 php visual-check 同场景。工单 03（content-completion）：数据源 schema 注入缝——工具栏三键目验 注入/非法降级/清除，声明只进会话态。工单 14/13 与更早目验保留。ruler-guides-snap 工单 04：标尺/参考线接线目验——⇧R 随内核注册表（宿主零键位）、data-ruler-*/data-guide-*/data-snap-* 钩子自动化锚点，动线走查 列对位吸附/参考线拖出拖回/undo 隔离/保存零改动</p>
                             <div class="help-dev-actions">
                                 <button
                                     type="button"
@@ -923,6 +963,20 @@ onBeforeUnmount(() => {
     width: 100%;
     height: 100%;
     border-radius: 11px;
+}
+
+/* 标尺壳（ruler-guides-snap 工单 04）：画布容器顶+左贴边挂载——根铺满壳（组件
+   width/height 100%），条外缘 = 内容区缘（手势坐标换算前提）。壳 pointer-events:
+   none 是不拦画布事件的关键（标尺条在组件内自开 auto）；圆角与 .workbench
+   .surface 的 border-box 圆角（12px，覆盖裸 .surface 的 11px）同族，条与角块
+   沿圆角收边。无 z-index：流内次序即 surface 之上、浮条（z10）之下，与模板
+   挂点次序一致。 */
+.ruler-shell {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    border-radius: 12px;
+    pointer-events: none;
 }
 
 /* 对齐浮条（layer-align-snap 工单 03）：宿主只出定位——画布容器顶部居中
