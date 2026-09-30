@@ -12,8 +12,11 @@ import { enumerateExpressionCandidates } from '../../src/shared/expressionCandid
  * - 裸键在两种上下文都走根 schema（对齐 CanvasHydrator evaluateNode 的
  *   `$rowNamespace + $root` 合并 + reserved_root_key 无遮蔽保证）。
  * - `row.` 行外不给（求值期 expression_row_outside_loop）→ 空候选。
- * - `.` 下钻走 properties 树；无 properties 节点终止该分支；数组节点 items 键树
- *   下钻（D3，与行上下文同一机制）。
+ * - `.` 下钻走 properties 树；无 properties 节点终止该分支；数组节点收敛为叶子
+ *   无具名子候选（D9 修订 D3：具名段下钻数组在求值器是静默空串——缺字段信号，
+ *   不给写得出来而渲染为空白的表达式；下钻层 items 链保留供 rowsPath/row.*
+ *   机制，类型徽标仍显示 array 本身）。开放映射（open）节点枚举结果携带 open
+ *   信号（结果面扩展，不污染候选条目契约），供工单 10 浮层占位提示（D10）。
  * - schema null（声明被拒/降级）→ 全部无候选；行 schema 未声明 → 结构头 row
  *   仍在、行子树无候选（辅助声明不作权威）。
  */
@@ -160,10 +163,35 @@ describe('enumerateExpressionCandidates（点下钻刷新）', () => {
         }
     })
 
-    it('D3：数组节点 items 键树下钻（tags. → label，与行上下文同一机制）', () => {
+    it('D9：数组节点收敛为叶子——tags. 无具名子候选（具名段下钻数组在求值器是静默空串）；非 open 信号恒缺省', () => {
         const result = enumerateExpressionCandidates(payloadSchema, { context: 'root', expr: 'tags.' })
         if (!result.ok) throw new Error('应枚举成功')
-        expect(result.candidates).toEqual([{ path: 'tags.label', segment: 'label', description: '标签名', type: 'string' }])
+        expect(result.candidates).toEqual([])
+        expect(result.open).toBeUndefined()
+    })
+
+    it('D10：open 节点下钻 = 空候选 + open 信号（工单 10 占位提示）；非 open 节点恒缺省', () => {
+        const parsed = parseExpressionSchema({
+            properties: {
+                fields: { type: 'object', additionalProperties: true, description: '开放映射' },
+                customer: { type: 'object', properties: { name: { type: 'string' } } },
+            },
+        })
+        if (!parsed.ok) throw new Error('应解析通过')
+        const openDrill = enumerateExpressionCandidates(parsed.schema, { context: 'root', expr: 'fields.' })
+        if (!openDrill.ok) throw new Error('应枚举成功')
+        expect(openDrill.candidates).toEqual([])
+        expect(openDrill.open).toBe(true)
+
+        const closedDrill = enumerateExpressionCandidates(parsed.schema, { context: 'root', expr: 'customer.' })
+        if (!closedDrill.ok) throw new Error('应枚举成功')
+        expect(closedDrill.candidates.map((candidate) => candidate.segment)).toEqual(['name'])
+        expect(closedDrill.open).toBeUndefined()
+
+        // 头部层信号来源 = 根节点（非 open 根恒缺省）
+        const heads = enumerateExpressionCandidates(parsed.schema, { context: 'root', expr: '' })
+        if (!heads.ok) throw new Error('应枚举成功')
+        expect(heads.open).toBeUndefined()
     })
 
     it('无 properties 节点终止该分支（任意值/标量叶子下钻 = 空候选，不抛错）', () => {

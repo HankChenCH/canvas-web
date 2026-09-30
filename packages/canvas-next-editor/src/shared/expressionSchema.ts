@@ -34,10 +34,15 @@
  * resolveSchemaContent 范式）：seen 只含当前 DFS 祖先链，菱形引用不误判；
  * 该守卫兼防宿主程序化构造的对象别名自嵌套（JSON 文档天然无环）。
  *
- * D3 钉定：数组类型节点 items 键树下钻——与行上下文候选（rowsPath 数组
- * items）同一机制。properties 已声明的节点按对象形态走 properties，不回退
- * items；无 properties 时沿 items 链找对象形态（数组的数组穿透，与子候选枚举
- * 对称）；全链无 properties 的节点是叶子（该分支无子候选）。
+ * D3 钉定（2026-09-30 由 D9 修订）：数组类型节点 items 键树下钻保留在**下钻层**
+ * （schemaNodeAtPath / resolveRowSchema，rowsPath 行 schema 解析与 `row.*`/`$index`
+ * 机制零影响）；**枚举层**（schemaChildEntries 候选视图）已分叉——数组节点
+ * （type 声明为 array 或声明了 items）收敛为叶子、不沿 items 链穿透：具名段下钻
+ * 数组在求值器（InterpolationEvaluator::navigateValue）是静默空串（缺字段信号），
+ * 补全不得怂恿写渲染为空白的表达式；类型徽标仍显示 array 本身，不特供「供表格
+ * rowsPath 使用」文案（为表达式内置函数留前瞻口，spec D9）。open 节点
+ * （additionalProperties: true）即随枚举结果携带 open 信号（D10，供工单 10 浮层
+ * 占位提示；信号面与候选空否无关）。
  *
  * 全模块零 DOM、零内部依赖（editor-shared-isolation）；除
  * normalizeExpressionSchemaSource 的 console 警告收口（注入期汇总一次）外均为纯函数。
@@ -301,9 +306,10 @@ export function normalizeExpressionSchemaSource(raw: unknown): ExpressionSchemaN
 }
 
 /**
- * 节点的对象形态视图（D3 唯一机制，下钻与子候选枚举共用）：properties 声明
- * 优先（声明而段未命中 = 死分支，不回退 items）；无 properties 时沿 items 链
- * 找首个带 properties 的节点（数组的数组穿透）；全链无 = null（叶子分支）。
+ * 节点的对象形态视图（下钻层专用机制，D3；枚举层候选视图已按 D9 分叉——见
+ * schemaChildEntries）：properties 声明优先（声明而段未命中 = 死分支，不回退
+ * items）；无 properties 时沿 items 链找首个带 properties 的节点（数组的数组
+ * 穿透，rowsPath 行 schema 解析依赖此链）；全链无 = null（叶子分支）。
  */
 function objectShapeOf(node: ExpressionSchemaNode): ReadonlyMap<string, ExpressionSchemaNode> | null {
     let cursor: ExpressionSchemaNode | undefined = node
@@ -329,19 +335,38 @@ export function schemaNodeAtPath(node: ExpressionSchemaNode, segments: readonly 
 }
 
 /**
- * 一层子候选枚举：经对象形态视图取 properties 子项（按声明序），与下钻同一
- * 机制（D3，数组类型节点与行上下文候选一致）；叶子 = 无子候选。
+ * 一层子候选枚举结果（D9 候选视图的返回面）：候选条目 + open 信号。信号走结果
+ * 面扩展，不污染候选条目契约（ExpressionSchemaChildEntry 不加字段）。
  */
-export function schemaChildEntries(node: ExpressionSchemaNode): readonly ExpressionSchemaChildEntry[] {
-    const shape = objectShapeOf(node)
-    if (shape === null) return []
-    return [...shape].map(([key, child]) => ({ key, node: child }))
+export interface ExpressionSchemaChildView {
+    /** 一层子候选（按声明序）；数组节点收敛为叶子 = 空（D9） */
+    entries: readonly ExpressionSchemaChildEntry[]
+    /** 开放映射信号（D10）：节点标 open（additionalProperties: true）时为 true；非 open 恒缺省 */
+    open?: boolean
+}
+
+/**
+ * 一层子候选枚举（枚举层候选视图，D9 分叉点）：数组节点（type 声明为 array 或
+ * 声明了 items）**一律**收敛为叶子——具名段下钻数组在求值器是静默空串
+ * （navigateValue 缺字段信号），补全不得怂恿写渲染为空白的表达式（spec §2 D9，
+ * 2026-09-30 修订 D3）；声明自相矛盾（type array 而又带 properties/items）时从疑
+ * 同样收敛，对齐 D7 疑点降叶哲学。其余节点取**自身** properties（按声明序），
+ * 不沿 items 链穿透。open 信号（D10）随视图透出，供浮层占位提示（工单 10）。
+ * 下钻层（schemaNodeAtPath/resolveRowSchema）机制不动，rowsPath/`row.*`/`$index`
+ * 零影响（数组的数组穿透不回归）。
+ */
+export function schemaChildEntries(node: ExpressionSchemaNode): ExpressionSchemaChildView {
+    if (node.type === 'array' || node.items !== undefined) return { entries: [] }
+    const entries =
+        node.properties !== undefined ? [...node.properties].map(([key, child]) => ({ key, node: child })) : []
+    return node.open === true ? { entries, open: true } : { entries }
 }
 
 /**
  * 行上下文行键树解析（rowsPath 数组 items，CanvasHydrator 行注入 'row' 的形状
- * 本体）：rowsPath 走点路径下钻，命中数组节点取 items；节点无 items（schema
- * 未声明行形状或漂移）→ null（行子树无候选，结构头 row 仍可用）。
+ * 本体）：rowsPath 走点路径下钻（下钻层 items 链机制，D9 分叉不影响——数组的
+ * 数组穿透不回归），命中数组节点取 items；节点无 items（schema 未声明行形状或
+ * 漂移）→ null（行子树无候选，结构头 row 仍可用）。
  * 嵌套模板表的行相对 rowsPath 以当前行 schema 为基准解析，由调用方传入对应根。
  */
 export function resolveRowSchema(root: ExpressionSchemaNode, rowsPath: string): ExpressionSchemaNode | null {

@@ -43,6 +43,7 @@ export {
     schemaChildEntries,
     schemaNodeAtPath,
     type ExpressionSchemaChildEntry,
+    type ExpressionSchemaChildView,
     type ExpressionSchemaDiagnostic,
     type ExpressionSchemaDiagnosticCode,
     type ExpressionSchemaNode,

@@ -4,9 +4,10 @@ import { parseExpressionSchema, resolveRowSchema, schemaChildEntries, schemaNode
 import { CERT_FORM_DATASET_SCHEMA } from './certFormDatasetSchema'
 
 /**
- * 证书 form-data schema 全链路（content-completion 工单 08，spec §5 真实 fixture）：
+ * 证书 form-data schema 全链路（content-completion 工单 08/09，spec §5 真实 fixture）：
  * draft-07 全树 deref 零诊断，形状树覆盖全部嵌套分支（机构/学员/培训/章节树/课件/
- * 开放映射），$ref 菱形/嵌套/前向与内联等价，definitions 命名池不进候选树。
+ * 开放映射），$ref 菱形/嵌套/前向与内联等价，definitions 命名池不进候选树；
+ * 工单 09：数组枚举收敛为叶子（D9）+ open 信号透出（D10）。
  */
 
 const parsed = parseExpressionSchema(CERT_FORM_DATASET_SCHEMA)
@@ -20,7 +21,7 @@ describe('证书 form-data schema（真实 fixture，工单 08）', () => {
     })
 
     it('根级 13 键全可达，definitions 命名池不进候选树', () => {
-        const keys = schemaChildEntries(schema).map((entry) => entry.key)
+        const keys = schemaChildEntries(schema).entries.map((entry) => entry.key)
         expect(keys).toHaveLength(13)
         expect(keys).toEqual([
             'certName',
@@ -80,18 +81,22 @@ describe('证书 form-data schema（真实 fixture，工单 08）', () => {
         expect(schemaNodeAtPath(schema, ['coursewares', 'fileUrl'])).toMatchObject({ type: 'string', description: '课件文件地址' })
     })
 
-    it('原始证书数组：徽标 array，items 引用树可达', () => {
+    it('原始证书数组：徽标 array，下钻层 items 引用树可达（rowsPath 链不回归）；枚举层收敛为叶子（D9）', () => {
         const origin = schemaNodeAtPath(schema, ['originCertificates'])
         expect(origin?.type).toBe('array')
         expect(schemaNodeAtPath(schema, ['originCertificates', 'certNo'])).toMatchObject({ type: 'string' })
         expect(schemaNodeAtPath(schema, ['originCertificates', 'fileUrl'])).toMatchObject({ type: 'string', description: '证书扫描件' })
+        // D9：{{originCertificates.}} 无具名子候选（具名段下钻数组在求值器是静默空串）
+        expect(schemaChildEntries(origin as NonNullable<typeof origin>).entries).toEqual([])
     })
 
-    it('开放映射 fields：open 标记入形状树，无 properties（键候选归枚举层处置）', () => {
+    it('开放映射 fields：open 标记入形状树，枚举视图空候选 + open 信号（工单 09/10）', () => {
         const fields = schemaNodeAtPath(schema, ['fields'])
         expect(fields?.open).toBe(true)
         expect(fields?.properties).toBeUndefined()
-        expect(schemaChildEntries(fields as NonNullable<typeof fields>)).toEqual([])
+        const view = schemaChildEntries(fields as NonNullable<typeof fields>)
+        expect(view.entries).toEqual([])
+        expect(view.open).toBe(true)
     })
 
     it('打印设置：enum/format 等校验关键词宽松忽略，type 照常归一', () => {

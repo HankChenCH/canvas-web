@@ -25,7 +25,9 @@ function parseOk(raw: unknown): Extract<ExpressionSchemaParse, { ok: true }> {
  * 降级分级（D7）：整份拒绝仅根级结构性问题（根非对象/缺 properties 层级/
  * reserved_root_key）；局部故障（断链/外部指针/环引用/目标形态不符）该节点降
  * 叶子 + diagnostics 逐条记录，树其余部分照常服务。零依赖、不引 ajv、零 DOM。
- * D3 钉定：数组类型节点 items 键树下钻（与行上下文候选同一机制）。
+ * D3 钉定（2026-09-30 由 D9 修订）：数组类型节点 items 键树下钻保留下钻层
+ * （schemaNodeAtPath/resolveRowSchema）；枚举层候选视图（schemaChildEntries）
+ * 已分叉——数组节点收敛为叶子 + open 信号随视图透出（工单 09）。
  */
 
 /** 端上常用声明样例（载荷形态，D1：schema 声明即 data 载荷形状） */
@@ -281,26 +283,33 @@ describe('schemaNodeAtPath（点路径下钻 walker）', () => {
     })
 })
 
-describe('schemaChildEntries（一层子候选枚举）', () => {
+describe('schemaChildEntries（一层子候选枚举：D9 候选视图）', () => {
     const parsed = parseExpressionSchema(payloadSchema)
     if (!parsed.ok) throw new Error('样例 schema 应合法')
     const schema = parsed.schema
 
     it('对象节点：properties 子项按声明序', () => {
-        expect(schemaChildEntries(schema).map((entry) => entry.key)).toEqual(['orderNo', 'customer', 'tags', 'remark'])
+        expect(schemaChildEntries(schema).entries.map((entry) => entry.key)).toEqual(['orderNo', 'customer', 'tags', 'remark'])
     })
 
-    it('D3：数组节点呈现 items 键树（行上下文同一机制）', () => {
+    // D9（2026-09-30 修订 D3）：数组节点候选枚举收敛为叶子——具名段下钻数组在
+    // 求值器（InterpolationEvaluator::navigateValue）是静默空串（缺字段信号），
+    // 补全不得怂恿写渲染为空白的表达式；徽标仍显示 array 类型本身，不特供
+    // rowsPath 语义（表达式内置函数属前瞻另一补全面）。收敛只在枚举层。
+    it('D9：数组节点收敛为叶子——无具名子候选，type 徽标数据（array）保留', () => {
         const tags = schemaNodeAtPath(schema, ['tags'])
         if (!tags) throw new Error('tags 节点应存在')
-        expect(schemaChildEntries(tags).map((entry) => entry.key)).toEqual(['label'])
+        const view = schemaChildEntries(tags)
+        expect(view.entries).toEqual([])
+        expect(tags.type).toBe('array')
     })
 
-    it('叶子（无 properties 无 items）= 无子候选', () => {
+    it('叶子（无 properties 无 items）= 无子候选；非 open 节点 open 信号恒缺省', () => {
         const remark = schemaNodeAtPath(schema, ['remark'])
         if (!remark) throw new Error('remark 节点应存在')
-        expect(schemaChildEntries(remark)).toEqual([])
-        expect(schemaChildEntries(schemaNodeAtPath(schema, ['orderNo']) as ExpressionSchemaNode)).toEqual([])
+        expect(schemaChildEntries(remark).entries).toEqual([])
+        expect(schemaChildEntries(remark).open).toBeUndefined()
+        expect(schemaChildEntries(schemaNodeAtPath(schema, ['orderNo']) as ExpressionSchemaNode).entries).toEqual([])
     })
 
     it('items 本身也无 properties（数组的数组/任意元素）= 无子候选', () => {
@@ -308,19 +317,52 @@ describe('schemaChildEntries（一层子候选枚举）', () => {
         if (!parsed2.ok) throw new Error('应解析通过')
         const loose = schemaNodeAtPath(parsed2.schema, ['loose'])
         if (!loose) throw new Error('loose 节点应存在')
-        expect(schemaChildEntries(loose)).toEqual([])
+        expect(schemaChildEntries(loose).entries).toEqual([])
         expect(schemaNodeAtPath(parsed2.schema, ['loose', 'anything'])).toBeNull()
     })
 
-    it('数组的数组：items 链穿透对称——下钻与子候选枚举同一机制', () => {
+    // 下钻层（schemaNodeAtPath items 链）不动——rowsPath 行 schema 解析与
+    // row.*/$index 机制零影响（数组的数组穿透不回归，工单 09 验收）。
+    it('D9 分叉：数组的数组——枚举层收敛为叶子，下钻层 items 链穿透保留', () => {
         const parsed2 = parseExpressionSchema({
             properties: { matrix: { type: 'array', items: { type: 'array', items: { properties: { label: { type: 'string' } } } } } },
         })
         if (!parsed2.ok) throw new Error('应解析通过')
         const matrix = schemaNodeAtPath(parsed2.schema, ['matrix'])
         if (!matrix) throw new Error('matrix 节点应存在')
-        expect(schemaChildEntries(matrix).map((entry) => entry.key)).toEqual(['label'])
+        expect(schemaChildEntries(matrix).entries).toEqual([])
         expect(schemaNodeAtPath(parsed2.schema, ['matrix', 'label'])?.type).toBe('string')
+    })
+
+    // D9「一律」的边缘面：自相矛盾声明（type array 而又带 properties）按数组从疑
+    // 收敛（对齐 D7 疑点降叶哲学）；下钻层对象形态优先的既有惯例不动（分叉语义）。
+    it('D9 一律：type array 而又带 properties 的自相矛盾声明也收敛为叶子', () => {
+        const parsed2 = parseExpressionSchema({
+            properties: { mixed: { type: 'array', properties: { name: { type: 'string' } } } },
+        })
+        if (!parsed2.ok) throw new Error('应解析通过')
+        const mixed = schemaNodeAtPath(parsed2.schema, ['mixed'])
+        if (!mixed) throw new Error('mixed 节点应存在')
+        expect(schemaChildEntries(mixed).entries).toEqual([])
+        expect(schemaNodeAtPath(parsed2.schema, ['mixed', 'name'])?.type).toBe('string') // 下钻层不动
+    })
+
+    it('D10：open 节点候选为空且枚举视图携带 open 信号；已合入 properties 的键照常枚举', () => {
+        const parsed2 = parseExpressionSchema({
+            properties: {
+                openMap: { type: 'object', additionalProperties: true },
+                openWithKeys: { type: 'object', additionalProperties: true, properties: { known: { type: 'string' } } },
+                closedMap: { type: 'object', properties: { plain: { type: 'string' } } },
+            },
+        })
+        if (!parsed2.ok) throw new Error('应解析通过')
+        const openView = schemaChildEntries(schemaNodeAtPath(parsed2.schema, ['openMap']) as ExpressionSchemaNode)
+        expect(openView.entries).toEqual([])
+        expect(openView.open).toBe(true)
+        const withKeysView = schemaChildEntries(schemaNodeAtPath(parsed2.schema, ['openWithKeys']) as ExpressionSchemaNode)
+        expect(withKeysView.entries.map((entry) => entry.key)).toEqual(['known']) // D10：动态键由宿主合入 properties
+        expect(withKeysView.open).toBe(true)
+        expect(schemaChildEntries(schemaNodeAtPath(parsed2.schema, ['closedMap']) as ExpressionSchemaNode).open).toBeUndefined()
     })
 })
 
@@ -452,7 +494,7 @@ describe('$ref 注入期 deref（工单 08，D6/D7：目标为基底，本地 de
             definitions: { d7: { type: 'string' } },
             properties: { real: { type: 'string' }, definitions: { type: 'string' } },
         })
-        expect(schemaChildEntries(schema).map((entry) => entry.key)).toEqual(['real', 'definitions'])
+        expect(schemaChildEntries(schema).entries.map((entry) => entry.key)).toEqual(['real', 'definitions'])
         expect(schemaNodeAtPath(schema, ['d7'])).toBeNull()
         expect(schemaNodeAtPath(schema, ['v12'])).toBeNull()
     })

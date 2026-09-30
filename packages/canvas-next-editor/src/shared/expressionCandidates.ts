@@ -10,8 +10,11 @@
  * - 裸键在两种上下文都走根 schema：行上下文求值上下文 = `$rowNamespace + $root`
  *   合并（CanvasHydrator::evaluateNode），行命名空间只有 row/$index 且
  *   reserved_root_key 保证根级键不遮蔽——裸键即根键。
- * - `.` 下钻走 properties 树；无 properties 节点终止该分支；数组节点 items 键树
- *   下钻（D3，walker 代理，与行上下文候选同一机制）。
+ * - `.` 下钻走 properties 树；无 properties 节点终止该分支；数组节点收敛为叶子
+ *   无具名子候选（D9 修订 D3：具名段下钻数组在求值器是静默空串——缺字段信号，
+ *   不给写得出来而渲染为空白的表达式；下钻层 items 链保留供 rowsPath/`row.*`
+ *   机制，类型徽标仍显示 array 本身）。开放映射（open）节点的枚举结果携带 open
+ *   信号（结果面扩展，不污染候选条目契约），供工单 10 浮层占位提示（D10）。
  *
  * 消费契约（工单 04 浮层）：
  * - 入参 expr 是片段表达式（trim 后，来自 expressionScan）；**单个尾点 = 补全点
@@ -74,6 +77,12 @@ export type ExpressionCandidateResult =
           /** 正在输入的未完整段（'' = 尾点/空表达式态）；恒为 expr 的后缀 */
           partial: string
           candidates: readonly ExpressionCandidate[]
+          /**
+           * 开放映射信号（D10）：候选来源节点（头部层 = 根 schema，下钻层 = 前缀
+           * 节点）标 open 时为 true，非 open 恒缺省——供浮层渲染「动态字段，键由
+           * 模板定义」占位提示（工单 10），不污染候选条目契约。
+           */
+          open?: boolean
       }
     | { ok: false; reason: ExpressionSyntaxError }
 
@@ -95,22 +104,20 @@ function childCandidate(entry: ExpressionSchemaChildEntry, prefix: string): Expr
     return { path, segment: entry.key, ...candidateMeta(entry.node) }
 }
 
-/** 上下文头部候选：裸键（声明序）+ $root；行上下文追加 row/$index（结构头，踏脚石） */
+/** 上下文头部候选：裸键（声明序）+ $root；行上下文追加 row/$index（结构头，踏脚石）；open 信号随根节点透出 */
 function headCandidates(
     schema: ExpressionSchemaNode,
     context: ExpressionContextKind,
     rowSchema: ExpressionSchemaNode | null | undefined,
-): readonly ExpressionCandidate[] {
-    const candidates: ExpressionCandidate[] = []
-    for (const entry of schemaChildEntries(schema)) {
-        candidates.push(childCandidate(entry, ''))
-    }
+): { candidates: readonly ExpressionCandidate[]; open?: boolean } {
+    const view = schemaChildEntries(schema)
+    const candidates = view.entries.map((entry) => childCandidate(entry, ''))
     candidates.push({ path: '$root', segment: '$root' })
     if (context === 'row') {
         candidates.push(rowSchema ? { path: 'row', segment: 'row', ...candidateMeta(rowSchema) } : { path: 'row', segment: 'row' })
         candidates.push({ path: '$index', segment: '$index' })
     }
-    return candidates
+    return view.open === true ? { candidates, open: true } : { candidates }
 }
 
 /**
@@ -131,7 +138,7 @@ export function enumerateExpressionCandidates(
     const stripped = hadTrailingDot ? query.expr.slice(0, -1) : query.expr
     if (stripped === '') {
         if (query.expr === '') {
-            return { ok: true, prefix: '', partial: '', candidates: headCandidates(schema, query.context, query.rowSchema) }
+            return { ok: true, prefix: '', partial: '', ...headCandidates(schema, query.context, query.rowSchema) }
         }
         return { ok: false, reason: 'expression_syntax_error' }
     }
@@ -158,7 +165,7 @@ export function enumerateExpressionCandidates(
     }
 
     if (prefixPath.length === 0) {
-        return { ok: true, prefix: '', partial, candidates: headCandidates(schema, query.context, query.rowSchema) }
+        return { ok: true, prefix: '', partial, ...headCandidates(schema, query.context, query.rowSchema) }
     }
 
     // 头路由对齐求值器 resolveFragment 的 match 分支。base 与下钻段：
@@ -185,10 +192,15 @@ export function enumerateExpressionCandidates(
 
     const node = base === null ? null : schemaNodeAtPath(base, segments)
     const prefix = prefixPath.join('.')
+    if (node === null) {
+        return { ok: true, prefix, partial, candidates: [] }
+    }
+    const view = schemaChildEntries(node)
     return {
         ok: true,
         prefix,
         partial,
-        candidates: node === null ? [] : schemaChildEntries(node).map((entry) => childCandidate(entry, prefix)),
+        candidates: view.entries.map((entry) => childCandidate(entry, prefix)),
+        ...(view.open === true ? { open: true } : {}),
     }
 }
