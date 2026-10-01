@@ -49,6 +49,23 @@ export interface TextEditingSession {
     path: LayerPath
 }
 
+/**
+ * 查找替换会话（canvas-web-find-replace 工单 01，CONTEXT「查找替换」词条）：
+ * 面板开合（open）与查找/替换两词 + 命中游标（派生命中列表的偏移下标）。匹配
+ * 列表派生不驻留——每次从 doc + query 现算，游标越界在读侧钳位；同文档内
+ * 关开（closeFind→beginFind）保留查询词与游标。会话态族——不进历史、不写
+ * graph；openDocument 换文档整体重置（换文档带旧查询词开面板反而怪）。
+ */
+export interface FindSession {
+    open: boolean
+    query: string
+    replacement: string
+    cursor: number
+}
+
+/** 查找会话缺省态（初始与 openDocument 重置同源） */
+const initialFindSession = (): FindSession => ({ open: false, query: '', replacement: '', cursor: 0 })
+
 export interface EditorUi {
     viewport: Viewport
     /** 当前选中图层路径（数组路径，patch path 前缀）；null = 无选择 */
@@ -105,6 +122,13 @@ export interface EditorUi {
      * 命中按前缀判定收口 isLockedPath。
      */
     lockedPaths: readonly LayerPath[]
+    /**
+     * 查找替换会话（canvas-web-find-replace 工单 01）：面板开合 + 两词 + 游标的
+     * 会话态族——不进历史、不写 graph，openDocument 换文档重置（guides 同门）。
+     * 命中列表不在此驻留：由 editing 域扫描纯函数从 doc + query 派生（EditorSession
+     * listFindMatches 查询口），overlay 高亮与查找条计数同源消费。
+     */
+    find: FindSession
 }
 
 /** 一步历史：一次（或同键合并的多次）文档事务的正向/逆向 patch 组 */
@@ -176,6 +200,7 @@ export class EditorStore {
         rulersVisible: true,
         snapAxes: [],
         lockedPaths: [],
+        find: initialFindSession(),
     }
     /** undo 栈：已提交步，栈尾最新 */
     private undoSteps: HistoryStep[] = []
@@ -205,7 +230,8 @@ export class EditorStore {
     }
 
     /** 打开/替换文档：ui 选择/编辑/重命名会话与双向历史一并重置（新文档不继承旧路径/旧事务）；
-     *  参考线与锁定集合随当次会话清空（对位轴/文档内容防护不跨文档），标尺显隐作为偏好保留 */
+     *  参考线/锁定集合/查找会话随当次会话清空（对位轴/文档内容防护/查询词不跨文档），
+     *  标尺显隐作为偏好保留 */
     openDocument(canvas: Canvas): void {
         this.docValue = canvas
         this.undoSteps = []
@@ -220,6 +246,7 @@ export class EditorStore {
             guides: [],
             snapAxes: [],
             lockedPaths: [],
+            find: initialFindSession(),
         }
         this.notify({ scope: 'doc', patches: [], inversePatches: [] })
     }
@@ -372,6 +399,24 @@ export class EditorStore {
         if (lockedPathsEqual(this.uiValue.lockedPaths, paths)) return
         this.uiValue = { ...this.uiValue, lockedPaths: paths }
         this.notify({ scope: 'ui', branch: 'lockedPaths' })
+    }
+
+    /**
+     * 查找会话替换（beginFind/closeFind/输入写入经会话门面收口到这里）；内容等
+     * 短路（重复开合/同词写入不通知）。仅 ui 通知，不参与历史。
+     */
+    setFind(find: FindSession): void {
+        const current = this.uiValue.find
+        if (
+            current.open === find.open
+            && current.query === find.query
+            && current.replacement === find.replacement
+            && current.cursor === find.cursor
+        ) {
+            return
+        }
+        this.uiValue = { ...this.uiValue, find }
+        this.notify({ scope: 'ui', branch: 'find' })
     }
 
     subscribe(listener: Listener): () => void {

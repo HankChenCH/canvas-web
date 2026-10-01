@@ -17,6 +17,7 @@ export const SHORTCUT_GROUP_ORDER: readonly EditorShortcutGroup[] = [
     'history',
     'clipboard',
     'layer',
+    'text',
     'view',
     'help',
 ]
@@ -26,6 +27,7 @@ export const SHORTCUT_GROUP_LABELS: Record<EditorShortcutGroup, string> = {
     history: '历史',
     clipboard: '剪贴板',
     layer: '图层',
+    text: '文本',
     view: '视图',
     help: '帮助',
 }

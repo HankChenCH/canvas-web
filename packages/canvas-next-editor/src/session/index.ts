@@ -27,6 +27,7 @@ export {
     type DragGesture,
     type EditorChange,
     type EditorUi,
+    type FindSession,
     type HistoryStep,
     type TextEditingSession,
     type TransactOptions,

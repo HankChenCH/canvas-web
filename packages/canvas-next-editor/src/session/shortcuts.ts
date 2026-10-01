@@ -11,7 +11,8 @@
  * 步、⇧+方向键 10px 大步，方向 × 步长独立 action id（shift 精确匹配先例所致）。
  * 循环选层自 kbd-nav 工单 03 入表：Tab/⇧Tab 沿面板序在根层间移动选中（CONTEXT
  * 「循环选层」词条）——文本编辑与属性面板输入中的 Tab 由让路规则天然放行原生
- * 焦点移动，不劫持。
+ * 焦点移动，不劫持。查找替换自 canvas-web-find-replace 工单 01 入表：⌘F 分派
+ * beginFind（⌘F 开会话归内核、Esc 关归 Vue 面板组件——内核只持会话态）。
  * 条目携带 label（中文短句）/ group（展示归组）元数据：
  * 注册表是键位的唯一事实源，帮助面板（kbd-nav 工单 04）直读渲染，后续动作自动
  * 入面板。
@@ -43,6 +44,7 @@ export type EditorShortcutAction =
     | 'duplicate'
     | 'delete'
     | 'rename'
+    | 'findReplace'
     | 'toggleRulers'
     | 'toggleLayerLock'
     | 'toggleLayerVisibility'
@@ -67,9 +69,10 @@ export type EditorShortcutAction =
 
 /**
  * 帮助面板的展示归组（kbd-nav 工单 04）：分节渲染的键位归类。展示名归 Vue，
- * 这里只定枚举域。
+ * 这里只定枚举域。text 归组自 canvas-web-find-replace 工单 01 入表（查找替换
+ * 等文本编辑面动作，与图层/视图操作分节）。
  */
-export type EditorShortcutGroup = 'history' | 'clipboard' | 'layer' | 'view' | 'help'
+export type EditorShortcutGroup = 'history' | 'clipboard' | 'layer' | 'text' | 'view' | 'help'
 
 /**
  * 键位组合声明：key 为 KeyboardEvent.key 的小写归一形态；mod/shift/alt 精确匹配。
@@ -111,6 +114,15 @@ export const DEFAULT_EDITOR_SHORTCUTS: readonly EditorShortcutBinding[] = [
     { combo: { key: 'delete', mod: false, shift: false }, action: 'delete', label: '删除图层', group: 'layer' },
     { combo: { key: 'backspace', mod: false, shift: false }, action: 'delete', label: '删除图层', group: 'layer' },
     { combo: { key: 'f2', mod: false, shift: false }, action: 'rename', label: '重命名图层', group: 'layer' },
+    // 查找替换（canvas-web-find-replace 工单 01，CONTEXT「查找替换」词条）：⌘F
+    // 呼出画布顶部浮动查找条（Canva 同构；浏览器页内查找可 preventDefault 拦截，
+    // ⌘D 抢书签先例）。mod+shift 精确匹配先例——⇧⌘F 变体不入表
+    {
+        combo: { key: 'f', mod: true, shift: false },
+        action: 'findReplace',
+        label: '查找替换',
+        group: 'text',
+    },
     // 标尺显隐（ruler-guides-snap 工单 01）：裸键 + shift（mod 变体不占用，
     // 不抢浏览器刷新等既有语义）
     { combo: { key: 'r', mod: false, shift: true }, action: 'toggleRulers', label: '标尺显隐', group: 'view' },

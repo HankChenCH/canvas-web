@@ -67,12 +67,13 @@ describe('shortcutKeyLabel：非打印键显示映射（注册表存 key 小写�
 })
 
 describe('分组展示名与分节顺序（归本包：内核只定枚举域）', () => {
-    it('五组中文展示名齐全；顺序 = 历史/剪贴板/图层/视图/帮助', () => {
-        expect(SHORTCUT_GROUP_ORDER).toEqual(['history', 'clipboard', 'layer', 'view', 'help'])
+    it('六组中文展示名齐全；顺序 = 历史/剪贴板/图层/文本/视图/帮助（text 自 find-replace 工单 01）', () => {
+        expect(SHORTCUT_GROUP_ORDER).toEqual(['history', 'clipboard', 'layer', 'text', 'view', 'help'])
         expect(SHORTCUT_GROUP_LABELS).toEqual({
             history: '历史',
             clipboard: '剪贴板',
             layer: '图层',
+            text: '文本',
             view: '视图',
             help: '帮助',
         })

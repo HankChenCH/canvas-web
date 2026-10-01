@@ -79,6 +79,11 @@ import {
     prepareRootPaste,
 } from '../editing/clipboard'
 import {
+    replaceHitsInDraft,
+    scanTextMatches,
+    type FindTextHit,
+} from '../editing/findReplace'
+import {
     addRootLayerInDraft,
     createTemplateTable,
     deleteLayerInDraft,
@@ -179,6 +184,12 @@ const NUDGE_COARSE_STEP_PX = 10
 
 /** 微调事务的合并键：含选中层路径（换层即换步）、方向无关（连按跨方向同串） */
 const nudgeMergeKey = (path: LayerPath): string => `nudge:${path.join(':')}`
+
+/** 查找游标钳位：派生命中列表内回落（末处/首处），空命中为 0（读侧收口） */
+function clampFindCursor(cursor: number, count: number): number {
+    if (count <= 0) return 0
+    return Math.min(Math.max(cursor, 0), count - 1)
+}
 
 export interface EditorSessionOptions {
     scheduleFrame: FrameScheduler
@@ -740,6 +751,95 @@ export class EditorSession {
         return layer && layer.type === 'TextLayer' ? layer : null
     }
 
+    // ---- 查找替换（canvas-web-find-replace 工单 01）：会话态住 ui 分支，扫描/替换纯函数在 editing/findReplace ----
+
+    /**
+     * 打开查找会话（⌘F 分派口）：无文档空转返回 false；已开时值等短路零通知
+     * （重复 ⌘F 的重新聚焦归绑定层）。查询词/替换词/游标跨关开保留（closeFind
+     * →beginFind 同文档连续改字），openDocument 才整体重置。
+     */
+    beginFind(): boolean {
+        if (!this.store.doc) return false
+        this.store.setFind({ ...this.store.ui.find, open: true })
+        return true
+    }
+
+    /** 关闭查找会话（Esc 归面板组件调用）：仅翻开合面，查询词与游标保留 */
+    closeFind(): void {
+        this.store.setFind({ ...this.store.ui.find, open: false })
+    }
+
+    /** 查找词写入（查找条输入即扫的源头）：查询词变更即重置游标（旧下标对新命中集无意义） */
+    setFindQuery(query: string): void {
+        const find = this.store.ui.find
+        this.store.setFind({ ...find, query, cursor: find.query === query ? find.cursor : 0 })
+    }
+
+    /** 替换词写入 */
+    setFindReplacement(replacement: string): void {
+        this.store.setFind({ ...this.store.ui.find, replacement })
+    }
+
+    /** 游标写入（上一个/下一个导航口）：存原值，越界在读侧钳位 */
+    setFindCursor(cursor: number): void {
+        this.store.setFind({ ...this.store.ui.find, cursor })
+    }
+
+    /**
+     * 派生命中列表（overlay 高亮与查找条计数同源消费）：每次从 doc + query 现算、
+     * 不驻留（树小无压力，免 pruneDanglingPaths 式失配维护）；视觉序 = 数组尾→头
+     * （hitTest 同门），命中 = path + 偏移对。
+     */
+    listFindMatches(): readonly FindTextHit[] {
+        const doc = this.store.doc
+        if (!doc) return []
+        return scanTextMatches(doc, this.store.ui.find.query)
+    }
+
+    /** 当前游标（读侧钳位到派生命中列表：越界落末处/首处，空命中为 0） */
+    get findCursor(): number {
+        return clampFindCursor(this.store.ui.find.cursor, this.listFindMatches().length)
+    }
+
+    /**
+     * 替换当前命中（查找条「替换」按钮）：一次无 mergeKey 事务 = 一步历史；游标
+     * 原地不动——事务后派生列表在被替换处缩一位，原下标即「下一处」（「替换后
+     * 自动跳下一处」靠派生天然成立，末处替换则钳位停在尾）。写值经 replaceHitsInDraft
+     * 与文本编辑提交同门（text 直写 + expression 保持 null）。无文档/空 query/
+     * 无命中空转返回 false。
+     */
+    replaceOne(): boolean {
+        const doc = this.store.doc
+        const query = this.store.ui.find.query
+        if (!doc || query === '') return false
+        const matches = scanTextMatches(doc, query)
+        const hit = matches[clampFindCursor(this.store.ui.find.cursor, matches.length)]
+        if (!hit) return false
+        this.store.transact((draft) => {
+            replaceHitsInDraft(draft, [hit], this.store.ui.find.replacement)
+        })
+        return true
+    }
+
+    /**
+     * 全部替换（查找条「全部替换」按钮）：命中（path + 偏移对）在事务前按原文
+     * 快照一次算定，单事务内按同字段偏移降序应用、替换产物不重扫（replacement
+     * 含查询串不死循环）——一次调用 = 一步历史，undo 一次全回。返回应用处数
+     * （计数反馈「已替换 N 处」）；无文档/空 query 空转返回 0。
+     */
+    replaceAll(): number {
+        const doc = this.store.doc
+        const query = this.store.ui.find.query
+        if (!doc || query === '') return 0
+        const hits = scanTextMatches(doc, query) // 原文快照：命中事务前一次算定
+        if (hits.length === 0) return 0
+        let applied = 0
+        this.store.transact((draft) => {
+            applied = replaceHitsInDraft(draft, hits, this.store.ui.find.replacement)
+        })
+        return applied
+    }
+
     // ---- 属性写入（工单 09）：面板零直改，一切文档字段编辑经这三个 action ----
 
     /**
@@ -1252,7 +1352,8 @@ export class EditorSession {
 
     /**
      * 执行快捷键动作（注册表分类的出口）：undo/redo/delete/copy/paste/duplicate/
-     * rename/toggleRulers/toggleLayerLock/toggleLayerVisibility 的统一分派面，以及
+     * rename/findReplace（⌘F，canvas-web-find-replace 工单 01）/
+     * toggleRulers/toggleLayerLock/toggleLayerVisibility 的统一分派面，以及
      * z 序四件套与缩放三件（kbd-nav 工单 01：bringForward/sendBackward/
      * bringToFront/sendToBack/zoomReset/fitToSurface/fitToSelection）、微调八动作
      * （kbd-nav 工单 02：nudgeUp/Down/Left/Right + Coarse 变体，归并到同一 nudge
@@ -1282,6 +1383,10 @@ export class EditorSession {
                 return this.duplicateSelection() !== null
             case 'rename':
                 return this.beginRename(this.store.ui.selection)
+            case 'findReplace':
+                // 查找替换（canvas-web-find-replace 工单 01）：⌘F 分派 beginFind——
+                // 面板开合语义内核只持会话态（Esc 关归 Vue 面板组件，工单 03 接线）
+                return this.beginFind()
             case 'toggleRulers':
                 this.toggleRulers()
                 return true
@@ -1659,8 +1764,9 @@ export class EditorSession {
         else if (change.branch === 'editing') this.invalidate('both')
         // schema 声明不触达像素（候选消费在绑定层补全面），不参与重绘脏标
         else if (change.branch === 'dataSourceSchema') return
-        // 选择/悬停/拖动会话/重命名/锁定集合只影响 gizmo（锁定不改渲染产物——
-        // 命中面是事件侧语义；拖动中的图层位移走 doc 分支另触发双层）
+        // 选择/悬停/拖动会话/重命名/锁定集合/查找会话（命中高亮随 query/游标变）
+        // 只影响 gizmo（锁定不改渲染产物——命中面是事件侧语义；拖动中的图层位移
+        // 走 doc 分支另触发双层）
         else this.invalidate('overlay')
     }
 

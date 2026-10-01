@@ -54,8 +54,8 @@ describe('HelpDialog：内容两组', () => {
         const sectionGroups = Array.from(document.body.querySelectorAll('[data-help-group]')).map(
             (el) => el.getAttribute('data-help-group'),
         )
-        // 缺省注册表五组齐现（history/clipboard/layer/view/help 各有条目）
-        expect(sectionGroups).toEqual(['history', 'clipboard', 'layer', 'view', 'help'])
+        // 缺省注册表六组齐现（history/clipboard/layer/text/view/help 各有条目）
+        expect(sectionGroups).toEqual(['history', 'clipboard', 'layer', 'text', 'view', 'help'])
         // 图层节含前移一层（kbd-nav 工单 01 条目）；键位行带 data-help-shortcut
         const layerRows = rows('[data-help-group="layer"] [data-help-shortcut]')
         expect(layerRows.some((row) => row.includes('前移一层'))).toBe(true)

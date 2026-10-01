@@ -15,6 +15,7 @@ import type {
     TableLayer,
     TableCellLayer,
     TableRowLayer,
+    TableRowTemplateLayer,
     TextLayer,
     WireLayerNode,
 } from '@hankchen/canvas-next'
@@ -129,6 +130,26 @@ export function rowLayer(
     return withOverrides(
         {
             type: 'TableRowLayer',
+            name: '',
+            visible: true,
+            priority: 10,
+            shape: defaultShape(),
+            align: { horizontal: 'left', vertical: 'top' },
+            position: { anchor: 'top-left', x: 0, y: 0 },
+            cells,
+        },
+        overrides,
+    )
+}
+
+/** 行模板（TableLayer V2 声明态）：纯结构造数（扫描等只读消费，声明高耦合归解码） */
+export function rowTemplateLayer(
+    cells: readonly TableCellLayer[],
+    overrides: LayerOverrides<TableRowTemplateLayer> = {},
+): TableRowTemplateLayer {
+    return withOverrides(
+        {
+            type: 'TableRowTemplate',
             name: '',
             visible: true,
             priority: 10,

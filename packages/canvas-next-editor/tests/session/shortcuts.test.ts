@@ -317,8 +317,41 @@ describe('helpShortcuts 条目（kbd-nav 工单 04）：⌘/ 快捷键帮助（U
     })
 })
 
+describe('findReplace 条目（canvas-web-find-replace 工单 01）：⌘F 查找替换', () => {
+    it('⌘F 分类为 findReplace（mod+shift 精确匹配先例：⇧⌘F/裸 F/⌥⌘F 不命中）', () => {
+        expect(classifyEditorShortcut(input({ key: 'f', mod: true, shift: false }))).toBe('findReplace')
+        // key 大小写归一（大写锁定/Shift 折算同形）
+        expect(classifyEditorShortcut(input({ key: 'F', mod: true, shift: false }))).toBe('findReplace')
+        expect(classifyEditorShortcut(input({ key: 'f', mod: true, shift: true }))).toBeNull()
+        expect(classifyEditorShortcut(input({ key: 'f', mod: false, shift: false }))).toBeNull()
+        expect(classifyEditorShortcut(input({ key: 'f', mod: true, shift: false, alt: true }))).toBeNull()
+    })
+
+    it('让路规则先行：编辑态/输入态/合成中 ⌘F 放行（textarea 与查找条输入框原生编辑优先）', () => {
+        expect(classifyEditorShortcut(input({ key: 'f', mod: true, editing: true }))).toBeNull()
+        expect(classifyEditorShortcut(input({ key: 'f', mod: true, editableTarget: true }))).toBeNull()
+        expect(classifyEditorShortcut(input({ key: 'f', mod: true, composing: true }))).toBeNull()
+    })
+
+    it('条目元数据：label「查找替换」（不造「全局搜索」变体）+ group text', () => {
+        const binding = DEFAULT_EDITOR_SHORTCUTS.find((entry) => entry.action === 'findReplace')
+        expect(binding?.label).toBe('查找替换')
+        expect(binding?.label.includes('全局搜索')).toBe(false)
+        expect(binding?.group).toBe('text')
+    })
+
+    it('端到端：⌘F 分类分派 beginFind 开会话（面板开合归内核会话态，Esc 关归 Vue）', () => {
+        const session = makeSession()
+        const action = classifyEditorShortcut(input({ key: 'f', mod: true, shift: false }))
+        expect(action).toBe('findReplace')
+        expect(session.executeShortcut(action!)).toBe(true)
+        expect(session.store.ui.find.open).toBe(true)
+        expect(session.store.history).toHaveLength(0)
+    })
+})
+
 describe('注册表元数据（kbd-nav 工单 01）：label/group 数据完备性', () => {
-    const GROUPS = new Set(['history', 'clipboard', 'layer', 'view', 'help'])
+    const GROUPS = new Set(['history', 'clipboard', 'layer', 'text', 'view', 'help'])
 
     it('每条绑定都有非空 label 与合法 group', () => {
         for (const binding of DEFAULT_EDITOR_SHORTCUTS) {

@@ -1,9 +1,14 @@
 /**
  * 内核 editing 层出口：编辑特性模块——剪贴板（clipboard）、图层增删移
- * （layerPanel）、表格编辑（tableEditing）、对齐画布（alignCanvas）、
- * 字体清单（fontCatalog）、上传物化（upload）。只向下依赖 shared，不得引用
- * session 门面（editor-editing-isolation 红线锁定）。
+ * （layerPanel）、表格编辑（tableEditing）、对齐画布（alignCanvas）、查找替换
+ * 纯函数（findReplace）、字体清单（fontCatalog）、上传物化（upload）。只向下
+ * 依赖 shared，不得引用 session 门面（editor-editing-isolation 红线锁定）。
  */
+export {
+    replaceHitsInDraft,
+    scanTextMatches,
+    type FindTextHit,
+} from './findReplace'
 export {
     addRootLayerInDraft,
     buildLayerOutline,
