@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Canvas, RenderBackend, TextLayer } from '@hankchen/canvas-next'
 
 import { EditorSession, type FrameScheduler, type OverlayPainter } from '../../src/session/editor'
+import type { EditorChange } from '../../src/session/store'
 import { textLayer } from '../support/fixtures'
 
 /** 录制后端：只数 begin（每次内容重绘恰一次），其余原语空实现 */
@@ -233,6 +234,47 @@ describe('相机动作（经纯函数 + store.setViewport，不进历史）', ()
         }
         expect(center.x).toBeCloseTo(1200, 6)
         expect(center.y).toBeCloseTo(750, 6)
+    })
+
+    it('panToBox：出视最小平移入视且保 zoom（查找导航的视口跟随，canvas-web-find-replace 工单 02）', () => {
+        const { session } = makeSession()
+        session.setSurfaceSize(1000, 750)
+        session.zoomAt(500, 375, 2)
+        expect(session.store.ui.viewport).toEqual({ x: 250, y: 187.5, zoom: 2 })
+
+        session.panToBox({ x: 2000, y: 1000, width: 200, height: 100 })
+        // x：可行带 [1706, 1994] 钳近端 lo；y：可行带 [731, 994] 钳近端 lo；zoom 恒 2
+        expect(session.store.ui.viewport).toEqual({ x: 1706, y: 731, zoom: 2 })
+    })
+
+    it('panToBox：视内不动零通知（纯函数恒等短路，不惊动订阅方）', () => {
+        const { session } = makeSession()
+        session.setSurfaceSize(1000, 750)
+        const changes: EditorChange[] = []
+        session.subscribe((change) => changes.push(change))
+
+        session.panToBox({ x: 100, y: 100, width: 300, height: 150 })
+        expect(changes).toEqual([])
+        expect(session.store.ui.viewport).toEqual({ x: 0, y: 0, zoom: 1 })
+    })
+
+    it('panToBox：出视通知走 ui.viewport 分支且不进历史（相机动作全族先例）', () => {
+        const { session } = makeSession()
+        session.openDocument(doc())
+        session.updateCanvasProp('width', 2500) // 一步历史作底
+        session.setSurfaceSize(1000, 750)
+        const changes: EditorChange[] = []
+        session.subscribe((change) => changes.push(change))
+
+        session.panToBox({ x: 5000, y: 5000, width: 100, height: 100 })
+        expect(changes).toEqual([{ scope: 'ui', branch: 'viewport' }])
+        expect(session.store.history).toHaveLength(1)
+    })
+
+    it('panToBox：表面尺寸未知 no-op', () => {
+        const { session } = makeSession()
+        session.panToBox({ x: 5000, y: 5000, width: 100, height: 100 })
+        expect(session.store.ui.viewport).toEqual({ x: 0, y: 0, zoom: 1 })
     })
 })
 

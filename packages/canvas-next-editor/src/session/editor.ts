@@ -29,14 +29,17 @@ import type { PreviewViewportTransform, ViewportAwareBackend } from '@hankchen/c
 import type { Draft } from 'immer'
 import {
     DEFAULT_ZOOM_BOUNDS,
+    PAN_TO_BOX_MARGIN_PX,
     fitRect,
     fitViewport,
     nextZoomByWheel,
     panBy,
+    panToBox as panToBoxViewport,
     screenToScene,
     snapViewportToPhysicalPixels,
     zoomAtPoint,
     type Point,
+    type Rect,
     type Size,
     type Viewport,
     type ZoomBounds,
@@ -377,6 +380,22 @@ export class EditorSession {
             return
         }
         this.store.setViewport(fitRect(box, this.surfaceSize, this.zoomBounds, this.fitMargin))
+    }
+
+    /**
+     * 保 zoom 平移入视（canvas-web-find-replace 工单 02，spec 决策 6）：查找导航
+     * 的视口跟随——目标盒完全在视口内视口不动，出视才最小平移使整盒入视（入视
+     * 小边距与盒大于视口对齐盒左上的边界语义在 camera.panToBox 纯函数内定死）。
+     * 与 fitToSelection 分立不混用：那是变焦语义（fitRect），这是保 zoom 的跟随
+     * 语义。盒几何由调用方解析（工单 03 命中导航经 layerBoxAt 同一解析缝，模板
+     * 子树走预览视图）；视口走 ui 分支不进历史，视内不动经恒等短路零通知；表面
+     * 尺寸未知 no-op（fitToSurface 同门）。
+     */
+    panToBox(box: Rect): void {
+        if (this.surfaceSize.width <= 0 || this.surfaceSize.height <= 0) return
+        const viewport = this.store.ui.viewport
+        const next = panToBoxViewport(viewport, box, this.surfaceSize, PAN_TO_BOX_MARGIN_PX)
+        if (next !== viewport) this.store.setViewport(next)
     }
 
     // ---- 选择与拖动（工单 06）：命中/选择/拖动几何全部经内核纯函数 ----

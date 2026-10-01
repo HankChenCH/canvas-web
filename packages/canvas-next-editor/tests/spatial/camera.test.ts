@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest'
 
 import {
     DEFAULT_ZOOM_BOUNDS,
+    PAN_TO_BOX_MARGIN_PX,
     clampZoom,
     fitRect,
     fitViewport,
     nextZoomByWheel,
     panBy,
+    panToBox,
     sceneToScreen,
     screenToScene,
     snapViewportToPhysicalPixels,
@@ -185,6 +187,68 @@ describe('fitRect（适应选区：任意场景矩形整块可见、居中；fit
 
     it('退化矩形/视口回落恒等视口', () => {
         expect(fitRect({ x: 10, y: 10, width: 0, height: 50 }, { width: 100, height: 100 }, BOUNDS, 0)).toEqual({ x: 0, y: 0, zoom: 1 })
+    })
+})
+
+describe('panToBox（保 zoom 平移入视：查找导航的视口跟随，与 fitRect 变焦语义分立）', () => {
+    const surface: Size = { width: 1000, height: 750 }
+
+    it('入视小边距常量工单定死为 12（屏幕 px）', () => {
+        expect(PAN_TO_BOX_MARGIN_PX).toBe(12)
+    })
+
+    it('盒完全在视口内：原视口原样返回（贴边也算视内——spec「完全在视口内则不动」字面口径）', () => {
+        const viewport: Viewport = { x: 100, y: 50, zoom: 1 }
+        expect(panToBox(viewport, { x: 200, y: 100, width: 300, height: 150 }, surface, PAN_TO_BOX_MARGIN_PX)).toBe(viewport)
+        // 可见场景区 [100,1100]×[50,800]：盒缘与视口缘重合仍算完全在视口内
+        expect(panToBox(viewport, { x: 100, y: 50, width: 1000, height: 750 }, surface, PAN_TO_BOX_MARGIN_PX)).toBe(viewport)
+    })
+
+    it('出视最小平移：右侧出视只补足到边距处（非居中），另一轴不动，zoom 不变', () => {
+        const viewport: Viewport = { x: 0, y: 0, zoom: 1 }
+        // 盒右缘 1300 → 目标右缘 = 1000 − 12 = 988 → cam.x = 312（恰好入边距带）
+        expect(panToBox(viewport, { x: 1100, y: 100, width: 200, height: 100 }, surface, PAN_TO_BOX_MARGIN_PX))
+            .toEqual({ x: 312, y: 0, zoom: 1 })
+    })
+
+    it('出视最小平移：左侧出视同理（zoom 2 折算边距），视内轴不动', () => {
+        const viewport: Viewport = { x: 500, y: 400, zoom: 2 }
+        // x：盒场景 [100,350]，屏幕左缘 (100−500)×2 = −800 出视 → cam.x = 100 − 12/2 = 94
+        // y：盒场景 [500,550] 屏幕内不动
+        const next = panToBox(viewport, { x: 100, y: 500, width: 250, height: 50 }, surface, PAN_TO_BOX_MARGIN_PX)
+        expect(next.x).toBe(94)
+        expect(next.y).toBe(400)
+        expect(next.zoom).toBe(2)
+    })
+
+    it('出视最小平移：下侧出视只向下补足', () => {
+        const viewport: Viewport = { x: 0, y: 0, zoom: 1 }
+        // 盒下缘 900 → 目标下缘 = 750 − 12 = 738 → cam.y = 162
+        expect(panToBox(viewport, { x: 100, y: 700, width: 100, height: 200 }, surface, PAN_TO_BOX_MARGIN_PX))
+            .toEqual({ x: 0, y: 162, zoom: 1 })
+    })
+
+    it('盒装得下视口但吃掉边距带：margin 让位贴缘最小平移（整盒可见优先于边距）', () => {
+        const viewport: Viewport = { x: 0, y: 0, zoom: 1 }
+        // 盒宽 990、视口 1000：margin 带宽 976 放不下 → 裸视口可行区间钳近端
+        const next = panToBox(viewport, { x: 1500, y: 0, width: 990, height: 100 }, surface, PAN_TO_BOX_MARGIN_PX)
+        // 盒右缘贴视口右缘：屏幕带 [10, 1000]，比居中少动 5px（最小平移口径）
+        expect(next.x).toBe(1490)
+        expect(next.y).toBe(0)
+    })
+
+    it('盒大于视口：对齐盒左上（左上角落在边距处，工单定死取阅读起点可见而非居中）', () => {
+        const viewport: Viewport = { x: 0, y: 0, zoom: 1 }
+        expect(panToBox(viewport, { x: 2000, y: 1000, width: 1500, height: 1200 }, surface, PAN_TO_BOX_MARGIN_PX))
+            .toEqual({ x: 1988, y: 988, zoom: 1 })
+    })
+
+    it('退化防御：零尺寸表面/非正 zoom 原样返回', () => {
+        const viewport: Viewport = { x: 5, y: 6, zoom: 1 }
+        const box = { x: 5000, y: 5000, width: 10, height: 10 }
+        expect(panToBox(viewport, box, { width: 0, height: 750 }, PAN_TO_BOX_MARGIN_PX)).toBe(viewport)
+        expect(panToBox(viewport, box, { width: 1000, height: 0 }, PAN_TO_BOX_MARGIN_PX)).toBe(viewport)
+        expect(panToBox({ x: 5, y: 6, zoom: 0 }, box, surface, PAN_TO_BOX_MARGIN_PX)).toEqual({ x: 5, y: 6, zoom: 0 })
     })
 })
 

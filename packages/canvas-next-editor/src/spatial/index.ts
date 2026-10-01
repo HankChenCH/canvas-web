@@ -5,12 +5,14 @@
  */
 export {
     DEFAULT_ZOOM_BOUNDS,
+    PAN_TO_BOX_MARGIN_PX,
     WHEEL_ZOOM_STEP,
     clampZoom,
     fitRect,
     fitViewport,
     nextZoomByWheel,
     panBy,
+    panToBox,
     sceneToScreen,
     screenToScene,
     snapViewportToPhysicalPixels,

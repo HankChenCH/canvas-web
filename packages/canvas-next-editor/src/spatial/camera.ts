@@ -134,6 +134,55 @@ export function fitRect(
 }
 
 /**
+ * 保 zoom 平移入视的小边距（屏幕 px，canvas-web-find-replace 工单 02 定死）：
+ * 出视入视后盒缘与视口缘的留白。
+ */
+export const PAN_TO_BOX_MARGIN_PX = 12
+
+/**
+ * 保 zoom 平移入视（canvas-web-find-replace 工单 02，spec 决策 6）：查找导航的
+ * 视口跟随语义，与 fitRect 的变焦语义分立——缩放倍率恒不变，只在目标盒出视时
+ * 最小平移使整盒入视。
+ *
+ * - 盒完全在视口内（贴边也算）→ 原视口原样返回（引用相等，调用方可据此短路通知）；
+ * - 出视才平移，两轴独立求位，入视带含 margin 留白（屏幕 px）：
+ *   - 盒装得下「视口 − 2×margin」：cam 钳进可行区间 = 各轴最小平移（非居中）；
+ *   - 盒装得下视口但 margin 两侧放不下：margin 让位，钳进裸视口可行区间 = 贴缘
+ *     最小平移（整盒可见优先于边距，spec「最小平移」字面口径）；
+ *   - 盒大于视口：对齐盒左上（左上角落在 margin 处，右/下侧自然截断——工单
+ *     定死取「阅读起点可见」而非居中）。
+ * 零尺寸表面/非正 zoom 防御回落原视口。
+ */
+export function panToBox(viewport: Viewport, box: Rect, surface: Size, margin: number): Viewport {
+    if (surface.width <= 0 || surface.height <= 0 || !(viewport.zoom > 0)) return viewport
+    const panAxis = (boxPos: number, boxSize: number, surfaceSize: number, cam: number): number => {
+        const left = (boxPos - cam) * viewport.zoom
+        const right = left + boxSize * viewport.zoom
+        if (left >= 0 && right <= surfaceSize) return cam
+        const slack = surfaceSize - boxSize * viewport.zoom
+        if (slack >= margin * 2) {
+            // 可行区间 [lo, hi]：cam 取区间内任意值盒都整在 [margin, surface − margin]
+            // 入视带内；钳进最近端 = 最小平移
+            const lo = boxPos + boxSize - (surfaceSize - margin) / viewport.zoom
+            const hi = boxPos - margin / viewport.zoom
+            return Math.min(hi, Math.max(lo, cam))
+        }
+        if (slack >= 0) {
+            // margin 带放不下整盒（盒贴近视口尺寸）：margin 让位，裸视口可行区间
+            // 钳近端 = 贴缘最小平移，盒从出视一侧探入
+            const lo = boxPos + boxSize - surfaceSize / viewport.zoom
+            const hi = boxPos
+            return Math.min(hi, Math.max(lo, cam))
+        }
+        return boxPos - margin / viewport.zoom
+    }
+    const x = panAxis(box.x, box.width, surface.width, viewport.x)
+    const y = panAxis(box.y, box.height, surface.height, viewport.y)
+    if (x === viewport.x && y === viewport.y) return viewport
+    return { x, y, zoom: viewport.zoom }
+}
+
+/**
  * 相机平移对齐物理像素：cam = round(cam * zoom * dpr) / (zoom * dpr)。
  * 只动 x/y，zoom 保持原值（百分比显示用原值）。
  */
