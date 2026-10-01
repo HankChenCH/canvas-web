@@ -5,14 +5,16 @@
  * - 可用态按选中路径裁剪：删除=有选择；副本=可复制类型；置顶/置底=根层
  * - 动作经内核 action 执行并关闭菜单；禁用项不动作
  * - 菜单根拦截 pointerdown 冒泡（不触发画布点选关闭路径误动作）
+ * - 样式复制/粘贴两项（canvas-web-style-paste 工单 02）：渲染/可用态/置灰
+ *   title/分发（内核只读查询口 + 动作口；样式槽无响应式足迹，打开时重算）
  */
 import { describe, expect, it, beforeAll, afterAll, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 
-import { EditorSession, type FrameScheduler, type Layer } from '@hankchen/canvas-next-editor'
+import { EditorSession, type FrameScheduler, type Layer, type TextLayer } from '@hankchen/canvas-next-editor'
 
 import ContextMenu from '../../src/canvas/ContextMenu.vue'
-import { cellLayer, rowLayer, tableLayer, textLayer } from '../../../canvas-next-editor/tests/support/fixtures'
+import { cellLayer, rowLayer, rowTemplateLayer, tableLayer, textLayer } from '../../../canvas-next-editor/tests/support/fixtures'
 
 const nullScheduler: FrameScheduler = () => () => {}
 
@@ -91,23 +93,29 @@ describe('ContextMenu：定位与钳位', () => {
 })
 
 describe('ContextMenu：可用态裁剪（v1 单选 + 根层语义）', () => {
-    it('根层文本层：七项全可用（显示/隐藏按当前态出标签；前移/后移置于置顶/置底之上）', async () => {
+    it('根层文本层：九项渲染，粘贴样式因槽空置灰（复制样式非根同门不禁用）', async () => {
         const editor = makeEditor([textLayer({ priority: 10 })])
         editor.setSelection(['layers', 0])
         const wrapper = mountMenu(editor)
         await wrapper.vm.openAt(10, 10)
         const buttons = itemButtons(wrapper)
-        expect(buttons).toHaveLength(7)
+        expect(buttons).toHaveLength(9)
         expect(buttons.map((b) => b.text())).toEqual([
             '隐藏',
             '创建副本',
+            '复制样式',
+            '粘贴样式',
             '前移一层',
             '后移一层',
             '置顶',
             '置底',
             '删除',
         ])
-        expect(buttons.every((b) => !b.attributes('disabled'))).toBe(true)
+        const disabled = buttons.map((b) => b.attributes('disabled') !== undefined)
+        // 粘贴样式置灰（样式槽空）；其余全可用
+        expect(disabled).toEqual([false, false, false, true, false, false, false, false, false])
+        const paste = buttons.find((b) => b.text() === '粘贴样式')!
+        expect(paste.attributes('title')).toContain('⌥⌘C')
         wrapper.unmount()
     })
 
@@ -122,8 +130,8 @@ describe('ContextMenu：可用态裁剪（v1 单选 + 根层语义）', () => {
         const wrapper = mountMenu(editor)
         await wrapper.vm.openAt(10, 10)
         const disabled = itemButtons(wrapper).map((b) => b.attributes('disabled') !== undefined)
-        // [隐藏, 副本, 前移, 后移, 置顶, 置底, 转为模板表…（所属 V1 表末行有格 → 可用）, 删除]
-        expect(disabled).toEqual([true, true, true, true, true, true, false, false])
+        // [隐藏, 副本, 复制样式（行有样式面）, 粘贴样式, 前移, 后移, 置顶, 置底, 转为模板表…（所属 V1 表末行有格 → 可用）, 删除]
+        expect(disabled).toEqual([true, true, false, true, true, true, true, true, false, false])
         const labels = itemButtons(wrapper).map((b) => b.text())
         expect(labels).toContain('转为模板表…')
         wrapper.unmount()
@@ -140,8 +148,8 @@ describe('ContextMenu：可用态裁剪（v1 单选 + 根层语义）', () => {
         const wrapper = mountMenu(editor)
         await wrapper.vm.openAt(10, 10)
         const disabled = itemButtons(wrapper).map((b) => b.attributes('disabled') !== undefined)
-        // [隐藏, 副本, 前移, 后移, 置顶, 置底, 转为模板表…（所属表判定，spec §2.3）, 删除]
-        expect(disabled).toEqual([true, false, true, true, true, true, false, false])
+        // [隐藏, 副本, 复制样式（内容层有样式面）, 粘贴样式, 前移, 后移, 置顶, 置底, 转为模板表…（所属表判定，spec §2.3）, 删除]
+        expect(disabled).toEqual([true, false, false, true, true, true, true, true, false, false])
         wrapper.unmount()
     })
 
@@ -361,6 +369,81 @@ describe('ContextMenu：锁定层删除项置灰（canvas-web-layer-lock 工单 
         await del.trigger('click')
         expect(editor.store.doc!.layers).toHaveLength(1)
         expect(editor.canUndo).toBe(false)
+        wrapper.unmount()
+    })
+})
+
+describe('ContextMenu：样式复制/粘贴（canvas-web-style-paste 工单 02）', () => {
+    it('复制样式：点击分发内核 copyStyle（填槽、不进历史）并关闭菜单', async () => {
+        const editor = makeEditor([textLayer({ priority: 10 })])
+        editor.setSelection(['layers', 0])
+        const wrapper = mountMenu(editor)
+        await wrapper.vm.openAt(10, 10)
+        await itemButtons(wrapper).find((b) => b.text() === '复制样式')!.trigger('click')
+        expect(wrapper.find('.cn-context-menu').exists()).toBe(false)
+        // 槽填充的内核可见面：粘贴转可用；复制不进历史（剪贴板态不是文档态）
+        expect(editor.canPasteStyle).toBe(true)
+        expect(editor.canUndo).toBe(false)
+        wrapper.unmount()
+    })
+
+    it('粘贴样式：槽填充后重开菜单转可用（⌥⌘C 同槽填充不经 store，打开时重算兜底）', async () => {
+        const editor = makeEditor([
+            textLayer({ priority: 20, font: 'Georgia', fontSize: 33 }),
+            textLayer({ priority: 10 }),
+        ])
+        // 目标层选中且全程不变——槽变化无响应式足迹，只有 open 依赖能触发重算
+        editor.setSelection(['layers', 1])
+        const wrapper = mountMenu(editor)
+        await wrapper.vm.openAt(10, 10)
+        expect(itemButtons(wrapper).find((b) => b.text() === '粘贴样式')!.attributes('disabled')).toBeDefined()
+
+        editor.copyStyle(['layers', 0]) // ⌥⌘C 同门：槽填充，无 store 变更、无选择变更
+        await wrapper.vm.$nextTick()
+        expect(itemButtons(wrapper).find((b) => b.text() === '粘贴样式')!.attributes('disabled')).toBeDefined()
+
+        wrapper.vm.close()
+        await wrapper.vm.openAt(10, 10)
+        const paste = itemButtons(wrapper).find((b) => b.text() === '粘贴样式')!
+        expect(paste.attributes('disabled')).toBeUndefined()
+        expect(paste.attributes('title')).toBeUndefined()
+        wrapper.unmount()
+    })
+
+    it('粘贴样式：点击按交集落地（字体族全套）+ 一步历史并关闭菜单', async () => {
+        const editor = makeEditor([
+            textLayer({ priority: 20, font: 'Georgia', fontSize: 33, fontColor: '#ef4444', align: { horizontal: 'center' } }),
+            textLayer({ priority: 10 }),
+        ])
+        editor.copyStyle(['layers', 0])
+        editor.setSelection(['layers', 1])
+        const wrapper = mountMenu(editor)
+        await wrapper.vm.openAt(10, 10)
+        await itemButtons(wrapper).find((b) => b.text() === '粘贴样式')!.trigger('click')
+        expect(wrapper.find('.cn-context-menu').exists()).toBe(false)
+
+        const target = editor.store.doc!.layers[1] as TextLayer
+        expect(target.font).toBe('Georgia')
+        expect(target.fontSize).toBe(33)
+        expect(target.fontColor).toBe('#ef4444')
+        expect(target.align.horizontal).toBe('center')
+        expect(editor.store.history).toHaveLength(1)
+        wrapper.unmount()
+    })
+
+    it('行模板替身：复制样式置灰 + title（适用面为空，内核 canCopyStyle 守卫同门）', async () => {
+        const editor = makeEditor([
+            tableLayer([], {
+                rowsPath: 'data.rows',
+                template: rowTemplateLayer([cellLayer(textLayer({ text: '第2026期' }), { shape: { width: 200, height: 60 } })]),
+            }),
+        ])
+        editor.setSelection(['layers', 0, 'template'])
+        const wrapper = mountMenu(editor)
+        await wrapper.vm.openAt(10, 10)
+        const copy = itemButtons(wrapper).find((b) => b.text() === '复制样式')!
+        expect(copy.attributes('disabled')).toBeDefined()
+        expect(copy.attributes('title')).toContain('行模板')
         wrapper.unmount()
     })
 })

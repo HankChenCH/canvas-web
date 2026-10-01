@@ -6,16 +6,19 @@
  *   **视口坐标**（表面本地 css 像素）定位——菜单是屏幕空间弹出层，定位换算只在
  *   打开时发生一次，pan/zoom 不跟随；越界钳位（打开后量实际尺寸）保证画布边缘
  *   完整可见。
- * - 动作全部经内核 action（toggleLayerVisibility/duplicateSelection/bringForward/
- *   sendBackward/bringToFront/sendToBack/deleteLayer），组件零文档写语义；可用态
- *   按选中路径裁剪（内核语义，v1 单选）：显示/隐藏 = 根层选择（visible 住
- *   LayerBase 面）；删除 = 有选择；副本 = 可复制（可落根层的类型，见
- *   canCopySelection）；前移一层/后移一层与置顶/置底 = 根层选择（isRootLayerPath
+ * - 动作全部经内核 action（toggleLayerVisibility/duplicateSelection/copyStyle/
+ *   pasteStyle/bringForward/sendBackward/bringToFront/sendToBack/deleteLayer），
+ *   组件零文档写语义；可用态按选中路径裁剪（内核语义，v1 单选）：显示/隐藏 = 根层
+ *   选择（visible 住 LayerBase 面）；删除 = 有选择；副本 = 可复制（可落根层的类型，见
+ *   canCopySelection）；样式复制/粘贴（canvas-web-style-paste 工单 02，spec 决策 7，
+ *   置于创建副本之后）= 内核只读查询口同门——复制 = 有可解析选择且源类型有样式面
+ *   （非根不禁用：样式源/目标面含行/格/内容，与副本项的根层限制不同）；粘贴 =
+ *   样式槽非空 + 有可解析选择；前移一层/后移一层与置顶/置底 = 根层选择（isRootLayerPath
  *   ——容器内行/格是数组序语义，无此操作；kbd-nav 工单 05 补前移/后移置于
  *   置顶/置底之上，边界不置灰——内核空转为权威）。
  * - 关闭时机：执行任一动作、画布 pointerdown（表面组件转发 close）、Escape
  *   （表面组件转发）。菜单根拦截 pointerdown 冒泡（点菜单项不触发画布点选）与
- *   contextmenu（菜单上右键不换目标重开）。
+ *   contextmenu（菜单上右键不换目标重开）。⌥⌘C/V 键位随注册表自带，本组件零键位代码。
  */
 import { computed, nextTick, ref } from 'vue'
 
@@ -33,6 +36,20 @@ const selection = useSelection(props.editor)
 
 const isRoot = computed(() => selection.value !== null && isRootLayerPath(selection.value))
 const canDuplicate = computed(() => selection.value !== null && props.editor.canCopySelection)
+
+// 样式复制/粘贴可用态（canvas-web-style-paste 工单 02）：内核只读查询口同门
+// （canCopyStyle/canPasteStyle，工单 01 预铺）。样式槽是会话私有态——内核不进
+// store、不发变更事件（剪贴板态不是文档态），getter 读取无响应式足迹：
+// selection 依赖作响应锚（canDuplicate 同门），open 依赖使菜单每次打开强制重算
+// （⌥⌘C 后同层重开菜单、槽已变而选择未变的兜底）。
+const canCopyStyle = computed(() => {
+    void open.value
+    return selection.value !== null && props.editor.canCopyStyle
+})
+const canPasteStyle = computed(() => {
+    void open.value
+    return selection.value !== null && props.editor.canPasteStyle
+})
 
 /** 选中根层的当前可见态（只读解析，标签翻转用；非根/无选择按可见兜底） */
 const selectedRootVisible = computed(() => {
@@ -109,7 +126,7 @@ function confirmConvert(): void {
 }
 
 interface MenuItem {
-    key: 'visibility' | 'duplicate' | 'forward' | 'backward' | 'front' | 'back' | 'delete' | 'to-template' | 'to-rows'
+    key: 'visibility' | 'duplicate' | 'copy-style' | 'paste-style' | 'forward' | 'backward' | 'front' | 'back' | 'delete' | 'to-template' | 'to-rows'
     label: string
     enabled: boolean
     /** 禁用/说明文案（spec §2.5 反馈规范：置灰 + title 统一） */
@@ -136,6 +153,29 @@ const items = computed<MenuItem[]>(() => [
         enabled: canDuplicate.value,
         title: canDuplicate.value ? undefined : '行/格/行模板是容器内结构，不可复制',
         run: () => props.editor.duplicateSelection(),
+    },
+    // 样式两项（canvas-web-style-paste 工单 02，spec 决策 7）：执行经内核动作，
+    // ⌥⌘C/V 键位随注册表自带（零键位代码）；复制项替身置灰 + title（适用面为空，
+    // 置灰 + title 统一先例），粘贴项槽空置灰 + title 说明
+    {
+        key: 'copy-style',
+        label: '复制样式',
+        enabled: canCopyStyle.value,
+        title: !canCopyStyle.value && isTemplateRowSelection.value ? '行模板替身无样式可复制' : undefined,
+        run: () => {
+            const path = selection.value
+            if (path) props.editor.copyStyle(path)
+        },
+    },
+    {
+        key: 'paste-style',
+        label: '粘贴样式',
+        enabled: canPasteStyle.value,
+        title: canPasteStyle.value ? undefined : '先 ⌥⌘C 复制样式',
+        run: () => {
+            const path = selection.value
+            if (path) props.editor.pasteStyle(path)
+        },
     },
     // 前移/后移一层（kbd-nav 工单 05，spec 决策 2）：置于置顶/置底之上；非根置灰
     // + title 同现状；边界不置灰——已最前/最后内核空转为权威（无历史步）
