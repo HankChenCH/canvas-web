@@ -1,8 +1,9 @@
 /**
- * 内核 editing 层出口：编辑特性模块——剪贴板（clipboard）、图层增删移
- * （layerPanel）、表格编辑（tableEditing）、对齐画布（alignCanvas）、查找替换
- * 纯函数（findReplace）、字体清单（fontCatalog）、上传物化（upload）。只向下
- * 依赖 shared，不得引用 session 门面（editor-editing-isolation 红线锁定）。
+ * 内核 editing 层出口：编辑特性模块——剪贴板（clipboard）、样式剪贴板
+ * （styleClipboard）、图层增删移（layerPanel）、表格编辑（tableEditing）、
+ * 对齐画布（alignCanvas）、查找替换纯函数（findReplace）、字体清单
+ * （fontCatalog）、上传物化（upload）。只向下依赖 shared，不得引用 session
+ * 门面（editor-editing-isolation 红线锁定）。
  */
 export {
     replaceHitsInDraft,
@@ -31,6 +32,12 @@ export {
     pastePosition,
     prepareRootPaste,
 } from './clipboard'
+export {
+    STYLE_FIELD_KEYS_BY_TYPE,
+    applyStyleFieldsInDraft,
+    captureStyleSnapshot,
+    type StyleSnapshot,
+} from './styleClipboard'
 export {
     addTableCellInDraft,
     addTableRowInDraft,

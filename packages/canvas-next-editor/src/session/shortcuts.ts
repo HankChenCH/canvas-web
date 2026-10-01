@@ -12,7 +12,9 @@
  * 循环选层自 kbd-nav 工单 03 入表：Tab/⇧Tab 沿面板序在根层间移动选中（CONTEXT
  * 「循环选层」词条）——文本编辑与属性面板输入中的 Tab 由让路规则天然放行原生
  * 焦点移动，不劫持。查找替换自 canvas-web-find-replace 工单 01 入表：⌘F 分派
- * beginFind（⌘F 开会话归内核、Esc 关归 Vue 面板组件——内核只持会话态）。
+ * beginFind（⌘F 开会话归内核、Esc 关归 Vue 面板组件——内核只持会话态）。样式
+ * 粘贴自 canvas-web-style-paste 工单 01 入表：⌥⌘C/⌥⌘V 复制/粘贴样式（CONTEXT
+ * 「样式粘贴」词条）。
  * 条目携带 label（中文短句）/ group（展示归组）元数据：
  * 注册表是键位的唯一事实源，帮助面板（kbd-nav 工单 04）直读渲染，后续动作自动
  * 入面板。
@@ -42,6 +44,8 @@ export type EditorShortcutAction =
     | 'copy'
     | 'paste'
     | 'duplicate'
+    | 'copyStyle'
+    | 'pasteStyle'
     | 'delete'
     | 'rename'
     | 'findReplace'
@@ -111,6 +115,23 @@ export const DEFAULT_EDITOR_SHORTCUTS: readonly EditorShortcutBinding[] = [
     { combo: { key: 'c', mod: true, shift: false }, action: 'copy', label: '复制', group: 'clipboard' },
     { combo: { key: 'v', mod: true, shift: false }, action: 'paste', label: '粘贴', group: 'clipboard' },
     { combo: { key: 'd', mod: true, shift: false }, action: 'duplicate', label: '创建副本', group: 'clipboard' },
+    // 样式粘贴（canvas-web-style-paste 工单 01）：⌥⌘C/⌥⌘V 复制/粘贴样式（Figma/
+    // Sketch 同构，行业同键位）。⌥ 修饰下 mac event.key 是变体字符（US 布局
+    // ⌥C = 'ç'），key 匹配不可靠——按物理键 code 匹配（kbd-nav 括号条目同门）；
+    // alt 精确匹配使 ⌘C（无 ⌥）不失配到样式条目、⌥⌘C 也不吞 ⌘C（undo/redo
+    // 只差 shift 的先例扩展到 alt）。浏览器 DevTools 占 ⌥⌘C 时右键菜单保底
+    {
+        combo: { key: 'c', mod: true, shift: false, alt: true, code: 'KeyC' },
+        action: 'copyStyle',
+        label: '复制样式',
+        group: 'clipboard',
+    },
+    {
+        combo: { key: 'v', mod: true, shift: false, alt: true, code: 'KeyV' },
+        action: 'pasteStyle',
+        label: '粘贴样式',
+        group: 'clipboard',
+    },
     { combo: { key: 'delete', mod: false, shift: false }, action: 'delete', label: '删除图层', group: 'layer' },
     { combo: { key: 'backspace', mod: false, shift: false }, action: 'delete', label: '删除图层', group: 'layer' },
     { combo: { key: 'f2', mod: false, shift: false }, action: 'rename', label: '重命名图层', group: 'layer' },

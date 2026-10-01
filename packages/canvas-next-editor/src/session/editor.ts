@@ -118,20 +118,16 @@ import {
     type UploadHandler,
     type UploadImagePlacement,
 } from '../editing/upload'
+import {
+    STYLE_FIELD_KEYS_BY_TYPE,
+    applyStyleFieldsInDraft,
+    captureStyleSnapshot,
+    type StyleSnapshot,
+} from '../editing/styleClipboard'
+import { writeSpecField } from '../shared/specField'
 
 /** transact 回调向外传值的容器：TS 会把闭包内赋值的 let 窄化回初值类型，盒属性访问不受影响 */
 type TxOut<T> = { v: T }
-
-/** 沿字段路径下降写入（中间段悬空即放弃；尾段原位赋值，immer draft 语义下生效） */
-function writeSpecField(target: Record<string, unknown>, key: readonly string[], value: unknown): void {
-    let node = target
-    for (let i = 0; i < key.length - 1; i += 1) {
-        const next: unknown = node[key[i]!]
-        if (next === null || typeof next !== 'object') return
-        node = next as Record<string, unknown>
-    }
-    node[key[key.length - 1]!] = value
-}
 
 /** 帧调度器：返回取消函数（绑定层注入 requestAnimationFrame 的包装） */
 export type FrameScheduler = (callback: () => void) => () => void
@@ -194,6 +190,20 @@ function clampFindCursor(cursor: number, count: number): number {
     return Math.min(Math.max(cursor, 0), count - 1)
 }
 
+/**
+ * 解码不变量重断言（updateSpec 与样式粘贴共用，写入口收口一处）：autoHeight
+ * 置位即声明高归零（decodeBase 对 auto 标志恒清零声明高，PHP setHeight('auto')
+ * 同门；文本层由布局按行数×行高+padding 动态求高，其余类型按各自兜底）——
+ * 否则保存再打开声明高被清，往返恒等破。格的 autoHeight 写入另有采纳/固化
+ * 语义（updateSpec 拦截分流），不会走到这里。参数收只读联合：draft 结构上
+ * 兼容只读类型，写入经显式转型（字段形态由领域类型把关）。
+ */
+function renormalizeAutoHeightInDraft(layer: Layer): void {
+    if ((layer as { shape?: { autoHeight?: boolean } }).shape?.autoHeight === true) {
+        ;(layer as { shape: { height: number } }).shape.height = 0
+    }
+}
+
 export interface EditorSessionOptions {
     scheduleFrame: FrameScheduler
     /** 缩放范围（可配置，缺省 5%–800%） */
@@ -248,6 +258,13 @@ export class EditorSession {
      * （条目是与源树断开引用的普通对象）。
      */
     private clipboardEntry: { layer: Layer; sourceBox: LayerBox; pasteCount: number } | null = null
+    /**
+     * 样式剪贴板（canvas-web-style-paste 工单 01）：源类型 + 适用面逐字段值快照。
+     * 与图层剪贴板**分立互不覆盖**（⌘C 与 ⌥⌘C 并存）；不碰 OS 剪贴板、不进历史
+     * （剪贴板态不是文档态）；openDocument 不清空——跨文档粘贴样式合法（图层
+     * 剪贴板同门，快照是与源树断开引用的普通对象）。
+     */
+    private styleClipboardEntry: StyleSnapshot | null = null
     /** 参考线 id 自增序（会话内唯一即可，不持久化——参考线不写 graph） */
     private guideIdSeq = 0
 
@@ -889,14 +906,10 @@ export class EditorSession {
                 return
             }
             // draft 语义解除 readonly；字段形态由注册表与领域类型把关，内核透传
-            writeSpecField(layer as unknown as Record<string, unknown>, key, value)
-            // 解码不变量：autoHeight 置位即声明高归零（decodeBase 对 auto 标志恒清零，
-            // PHP setHeight('auto') 同门；文本层由布局按行数×行高+padding 动态求高，
-            // 其余类型按各自兜底）——否则保存再打开声明高被清，往返恒等破。
-            // 格的 autoHeight 写入已在上方拦截（采纳/固化语义），不会走到这里。
-            if ((layer as { shape?: { autoHeight?: boolean } }).shape?.autoHeight === true) {
-                ;(layer as { shape: { height: number } }).shape.height = 0
-            }
+            writeSpecField(layer, key, value)
+            // 解码不变量：autoHeight 置位即声明高归零（renormalizeAutoHeightInDraft
+            // 收口），否则保存再打开声明高被清，往返恒等破。
+            renormalizeAutoHeightInDraft(layer)
             canonicalizeTableSyncInDraft(draft, path, key, this.textPolicies)
         }, options)
     }
@@ -1301,6 +1314,71 @@ export class EditorSession {
         return path
     }
 
+    // ---- 样式粘贴（canvas-web-style-paste 工单 01）：样式集/适用面常量与快照/落地纯函数在 editing/styleClipboard ----
+
+    /**
+     * 复制样式（⌥⌘C / 右键菜单）：按源类型适用面抓逐字段深拷贝快照进会话私有
+     * 槽（{sourceType, values}）。源为**任意可解析路径**（根/行/格/格内容/模板
+     * 子树皆可）；无文档/路径不可解析/源无样式面（行模板替身，适用面为空）空转
+     * 返回 false——空快照不占槽，已拷贝的样式不被无样式源清掉。拷贝不进历史
+     * （剪贴板态不是文档态）。
+     */
+    copyStyle(path: LayerPath): boolean {
+        const doc = this.store.doc
+        const layer = doc ? resolveLayer(doc, path) : null
+        if (!layer) return false
+        const snapshot = captureStyleSnapshot(layer)
+        if (!snapshot) return false
+        this.styleClipboardEntry = snapshot
+        return true
+    }
+
+    /** 复制可用态（右键菜单）：有可解析选择且源类型有样式面 */
+    get canCopyStyle(): boolean {
+        const path = this.store.ui.selection
+        const doc = this.store.doc
+        if (path === null || doc === null) return false
+        const layer = resolveLayer(doc, path)
+        return layer !== null && STYLE_FIELD_KEYS_BY_TYPE[layer.type].length > 0
+    }
+
+    /**
+     * 粘贴样式（⌥⌘V / 右键菜单）：按目标类型适用面 ∩ 快照逐字段 verbatim 覆盖
+     * （null 即值、Border 整对象；快照没有的字段 = 源不适型，静默跳过）。目标为
+     * **任意可解析路径**——模板子树与格内容放行（尺寸字段不在样式集，行/格/
+     * 内容宽高强同步天然不冲突）；锁定语义天然放行（属性写通道，CONTEXT「锁定」
+     * 词条）。单事务内循环写入 + autoHeight⟹height=0 断言 + canonicalizeTableSync
+     * 一次收口（updateSpec 同门）——一次粘贴 = 一步历史，连续粘贴不合并（无
+     * mergeKey）；全等字段跳写、整事务零变化经 store 空 patch 短路不进历史；
+     * 无文档/空槽/路径不可解析空转返回 false。
+     */
+    pasteStyle(path: LayerPath): boolean {
+        const entry = this.styleClipboardEntry
+        if (!entry || !this.store.doc) return false
+        const written: TxOut<readonly (readonly string[])[]> = { v: [] }
+        this.store.transact((draft) => {
+            const layer = resolveLayer(draft, path) as Draft<Layer> | null
+            if (!layer) return
+            const keys = applyStyleFieldsInDraft(layer, entry)
+            if (keys.length === 0) return
+            // 解码不变量重断言（updateSpec 同门，一次收口）：autoHeight⟹声明高归零
+            // 经 renormalizeAutoHeightInDraft 收口；表格强同步按末写字段重断言——
+            // 样式字段不触宽度耦合（根表分支天然空转），容器目标走内容/格/行
+            // 重同步收口
+            renormalizeAutoHeightInDraft(layer)
+            canonicalizeTableSyncInDraft(draft, path, keys[keys.length - 1]!, this.textPolicies)
+            written.v = keys
+        })
+        return written.v.length > 0
+    }
+
+    /** 粘贴可用态（右键菜单）：样式槽非空且有可解析选择；交集为零变化的空转在动作面兜底 */
+    get canPasteStyle(): boolean {
+        const path = this.store.ui.selection
+        const doc = this.store.doc
+        return this.styleClipboardEntry !== null && path !== null && doc !== null && resolveLayer(doc, path) !== null
+    }
+
     /**
      * z 序四件套（右键菜单语义 + kbd-nav 工单 01 键位）：根层重排，v1 只作用根层
      * （行/格是数组序语义）。全部复用 moveRootLayer（priority 中点插值同款——
@@ -1371,6 +1449,7 @@ export class EditorSession {
 
     /**
      * 执行快捷键动作（注册表分类的出口）：undo/redo/delete/copy/paste/duplicate/
+     * copyStyle/pasteStyle（⌥⌘C/⌥⌘V，canvas-web-style-paste 工单 01）/
      * rename/findReplace（⌘F，canvas-web-find-replace 工单 01）/
      * toggleRulers/toggleLayerLock/toggleLayerVisibility 的统一分派面，以及
      * z 序四件套与缩放三件（kbd-nav 工单 01：bringForward/sendBackward/
@@ -1400,6 +1479,16 @@ export class EditorSession {
                 return this.pasteFromClipboard() !== null
             case 'duplicate':
                 return this.duplicateSelection() !== null
+            case 'copyStyle': {
+                // 样式粘贴（canvas-web-style-paste 工单 01）：⌥⌘C 分派口，无选择空转
+                const path = this.store.ui.selection
+                return path !== null && this.copyStyle(path)
+            }
+            case 'pasteStyle': {
+                // ⌥⌘V 分派口：空槽/无选择空转（可用态口径与右键菜单 canPasteStyle 同源）
+                const path = this.store.ui.selection
+                return path !== null && this.pasteStyle(path)
+            }
             case 'rename':
                 return this.beginRename(this.store.ui.selection)
             case 'findReplace':

@@ -350,6 +350,89 @@ describe('findReplace 条目（canvas-web-find-replace 工单 01）：⌘F 查�
     })
 })
 
+describe('样式粘贴条目（canvas-web-style-paste 工单 01）：⌥⌘C/⌥⌘V', () => {
+    const makeStyleSession = () => {
+        const session = new EditorSession({ scheduleFrame: nullScheduler })
+        session.openDocument({
+            width: 800,
+            height: 600,
+            layers: [
+                textLayer({ priority: 20, text: '源', fontSize: 24, fontColor: '#ff0000' }),
+                textLayer({ priority: 10, text: '目标' }),
+            ],
+        })
+        return session
+    }
+
+    it('⌥⌘C/⌥⌘V 按 code 匹配（mac ⌥ 下 event.key 变体字符，key 匹配不可靠——kbd-nav 括号条目同门）', () => {
+        // US 布局 ⌥C = 'ç'、⌥V = '√'：key 变体 + code 折算命中
+        expect(
+            classifyEditorShortcut(input({ key: 'ç', mod: true, shift: false, alt: true, code: 'KeyC' })),
+        ).toBe('copyStyle')
+        expect(
+            classifyEditorShortcut(input({ key: '√', mod: true, shift: false, alt: true, code: 'KeyV' })),
+        ).toBe('pasteStyle')
+        // 桥折算正常形态（key 'c' + code 'KeyC'）同样命中
+        expect(
+            classifyEditorShortcut(input({ key: 'c', mod: true, shift: false, alt: true, code: 'KeyC' })),
+        ).toBe('copyStyle')
+        // 桥未折算 code（undefined）时不匹配——code 条目的唯一匹配通道
+        expect(classifyEditorShortcut(input({ key: 'ç', mod: true, shift: false, alt: true }))).toBeNull()
+    })
+
+    it('⌥⌘C ≠ ⌘C：alt 精确匹配（⌘C 复制图层不失配到复制样式，反之亦然）', () => {
+        expect(
+            classifyEditorShortcut(input({ key: 'c', mod: true, shift: false, alt: false, code: 'KeyC' })),
+        ).toBe('copy')
+        expect(
+            classifyEditorShortcut(input({ key: 'v', mod: true, shift: false, alt: false, code: 'KeyV' })),
+        ).toBe('paste')
+        expect(
+            classifyEditorShortcut(input({ key: 'c', mod: true, shift: true, alt: true, code: 'KeyC' })),
+        ).toBeNull()
+        expect(
+            classifyEditorShortcut(input({ key: 'c', mod: false, shift: false, alt: true, code: 'KeyC' })),
+        ).toBeNull()
+    })
+
+    it('条目元数据：label「复制样式/粘贴样式」（样式粘贴家族命名，不用属性粘贴/格式刷）+ group clipboard', () => {
+        const copy = DEFAULT_EDITOR_SHORTCUTS.find((entry) => entry.action === 'copyStyle')
+        const paste = DEFAULT_EDITOR_SHORTCUTS.find((entry) => entry.action === 'pasteStyle')
+        expect(copy?.label).toBe('复制样式')
+        expect(paste?.label).toBe('粘贴样式')
+        expect(copy?.group).toBe('clipboard')
+        expect(paste?.group).toBe('clipboard')
+        for (const label of [copy?.label, paste?.label]) {
+            expect(label?.includes('属性粘贴')).toBe(false)
+            expect(label?.includes('格式刷')).toBe(false)
+        }
+    })
+
+    it('端到端：⌥⌘C 快照 → ⌥⌘V 落地一步历史；无选择/空槽/全等空转为 false', () => {
+        const session = makeStyleSession()
+        // 空槽：⌥⌘V 空转
+        expect(session.executeShortcut('pasteStyle')).toBe(false)
+        // 无选择：⌥⌘C 空转
+        const copy = classifyEditorShortcut(input({ key: 'ç', mod: true, shift: false, alt: true, code: 'KeyC' }))
+        const paste = classifyEditorShortcut(input({ key: '√', mod: true, shift: false, alt: true, code: 'KeyV' }))
+        expect(copy).toBe('copyStyle')
+        expect(paste).toBe('pasteStyle')
+        expect(session.executeShortcut(copy!)).toBe(false)
+        // 复制 → 换目标 → 粘贴：一步历史落地
+        session.setSelection(['layers', 0])
+        expect(session.executeShortcut(copy!)).toBe(true)
+        session.setSelection(['layers', 1])
+        expect(session.executeShortcut(paste!)).toBe(true)
+        expect((session.store.doc!.layers[1] as { fontSize: number }).fontSize).toBe(24)
+        expect(session.store.history).toHaveLength(1)
+        // 全等重复粘贴：零变化空转，历史不增
+        expect(session.executeShortcut(paste!)).toBe(false)
+        expect(session.store.history).toHaveLength(1)
+        session.undo()
+        expect((session.store.doc!.layers[1] as { fontSize: number }).fontSize).toBe(16)
+    })
+})
+
 describe('注册表元数据（kbd-nav 工单 01）：label/group 数据完备性', () => {
     const GROUPS = new Set(['history', 'clipboard', 'layer', 'text', 'view', 'help'])
 
