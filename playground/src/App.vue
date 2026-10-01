@@ -35,6 +35,10 @@
 // data-guide-* / data-snap-* 钩子组件自带。挂点次序：参考线层在标尺之前——拖回
 // 删除的落点判定（elementFromPoint 命中 data-ruler-*）要求标尺条盖在参考线命中条
 // 之上。对齐浮条顶部居中落位不动。
+// canvas-web-find-replace 工单 04：查找条挂载接线——FindBar 已随 CanvasSurface
+// 内挂（工单 03，宿主零业务代码），本票只接 overlay 画笔组合序：drawFindMatches
+// 插在资源标识与选区 gizmo 之间（findHighlight 调用契约）；查找会话变化的脏标由
+// 内核 onStoreChange overlay 分支自带，宿主无新增订阅。
 import { computed, nextTick, onBeforeUnmount, provide, ref, watch } from 'vue'
 
 import {
@@ -60,6 +64,7 @@ import {
     AlignFloatBar,
     CanvasSurface,
     createRafScheduler,
+    drawFindMatches,
     drawSelectionGizmo,
     GuidesOverlay,
     LayerPanel,
@@ -238,9 +243,11 @@ let overlayCtx: CanvasRenderingContext2D | null = null
 let unsubscribeAssets: (() => void) | null = null
 let unsubscribeDoc: (() => void) | null = null
 
-/** 覆盖层画笔：资源状态标识（工单 04）+ 选区 gizmo（工单 06）。与内容层同一
+/** 覆盖层画笔：资源状态标识（playground-canvas-first 工单 04）+ 查找命中轮廓
+ *  （canvas-web-find-replace 工单 04 接线）+ 选区 gizmo（工单 06）。与内容层同一
  *  呈现变换（场景坐标，经共享的 applyViewportTransform 施加），但重绘入口独立
- *  （选择/悬停只脏覆盖层）。 */
+ *  （选择/悬停/查找会话只脏覆盖层）。组合序按 findHighlight 调用契约：资源标识 →
+ *  命中高亮 → 选区 gizmo（当前命中与选区框重叠时选区框压上）。 */
 const overlayPainter: OverlayPainter = (args) => {
     const ctx = overlayCtx
     if (!ctx) return
@@ -249,6 +256,7 @@ const overlayPainter: OverlayPainter = (args) => {
     if (!args.doc) return
     applyViewportTransform(ctx, { dpr: args.dpr, zoom: args.viewport.zoom, x: args.viewport.x, y: args.viewport.y })
     drawResourceMarkers(ctx, args.doc, (materializer?.state ?? {}) as ResourceState)
+    drawFindMatches(ctx, editor, args)
     drawSelectionGizmo(ctx, editor, args)
 }
 

@@ -12,7 +12,9 @@
  *   - 标记二维码：字面 `{{certNo}}` 按字面出码（编辑器不求值）
  *   - 标记文本：显示镜像字面 `证书 {{certName}} · 编号 {{certNo}}`（spec §3.7 降级形态）
  *   - 模板态表格：data 键值仅 rowsPath + template 内嵌行模板（标记 Text/Image/Qr
- *     内容层各一；行/格声明高与 autoHeight 混合 = 高度豁免的 wire 形态演练），
+ *     内容层各一 + 静态文本格一（canvas-web-find-replace 工单 04 目验：模板格
+ *     静态文本参与查找替换；image/qr 格 180→120 腾位，总宽 600 不变）；行/格
+ *     声明高与 autoHeight 混合 = 高度豁免的 wire 形态演练），
  *     rows 不写键 → 渲染为空壳（bg/border 照画、行区零高，spec §4.4 同门）
  * - 表达式键树与样例 schema（sampleDatasetSchema.ts 证书 form-data，工单 11）对齐：
  *   根层 certNo/certName、嵌套 org.logo、rowsPath = originCertificates（行上下文
@@ -192,20 +194,32 @@ export const DEMO_GRAPH_JSON = `{
           },
           {
             "type": "TableCellLayer",
-            "spec": { "shape": { "width": 180, "height": 48, "backgroundColor": "#0369a1" } },
+            "spec": { "shape": { "width": 120, "height": 48, "backgroundColor": "#0369a1" } },
             "content": {
               "type": "ImageLayer",
-              "spec": { "shape": { "width": 180, "height": 48 } },
+              "spec": { "shape": { "width": 120, "height": 48 } },
               "data": { "valueType": "ExpressionValue", "expression": "{{row.fileUrl}}", "value": "{{row.fileUrl}}" }
             }
           },
           {
             "type": "TableCellLayer",
-            "spec": { "shape": { "width": 180, "height": 48 } },
+            "spec": { "shape": { "width": 120, "height": 48 } },
             "content": {
               "type": "QrCodeLayer",
-              "spec": { "shape": { "width": 180, "height": 48 } },
+              "spec": { "shape": { "width": 120, "height": 48 } },
               "data": { "valueType": "ExpressionValue", "expression": "{{row.certNo}}", "value": "{{row.certNo}}" }
+            }
+          },
+          {
+            "type": "TableCellLayer",
+            "spec": { "shape": { "width": 120, "height": 48, "backgroundColor": "#075985" } },
+            "content": {
+              "type": "TextLayer",
+              "spec": {
+                "shape": { "width": 120, "height": "auto", "padding": { "top": 6, "bottom": 6, "left": 8, "right": 8 } },
+                "fontFamily": { "fontSize": 14, "fontColor": "#bae6fd" }
+              },
+              "data": { "valueType": "StaticValue", "value": "模板静态格" }
             }
           }
         ]
