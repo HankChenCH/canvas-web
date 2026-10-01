@@ -77,8 +77,9 @@ import {
 } from '../editing/alignCanvas'
 import {
     PASTE_OFFSET_PX,
-    canCopyLayerAt,
+    canCopyLayerAt as canCopyLayerAtPath,
     cloneLayerSubtree,
+    pastePosition,
     prepareRootPaste,
 } from '../editing/clipboard'
 import {
@@ -90,6 +91,7 @@ import {
     addRootLayerInDraft,
     createTemplateTable,
     deleteLayerInDraft,
+    insertRootLayerAdjacentInDraft,
     insertRootLayerInDraft,
     moveRootLayerInDraft,
     moveTableRowInDraft,
@@ -108,7 +110,7 @@ import {
     setCellAutoHeightInDraft,
     type MovedSubtreeRef,
 } from '../editing/tableEditing'
-import { EditorStore, type EditorChange, type TransactOptions } from './store'
+import { EditorStore, type DragGesture, type EditorChange, type TransactOptions } from './store'
 import type { EditorShortcutAction } from './shortcuts'
 import { FontCatalog, type FontCatalogEntry } from '../editing/fontCatalog'
 import {
@@ -176,6 +178,13 @@ export interface TextEditLayout {
 
 /** 拖动事务的合并键：一次拖动的全部 pointermove 并成一步历史 */
 const DRAG_MERGE_KEY = 'drag'
+
+/**
+ * Alt+拖快速复制的死区（alt-drag-paste 工单 01，spec 决策 1）：屏幕 css 像素、
+ * 缩放无关（场景阈值 = 阈值 / zoom，SNAP_THRESHOLD_SCREEN_PX 同风格）——首移
+ * 越过死区才插入副本，死区内抬手退化为普通点选。
+ */
+export const ALT_DRAG_DEAD_ZONE_SCREEN_PX = 4
 
 /** 微调步长（kbd-nav 工单 02）：基础步 1 场景 px，Shift 大步 10 px 固定 */
 const NUDGE_STEP_PX = 1
@@ -522,20 +531,27 @@ export class EditorSession {
      * 路径落在锁定子树同样拒绝（canvas-web-layer-lock 工单 01：拖动是变更类
      * 动作的 guard 入口——画布命中面已过滤锁定层，此守卫兜住其余手势来源，
      * 缩放手势接入 resize feature 时同用此门）。
+     *
+     * Alt+拖快速复制（alt-drag-paste 工单 01）：options.copy 起手一次性判定——
+     * 源不可复制（canCopyLayerAt 为 false：行/格等容器内结构）静默忽略 Alt 走
+     * 普通拖动（spec 决策 1）；置位后 copyMode 会话内定死，首移越过死区才插入
+     * 副本（dragTo 消费，见 ALT_DRAG_DEAD_ZONE_SCREEN_PX）。
      */
-    beginDrag(path: LayerPath, sceneX: number, sceneY: number): boolean {
+    beginDrag(path: LayerPath, sceneX: number, sceneY: number, options: { copy?: boolean } = {}): boolean {
         if (this.store.ui.drag) return false
         if (this.isLocked(path)) return false
         const doc = this.store.doc
         const layer = doc ? resolveLayer(doc, path) : null
-        if (!layer) return false
+        if (!doc || !layer) return false
         const box = this.boxByPath(path)
         if (!box) return false
+        const copy = options.copy === true && canCopyLayerAtPath(doc, path)
         this.store.setDrag({
             path,
             startScene: { x: sceneX, y: sceneY },
             startPosition: { x: layer.position.x, y: layer.position.y },
             startBox: box,
+            ...(copy ? { copy: true, copyPending: true } : {}),
         })
         return true
     }
@@ -549,6 +565,10 @@ export class EditorSession {
      * 回显，endDrag 清空）。九锚点一视同仁——锚点偏移不动，只累加 x/y（x += dx/
      * zoom 的 zoom 折算已由 toScenePoint 收口）；一次拖动的全部位移经同 mergeKey
      * 事务并成一步历史，属性面板读同一文档数据即联动。
+     *
+     * Alt+拖 copyMode（alt-drag-paste 工单 01）：副本未插入前（copyPending）源层
+     * 不动——未越死区零事务，首移越阈交 dragCopyFirstMove 单事务完成插入 + 位移，
+     * 此后 path 已重指向副本、走普通拖动流程（吸附排除副本、源层供轴）。
      */
     dragTo(sceneX: number, sceneY: number): void {
         const drag = this.store.ui.drag
@@ -556,6 +576,10 @@ export class EditorSession {
         // 拖动中图层被结构编辑移除的边缘态：整个求位空转（不发事务、不发布命中轴）
         const doc = this.store.doc
         if (!doc || resolveLayer(doc, drag.path) === null) return
+        if (drag.copy === true && drag.copyPending === true) {
+            this.dragCopyFirstMove(drag, sceneX, sceneY)
+            return
+        }
         const dx = sceneX - drag.startScene.x
         const dy = sceneY - drag.startScene.y
         const resolution = resolveSnap(
@@ -579,6 +603,62 @@ export class EditorSession {
         this.store.setSnapAxes(resolution.axes)
     }
 
+    /**
+     * copyMode 首移（alt-drag-paste 工单 01，spec 决策 1/3）：先过死区——位移按
+     * 屏幕 4px 阈值折算（缩放无关），未越阈零事务、源层不动（Alt+点击退化）；
+     * 越阈则单事务完成「插入副本（紧邻源层）+ 副本自源盒起步位移」：副本 = 源
+     * 子树深拷贝，落位按根层语义反解（pastePosition——根层源退化为 position +
+     * 位移、格内容源把格内相对 position 换算画布绝对落位），与吸附修正一并写入，
+     * mergeKey 沿用 DRAG_MERGE_KEY，后续 move 同键合并——undo 一次副本整体消失。
+     * 吸附求位在副本入库前：吸附源 = 全部可见根层（副本尚不存在、源层天然在列
+     * ——重叠起步，spec 决策 4）；插入后手势重指向副本（startPosition 换基准为
+     * 副本起步位 = 源绝对盒的根层语义反解，startBox 即副本起步盒不变），副本自动
+     * 选中，命中轴照常回显。
+     */
+    private dragCopyFirstMove(drag: DragGesture, sceneX: number, sceneY: number): void {
+        const doc = this.store.doc
+        if (!doc) return
+        const source = resolveLayer(doc, drag.path)
+        if (!source) return
+        const dx = sceneX - drag.startScene.x
+        const dy = sceneY - drag.startScene.y
+        if (Math.hypot(dx, dy) <= ALT_DRAG_DEAD_ZONE_SCREEN_PX / this.store.ui.viewport.zoom) return
+        const resolution = resolveSnap(
+            {
+                x: drag.startBox.x + dx,
+                y: drag.startBox.y + dy,
+                width: drag.startBox.width,
+                height: drag.startBox.height,
+            },
+            this.snapAxesForDrag(null),
+            snapThresholdScene(this.store.ui.viewport.zoom),
+        )
+        const copyIndex: TxOut<number> = { v: -1 }
+        this.store.transact((draft) => {
+            const sourceInDraft = resolveLayer(draft, drag.path)
+            if (!sourceInDraft) return
+            const prepared = prepareRootPaste(
+                sourceInDraft,
+                drag.startBox,
+                doc.width,
+                doc.height,
+                dx + resolution.dx,
+                dy + resolution.dy,
+            )
+            copyIndex.v = insertRootLayerAdjacentInDraft(draft, prepared as Draft<Layer>, drag.path) ?? -1
+        }, { mergeKey: DRAG_MERGE_KEY })
+        if (copyIndex.v < 0) return
+        const copyPath: LayerPath = ['layers', copyIndex.v]
+        this.store.setDrag({
+            ...drag,
+            path: copyPath,
+            startPosition: pastePosition(drag.startBox, source.position.anchor, doc.width, doc.height, 0, 0),
+            copyPending: false,
+        })
+        this.store.setSelection(copyPath)
+        this.store.setSnapAxes(resolution.axes)
+    }
+
     /** 结束拖动：闭合合并事务（下一步历史定格），会话态与命中轴回显清空 */
     endDrag(): void {
         if (!this.store.ui.drag) return
@@ -590,12 +670,14 @@ export class EditorSession {
     /**
      * 拖动层可用的吸附轴集合（dragTo 每步重算，几何与其余消费同源）：可见根层盒
      * （hitTest 同款 visible 过滤）排除拖动层自身根 + 画布中轴 + 当前参考线。
+     * dragPath 传 null = 排除面为空（copyMode 首移：副本未入库，源层供轴，
+     * alt-drag-paste 工单 01）。
      */
-    private snapAxesForDrag(dragPath: LayerPath): readonly SnapAxis[] {
+    private snapAxesForDrag(dragPath: LayerPath | null): readonly SnapAxis[] {
         const doc = this.store.doc
         if (!doc) return []
-        const excludeRootIndex = dragPath[1]
-        if (typeof excludeRootIndex !== 'number') return []
+        const excludeRootIndex = dragPath === null ? null : dragPath[1]
+        if (excludeRootIndex !== null && typeof excludeRootIndex !== 'number') return []
         return snapAxesFromBoxes(
             doc.width,
             doc.height,
@@ -1252,8 +1334,17 @@ export class EditorSession {
     /** 复制可用态（右键菜单「副本」的可用判定与 copySelection 同一语义） */
     get canCopySelection(): boolean {
         const path = this.store.ui.selection
+        return path !== null && this.canCopyLayerAt(path)
+    }
+
+    /**
+     * 路径处图层可复制（alt-drag-paste 工单 01，Alt+拖 copyMode 的绑定层判定面）：
+     * 可解析且类型可落根层（canCopyLayerAt 同门——行/格是容器内结构不可复制，
+     * 格内容可复制）。无文档为 false。
+     */
+    canCopyLayerAt(path: LayerPath): boolean {
         const doc = this.store.doc
-        return path !== null && doc !== null && canCopyLayerAt(doc, path)
+        return doc !== null && canCopyLayerAtPath(doc, path)
     }
 
     /**
@@ -1288,7 +1379,7 @@ export class EditorSession {
     duplicateSelection(): LayerPath | null {
         const path = this.store.ui.selection
         const doc = this.store.doc
-        if (!path || !doc || !canCopyLayerAt(doc, path)) return null
+        if (!path || !doc || !canCopyLayerAtPath(doc, path)) return null
         const box = this.boxByPath(path)
         if (!box) return null
         const prepared = prepareRootPaste(

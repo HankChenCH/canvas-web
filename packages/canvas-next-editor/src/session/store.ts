@@ -38,6 +38,18 @@ export interface DragGesture {
      * 暂定盒 = startBox + 本步位移；住会话态，文档零接触。
      */
     startBox: LayerBox
+    /**
+     * Alt+拖快速复制（alt-drag-paste 工单 01）：beginDrag 起手一次性判定（源可
+     * 复制才置位，缺省/undefined = 普通拖动）。会话内定死——中途无修饰键读数，
+     * 松/按 Alt 均不影响（spec 决策 2，与「手势模式 pointerdown 一次性定死」同构）。
+     */
+    copy?: boolean
+    /**
+     * copyMode 副本尚未插入（首移未越过死区）：drag.path 仍是源层、源层不动；
+     * 首移越阈（ALT_DRAG_DEAD_ZONE_SCREEN_PX）单事务插入副本后置 false，path/
+     * startPosition 重指向副本（换基准）。普通拖动恒 undefined。
+     */
+    copyPending?: boolean
 }
 
 /**

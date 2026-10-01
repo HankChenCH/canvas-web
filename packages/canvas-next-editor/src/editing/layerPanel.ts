@@ -286,32 +286,36 @@ export function moveRootLayerInDraft(
     const moved = movedRaw as Draft<Layer>
     layers.splice(arrTo, 0, moved)
 
-    // 插值：落点的下邻（数组左，视觉垫底侧，priority 更大）/上邻（数组右，视觉最上侧，更小）。
-    // priority 必须保持整数——wire 解码按 PHP intval 语义取整，小数 priority 在
-    // 保存→打开时值漂移、往返恒等即破（工单 13）：中间落点只在「下邻−上邻 ≥ 2」
-    // （存在整数间隙）时取整数中点；置顶/置底恒为整数（max+1 / min−1）。
-    const below = arrTo > 0 ? layers[arrTo - 1]! : null
-    const above = arrTo < n - 1 ? layers[arrTo + 1]! : null
-    let priority: number | null = null
-    if (below !== null && above !== null) {
-        if (below.priority - above.priority >= 2) {
-            priority = Math.floor((below.priority + above.priority) / 2)
-        }
-    } else if (below !== null) {
-        priority = below.priority - 1 // 数组尾 = 视觉最上：min − 1
-    } else {
-        // n ≥ 2 保证落点至少一侧有邻居：无下邻即数组头，上邻必在
-        priority = above!.priority + 1 // 数组头 = 视觉垫底：max + 1
-    }
+    // 插值：落点的下邻（数组左，视觉垫底侧，priority 更大）/上邻（数组右，视觉最上
+    // 侧，更小）——中点/置顶/置底与「无间隙归一化兜底」的门规见 midpointPriority。
+    const below = arrTo > 0 ? layers[arrTo - 1]!.priority : null
+    const above = arrTo < n - 1 ? layers[arrTo + 1]!.priority : null
+    const priority = midpointPriority(below, above)
 
-    // 无整数间隙（相邻整数/同值，含搬入同值邻居之间）→ 全表归一化兜底：
-    // 按视觉序带间隙重赋，恢复整数间隔并为后续插值留出余量
     if (priority !== null) {
         moved.priority = priority
     } else {
         normalizeRootPriorities(layers)
     }
     return { from: arrFrom, to: arrTo }
+}
+
+/**
+ * 根层落点的 priority 折算（中点插值门规，moveRootLayerInDraft 与
+ * insertRootLayerAdjacentInDraft 共用）：below/above 为落点两侧邻层的 priority
+ * （数组左 = 视觉垫底侧、值更大；数组右 = 视觉最上侧、值更小）。有整数间隙
+ * （below − above ≥ 2）取整数中点；无间隙返回 null（调用方全表归一化兜底）；
+ * 缺一侧退化：无 above（落点视觉最顶）取 below − 1、无 below（落点视觉垫底）
+ * 取 above + 1。priority 恒整数——wire 解码按 PHP intval 语义取整，小数在
+ * 保存→打开时值漂移、往返恒等即破（工单 13）。两侧邻层至少存在其一（调用方
+ * 保证 n ≥ 2 / 源层在场）。
+ */
+function midpointPriority(below: number | null, above: number | null): number | null {
+    if (below !== null && above !== null) {
+        return below - above >= 2 ? Math.floor((below + above) / 2) : null
+    }
+    if (below !== null) return below - 1
+    return above === null ? null : above + 1
 }
 
 /**
@@ -369,6 +373,40 @@ export function insertRootLayerInDraft(draft: Draft<Canvas>, layer: Draft<Layer>
     layer.priority = Number.isFinite(min) ? min - 1 : 0
     draft.layers.push(layer)
     return draft.layers.length - 1
+}
+
+/**
+ * 根层紧邻插入（draft 原位变换，alt-drag-paste 工单 01 原语，⌘V 粘贴工单 02 共用）：
+ * 新层 splice 到源层后一格 = 源层视觉上方一格，priority 取源与其视觉上一层（数组
+ * 序 +1 位）之间的中点插值——数组序全程保持 priority 降序的解码不变量，整数插值
+ * 同 moveRootLayerInDraft 门规（midpointPriority：无整数间隙时全表归一化兜底）；
+ * 源为视觉最顶/数组尾时取 source.priority − 1（置顶 min−1 同门）。
+ * source 按根下标或路径寻址：路径取根祖先段（path[1]，格内容等子树源紧邻其根层）。
+ * 返回新层的数组下标；源下标越界/路径无数字根段返回 null（退化语义归调用方——
+ * ⌘V 的「源不可解析退化置顶」在消费面回落 insertRootLayerInDraft）。
+ */
+export function insertRootLayerAdjacentInDraft(
+    draft: Draft<Canvas>,
+    layer: Draft<Layer>,
+    source: number | LayerPath,
+): number | null {
+    const rootIndex = typeof source === 'number' ? source : source[1]
+    if (typeof rootIndex !== 'number' || !Number.isSafeInteger(rootIndex)) return null
+    const layers = draft.layers as Draft<Layer>[]
+    if (rootIndex < 0 || rootIndex >= layers.length) return null
+
+    // 落点两侧：below = 源层（数组左），above = 视觉上一层（数组右），缺 above 即
+    // 源为视觉最顶/数组尾（midpointPriority 内退化为 source − 1）
+    const sourcePriority = layers[rootIndex]!.priority
+    const above = rootIndex + 1 < layers.length ? layers[rootIndex + 1]!.priority : null
+    layers.splice(rootIndex + 1, 0, layer)
+    const priority = midpointPriority(sourcePriority, above)
+    if (priority !== null) {
+        layer.priority = priority
+    } else {
+        normalizeRootPriorities(layers)
+    }
+    return rootIndex + 1
 }
 
 /** 删除定位：list = 容器列表 splice（roots/rows/cells），content = 格内容置 null */

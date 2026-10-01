@@ -4,6 +4,7 @@
  * 会话层可引用全部下层域（spatial/editing/shared）。
  */
 export {
+    ALT_DRAG_DEAD_ZONE_SCREEN_PX,
     EditorSession,
     type EditorSessionOptions,
     type FrameScheduler,

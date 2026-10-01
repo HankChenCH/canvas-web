@@ -54,15 +54,17 @@ export function snapThresholdScene(zoom: number): number {
 /**
  * 吸附层盒来源：可见根层盒（渲染端整层跳过、命中测试整子树退出——同一 visible
  * 过滤，hitTest 同款），并排除拖动层自身根（自缘不供轴，防自身 delta 0 命中噪声）。
+ * excludeRootIndex 传 null = 排除面为空（copyMode 首移：副本未入库、源层供轴，
+ * alt-drag-paste 工单 01）。
  */
 export function visibleRootBoxes(
     doc: Canvas,
-    excludeRootIndex: number,
+    excludeRootIndex: number | null,
     policies?: TextLayoutPolicies,
 ): LayerBox[] {
     const boxes: LayerBox[] = []
     for (let i = 0; i < doc.layers.length; i += 1) {
-        if (i === excludeRootIndex) continue
+        if (excludeRootIndex !== null && i === excludeRootIndex) continue
         const layer = doc.layers[i]!
         if (layer.visible === false) continue
         boxes.push(resolveLayerBox(layer, 0, 0, doc.width, doc.height, policies))

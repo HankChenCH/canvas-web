@@ -16,6 +16,7 @@ export {
     createDefaultLayer,
     createTemplateTable,
     deleteLayerInDraft,
+    insertRootLayerAdjacentInDraft,
     insertRootLayerInDraft,
     moveGuard,
     moveRootLayerInDraft,

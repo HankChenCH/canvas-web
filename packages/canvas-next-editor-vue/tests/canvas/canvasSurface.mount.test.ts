@@ -19,6 +19,7 @@ import { mount } from '@vue/test-utils'
 import { EditorSession, type FrameScheduler, type OverlayPainter } from '@hankchen/canvas-next-editor'
 
 import CanvasSurface from '../../src/canvas/CanvasSurface.vue'
+import { textLayer } from '../../../canvas-next-editor/tests/support/fixtures'
 
 // ---- jsdom 环境桩 ----
 
@@ -43,6 +44,13 @@ class ResizeObserverStub {
 }
 if (typeof globalThis.ResizeObserver !== 'function') {
     ;(globalThis as Record<string, unknown>).ResizeObserver = ResizeObserverStub
+}
+
+/** jsdom 无 pointer capture（拖动手势抓取依赖）：补不抛错的空实现（抓取语义无断言面） */
+if (typeof HTMLElement.prototype.setPointerCapture !== 'function') {
+    Object.defineProperty(HTMLElement.prototype, 'setPointerCapture', { value: () => {}, configurable: true })
+    Object.defineProperty(HTMLElement.prototype, 'releasePointerCapture', { value: () => {}, configurable: true })
+    Object.defineProperty(HTMLElement.prototype, 'hasPointerCapture', { value: () => false, configurable: true })
 }
 
 function setDevicePixelRatio(value: number): void {
@@ -223,6 +231,56 @@ describe('内挂 FindBar：随会话开合与 Esc 转发关闭（find-replace �
         await nextTick()
         expect(document.querySelector('[data-find-bar]')).toBeNull()
         expect(editor.store.ui.find.open).toBe(false)
+        cleanup()
+    })
+})
+
+describe('Alt+拖快速复制：altKey 读取传递（alt-drag-paste 工单 01）', () => {
+    // jsdom 无 PointerEvent/布局：MouseEvent 按类型直发（ruler.mount.test 同款）；
+    // 视口缺省 {0,0,1} → 场景点 == 客户端像素；文本层 fixture 定盒 (0,0,100,50)
+    const surfaceHost = () => document.querySelector('.cn-surface')!
+    const dispatchPointer = (type: string, init: MouseEventInit = {}) =>
+        surfaceHost().dispatchEvent(new MouseEvent(type, { bubbles: true, ...init }))
+
+    it('pointerdown 携 altKey 且命中可复制层 → beginDrag 收到 copy 标记；首移越阈副本落地并自动选中', () => {
+        const { editor, cleanup } = mountSurface()
+        editor.openDocument({
+            width: 800,
+            height: 600,
+            layers: [textLayer({ priority: 10 })],
+        })
+
+        dispatchPointer('pointerdown', { button: 0, clientX: 50, clientY: 25, altKey: true })
+        expect(editor.store.ui.drag?.copy).toBe(true)
+        expect(editor.store.ui.drag?.copyPending).toBe(true)
+        expect(editor.store.ui.selection).toEqual(['layers', 0])
+
+        // 中途松 Alt（move 事件 altKey=false）：修饰键起点一次性判定——副本照常落下
+        dispatchPointer('pointermove', { clientX: 60, clientY: 35, altKey: false }) // 位移 (10,10) 越过 4px 死区
+        expect(editor.store.doc!.layers).toHaveLength(2)
+        expect(editor.store.ui.selection).toEqual(['layers', 1]) // 副本自动选中
+
+        dispatchPointer('pointerup', { clientX: 60, clientY: 35 })
+        expect(editor.store.ui.drag).toBeNull()
+        cleanup()
+    })
+
+    it('未按 Alt 走普通拖动：无 copy 标记、首移移动源层不插副本', () => {
+        const { editor, cleanup } = mountSurface()
+        editor.openDocument({
+            width: 800,
+            height: 600,
+            layers: [textLayer({ priority: 10 })],
+        })
+
+        dispatchPointer('pointerdown', { button: 0, clientX: 50, clientY: 25 })
+        expect(editor.store.ui.drag?.copy).toBeFalsy()
+
+        dispatchPointer('pointermove', { clientX: 60, clientY: 35 })
+        expect(editor.store.doc!.layers).toHaveLength(1)
+        expect(editor.store.doc!.layers[0]!.position).toMatchObject({ x: 10, y: 10 }) // 源自己位移
+
+        dispatchPointer('pointerup', { clientX: 60, clientY: 35 })
         cleanup()
     })
 })

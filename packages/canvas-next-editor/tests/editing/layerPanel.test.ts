@@ -6,8 +6,12 @@ import { EditorSession } from '../../src/session/editor'
 import {
     buildLayerOutline,
     createDefaultLayer,
+    insertRootLayerAdjacentInDraft,
     type LayerOutlineNode,
 } from '../../src/editing/layerPanel'
+import { cloneLayerSubtree } from '../../src/editing/clipboard'
+import type { Draft } from 'immer'
+import type { Layer } from '@hankchen/canvas-next'
 import type { FrameScheduler } from '../../src/session/editor'
 import {
     cellLayer,
@@ -520,6 +524,97 @@ describe('addRootLayer：新增图层置顶（priority = min − 1）', () => {
         session.undo()
         expect(session.store.doc!.layers).toHaveLength(0)
         expect(session.store.history).toHaveLength(0)
+    })
+})
+
+describe('insertRootLayerAdjacentInDraft：根层紧邻插入（alt-drag-paste 工单 01 原语）', () => {
+    /** 经会话事务调用原语（真实 draft 路径），返回新层下标（null = 无操作） */
+    const insertAdjacent = (
+        session: ReturnType<typeof makeSession>,
+        layer: Layer,
+        source: number | ['layers', number] | readonly (string | number)[],
+    ): number | null => {
+        const index: { v: number | null } = { v: null }
+        session.store.transact((draft) => {
+            index.v = insertRootLayerAdjacentInDraft(
+                draft,
+                cloneLayerSubtree(layer) as Draft<Layer>,
+                source as number | Parameters<typeof insertRootLayerAdjacentInDraft>[2],
+            )
+        })
+        return index.v
+    }
+
+    const newLayer = (text: string): Layer => textLayer({ text })
+
+    it('中点插值：新层落源索引后一格，priority = ⌊(源 + 视觉上一层)/2⌋，数组序保持降序', () => {
+        const session = makeSession(stackDoc()) // [底30, 中20, 顶10]
+        const index = insertAdjacent(session, newLayer('新'), 0) // 紧邻「底」
+        expect(index).toBe(1)
+        const ps = priorities(session)
+        expect(ps).toEqual([30, 25, 20, 10]) // (30+20)/2 = 25
+        expect(panelTexts(session)).toEqual(['顶', '中', '新', '底']) // 新紧邻底的视觉上方（与中之间）
+    })
+
+    it('源为视觉最顶/数组尾：priority = source − 1，新层成为数组尾', () => {
+        const session = makeSession(stackDoc())
+        const index = insertAdjacent(session, newLayer('新'), 2) // 紧邻「顶」
+        expect(index).toBe(3)
+        expect(priorities(session)).toEqual([30, 20, 10, 9])
+        expect(panelTexts(session)[0]).toBe('新')
+    })
+
+    it('单层文档：新层 priority = source − 1（无上邻即置顶同门）', () => {
+        const session = makeSession([textLayer({ priority: 7, text: '独' })])
+        const index = insertAdjacent(session, newLayer('新'), 0)
+        expect(index).toBe(1)
+        expect(priorities(session)).toEqual([7, 6])
+    })
+
+    it('无整数间隙：全表归一化兜底（moveRootLayerInDraft 同门），视觉序与降序不变量保持', () => {
+        const session = makeSession([
+            textLayer({ priority: 10, text: '甲' }),
+            textLayer({ priority: 9, text: '乙' }),
+        ])
+        const index = insertAdjacent(session, newLayer('新'), 0) // 插甲与乙之间：间隙 1 无整数中点
+        expect(index).toBe(1)
+        const ps = priorities(session)
+        expect(ps).toEqual([2048, 1024, 0]) // (N−1−i) × GAP 按数组序重赋
+        expect(panelTexts(session)).toEqual(['乙', '新', '甲'])
+    })
+
+    it('按路径插入取根祖先：子树路径（表内行）紧邻其根层', () => {
+        // tableDoc 缺省 p10 与甲/乙不构成降序，这里覆写表 p30（表30 > 甲20 > 乙10）
+        const session = makeSession([
+            { ...tableDoc(), priority: 30 },
+            textLayer({ priority: 20, text: '甲' }),
+            textLayer({ priority: 10, text: '乙' }),
+        ])
+        const index = insertAdjacent(session, newLayer('新'), ['layers', 0, 'rows', 0]) // 表的行路径
+        expect(index).toBe(1)
+        expect(priorities(session)).toEqual([30, 25, 20, 10]) // 表30 与 甲20 的中点
+        expect(session.store.doc!.layers[1]!.type).toBe('TextLayer')
+    })
+
+    it('非法源（越界下标/无数字根段的路径）返回 null 且零变化', () => {
+        const session = makeSession(stackDoc())
+        const before = session.store.doc
+        expect(insertAdjacent(session, newLayer('新'), 5)).toBeNull()
+        expect(insertAdjacent(session, newLayer('新'), -1)).toBeNull()
+        expect(insertAdjacent(session, newLayer('新'), ['layers'])).toBeNull()
+        expect(session.store.doc).toBe(before)
+        expect(session.store.history).toHaveLength(0)
+    })
+
+    it('整数中点插值经 encode→decode 往返字节恒等（保存再打开无漂移）', () => {
+        const session = makeSession(stackDoc())
+        insertAdjacent(session, newLayer('新'), 0)
+        const wire = JSON.parse(JSON.stringify(encodeGraph(session.store.doc!)))
+        const reopened = decodeGraph(wire)
+        expect(buildLayerOutline(reopened).map((node) => node.path)).toEqual(
+            buildLayerOutline(session.store.doc!).map((node) => node.path),
+        )
+        expect(JSON.stringify(encodeGraph(reopened))).toBe(JSON.stringify(encodeGraph(session.store.doc!)))
     })
 })
 

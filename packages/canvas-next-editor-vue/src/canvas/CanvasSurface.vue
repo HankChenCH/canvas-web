@@ -7,7 +7,9 @@
  * - 事件桥：wheel 三态语义（classifyWheel）→ 会话相机动作；中键/空格+左键/左键拖空白
  *   （全幅底图豁免后未命中，工票 16）拖拽平移；左键点选与拖动（selectAt/beginDrag/
  *   dragTo/endDrag）、hover 跟随、Escape 升级选择归属链——全部经内核意图级 API，
- *   组件只做坐标与指针状态翻译。
+ *   组件只做坐标与指针状态翻译。Alt+拖快速复制（alt-drag-paste 工单 01）：
+ *   pointerdown 读 altKey 且命中层可复制（canCopyLayerAt）→ beginDrag 携 copy
+ *   标记，不可复制目标/未按 Alt 走现状路径。
  * - 文本编辑（工单 11）：宿主内挂 TextEditingOverlay，双击进入（命中 TextLayer）、
  *   编辑中点 textarea 外先提交再点选、textarea 内指针归编辑光标。
  * - 右键菜单（工单 14）：contextmenu → 场景命中即右键选中 → 视口坐标开菜单
@@ -191,10 +193,13 @@ onMounted(() => {
         // 点选：命中即选中（画布与后续面板同源），命中层同时进入拖动会话；
         // 未命中（全幅底图已在内核 hitTest 豁免，工票 16）= 整段手势转平移——
         // 手势模式 pointerdown 一次性定死，配合 setPointerCapture 途中扫过图层不变异；
-        // 点击（无位移）空白的取消选中已由 selectAt(null) 即时完成，拖动才动相机
+        // 点击（无位移）空白的取消选中已由 selectAt(null) 即时完成，拖动才动相机。
+        // Alt+按下（alt-drag-paste 工单 01）：命中层可复制才携 copy 标记（修饰键
+        // 起点一次性判定，会话内定死）；不可复制目标（行/格）静默忽略 Alt 走
+        // 普通拖动，未命中照旧转平移
         const scene = sceneAt(e)
         const path = editor.selectAt(scene.x, scene.y)
-        if (path && editor.beginDrag(path, scene.x, scene.y)) {
+        if (path && editor.beginDrag(path, scene.x, scene.y, { copy: e.altKey && editor.canCopyLayerAt(path) })) {
             active = { id: e.pointerId, mode: 'drag' }
             host.setPointerCapture(e.pointerId)
             return
