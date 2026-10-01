@@ -12,6 +12,9 @@
  *   编辑中点 textarea 外先提交再点选、textarea 内指针归编辑光标。
  * - 右键菜单（工单 14）：contextmenu → 场景命中即右键选中 → 视口坐标开菜单
  *   （ContextMenu 内挂组件）；Escape/画布点按/动作执行即关。
+ * - 查找条（find-replace 工单 03）：FindBar 内挂组件，画布顶部居中浮动；开合
+ *   随内核查找会话（⌘F 经 useShortcuts 桥分派 beginFind），Esc 两路关闭（输入框
+ *   内归面板键面，焦点漂出后经本组件窗口监听转发）与聚焦归面板。
  * - 拖文件入画布（kbd-nav 工单 05）：dragover 只收 image/*（声明可放置 + 高亮
  *   overlay 提示可松手）；drop 释放点折算场景点，逐个 DOM Image 解码自然尺寸后
  *   调 uploadImageAsLayer({at, size})——图层盒左上角对准释放点、1:1 不缩放，
@@ -27,6 +30,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { classifyWheel, type EditorSession } from '@hankchen/canvas-next-editor'
 
 import ContextMenu from './ContextMenu.vue'
+import FindBar from './FindBar.vue'
 import { isEditableEventTarget } from '../shared/editableTarget'
 import TextEditingOverlay from './TextEditingOverlay.vue'
 import { uploadFileFromDom } from '../shared/uploadFile'
@@ -50,6 +54,7 @@ const contentRef = ref<HTMLCanvasElement | null>(null)
 const overlayRef = ref<HTMLCanvasElement | null>(null)
 const textEditRef = ref<InstanceType<typeof TextEditingOverlay> | null>(null)
 const contextMenuRef = ref<InstanceType<typeof ContextMenu> | null>(null)
+const findBarRef = ref<InstanceType<typeof FindBar> | null>(null)
 
 const spaceHeld = ref(false)
 const panning = ref(false)
@@ -296,9 +301,11 @@ onMounted(() => {
         if (e.code === 'Space') spaceHeld.value = false
     }
     // Escape 升级选择归属链（格→行→表→清空）；输入法/输入框内不拦；顺带关右键菜单
+    // 与查找条（浮层先例协议——焦点漂出查找条输入框时 Esc 由窗口监听转发关闭）
     const onEscape = (e: KeyboardEvent) => {
-        if (e.key !== 'Escape' || isEditableTarget(e.target)) return
+        if (e.key !== 'Escape' || isEditableEventTarget(e.target)) return
         contextMenuRef.value?.close()
+        findBarRef.value?.close()
         editor.escapeSelection()
     }
     window.addEventListener('keydown', onKeyDown)
@@ -426,6 +433,9 @@ onBeforeUnmount(() => {
         <canvas ref="overlayRef" class="cn-surface__canvas cn-surface__canvas--overlay"></canvas>
         <TextEditingOverlay ref="textEditRef" :editor="editor" />
         <ContextMenu ref="contextMenuRef" :editor="editor" />
+        <!-- 查找条（find-replace 工单 03）：会话开合归内核 ui.find，⌘F 经 useShortcuts
+             桥分派 beginFind 后在此呈现；Esc（含焦点漂出输入框的窗口转发）/聚焦归面板 -->
+        <FindBar ref="findBarRef" :editor="editor" />
         <!-- 拖文件悬停高亮（kbd-nav 工单 05）：提示可松手；不拦事件（drop 落宿主） -->
         <div v-if="dragActive" class="cn-surface__drop-hint" data-drop-hint>
             <span class="cn-surface__drop-hint-text">松开以上传图片</span>

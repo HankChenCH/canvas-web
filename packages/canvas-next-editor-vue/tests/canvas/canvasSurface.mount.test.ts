@@ -6,11 +6,14 @@
  *   覆盖层画笔被调），两层各自挂了监听
  * - DPR 变更（跨屏拖动/系统缩放）：分辨率媒体查询自再注册 → setDevicePixelRatio
  *   传导进会话（覆盖层收到的 dpr = 新值），双层重绘；画布坐标语义不变（不漂移）
+ * - 内挂 FindBar（find-replace 工单 03）：随会话开合呈现；焦点漂出输入框后
+ *   Esc 经窗口监听转发关闭（浮层先例协议，ContextMenu 同款）
  *
  * jsdom 无真实 2D context/ResizeObserver/matchMedia，按组件契约补最小桩：
  * 重绘驱动用手动帧调度器，呈现结果经录制后端与覆盖层画笔读数断言。
  */
 import { afterEach, describe, expect, it } from 'vitest'
+import { nextTick } from 'vue'
 import { mount } from '@vue/test-utils'
 
 import { EditorSession, type FrameScheduler, type OverlayPainter } from '@hankchen/canvas-next-editor'
@@ -202,6 +205,24 @@ describe('DPR/屏幕变更即时适配（工单 15）', () => {
         scheduler.flush()
 
         expect(overlayDprs).toEqual([3])
+        cleanup()
+    })
+})
+
+describe('内挂 FindBar：随会话开合与 Esc 转发关闭（find-replace 工单 03）', () => {
+    it('⌘F 分派开会话后条即呈现；焦点漂出输入框（画布/正文）按 Esc 经窗口监听关闭', async () => {
+        const { editor, cleanup } = mountSurface()
+        expect(document.querySelector('[data-find-bar]')).toBeNull()
+
+        editor.beginFind()
+        await nextTick()
+        expect(document.querySelector('[data-find-bar]')).not.toBeNull()
+
+        // 焦点在正文（非可编辑目标）：窗口级 Escape 转发 close——ContextMenu 同款协议
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+        await nextTick()
+        expect(document.querySelector('[data-find-bar]')).toBeNull()
+        expect(editor.store.ui.find.open).toBe(false)
         cleanup()
     })
 })
