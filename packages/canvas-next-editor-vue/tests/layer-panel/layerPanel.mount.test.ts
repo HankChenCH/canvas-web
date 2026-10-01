@@ -335,6 +335,17 @@ describe('LayerPanel：V2 绑定面（工票 03）', () => {
         ])
         wrapper.unmount()
     })
+
+    it('新增菜单右对齐展开：右缘对齐 + 按钮向面板内侧打开——aside 是 overflow 滚动容器，左对齐形态菜单越出面板缘的部分被裁剪（选择框被遮挡；jsdom 无几何，锁机制类，几何回归由浏览器回路把守）', async () => {
+        const editor = makeEditor([])
+        const wrapper = mount(LayerPanel, { props: { editor } })
+
+        await wrapper.find('[data-add-menu]').trigger('click')
+        const menu = wrapper.find('[data-add-layer]').element.parentElement as HTMLElement
+        expect(menu.className).toContain('right-0')
+        expect(menu.className).not.toContain('left-0')
+        wrapper.unmount()
+    })
 })
 
 describe('LayerPanel：行卡片化 + 拖拽把手（工单 08）', () => {

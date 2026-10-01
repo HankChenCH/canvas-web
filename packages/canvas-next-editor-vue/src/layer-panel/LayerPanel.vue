@@ -406,9 +406,11 @@ watch(panel.renaming, async (path) => {
                     >
                         +
                     </button>
+                    <!-- 右对齐展开：aside 是 overflow 滚动容器，菜单越出面板缘的部分会被
+                         裁剪（选择框被遮挡）——右缘对齐 + 按钮向面板内侧打开（w-40 < 面板宽） -->
                     <div
                         v-if="addMenuOpen"
-                        class="absolute left-0 top-7 flex w-40 flex-col rounded-lg border border-cn-line bg-cn-bg-elevated p-1 shadow-[0_12px_32px_rgba(2,6,23,0.55)]"
+                        class="absolute right-0 top-7 flex w-40 flex-col rounded-lg border border-cn-line bg-cn-bg-elevated p-1 shadow-[0_12px_32px_rgba(2,6,23,0.55)]"
                     >
                         <template v-if="!templateFormOpen">
                             <button
