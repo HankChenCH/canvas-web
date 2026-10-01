@@ -11,9 +11,10 @@
 // 工单 03：工具栏语义分组——文件（打开/保存/上传图片）｜历史（撤销/重做）｜插入
 // （＋文本/＋图片/＋二维码/＋表格，直调 editor.addRootLayer，与图层面板头「＋」
 // 同款动作并存保留，新层置顶并自动选中）。
-// 工单 04：缩放浮条——画布右下角宿主级悬浮条浮于 CanvasSurface 之上（− / %只读 /
-// ＋ / 适应画布 / 适应选区 / 1:1），工具栏缩放控件整组摘除：全壳缩放入口唯一
-// （浮条）、缩放读数唯一归状态栏；ctrl/cmd+滚轮缩放不变。
+// 工单 04：工具栏缩放控件整组摘除、缩放读数唯一归状态栏；ctrl/cmd+滚轮缩放不变。
+// kbd-nav 工单 06：缩放浮条退役（App.vue 浮条段与 zoomBy/zoomTo100/fitToCanvas/
+// fitToSelection 宿主辅助拆除），缩放入口归一状态栏缩放控件（工单 04 弹层菜单）；
+// HelpDialog 挂载——⌘/ 与状态栏「快捷键」入口随组件与桥自带，宿主零键位代码。
 // 工单 05：全视口暗色工作台壳——.stage 100vh 四行网格（头栏 48 / 工具栏 44 /
 // 工作台 1fr / 状态栏 auto≈30），页面零滚动；去 1240px 锁宽（四行全宽、画布区
 // 垂直撑满）；壳层暗色统一（#070d18 页底 + #0b1220 面板族令牌，工具栏钮 ghost
@@ -21,7 +22,7 @@
 // StatusBar 令牌零改动，两面板宽度 232/288 与交互不动。
 // layer-align-snap 工单 03：对齐浮条宿主接线——canvas 域 AlignFloatBar 挂画布
 // 容器顶部居中（原型 FIG.2 落位），宿主只做定位；逐键 data-align-* 钩子由组件
-// 自带（工单 02），根钩子 data-align-float 供目验定位。缩放浮条右下落位不动。
+// 自带（工单 02），根钩子 data-align-float 供目验定位。
 // content-completion 工单 11：样例换装证书 form-data schema（与工单 08 内核
 // fixture 同源）+ demoGraph 表达式键树对齐 + 注入面板编译诊断展示（直取
 // parseExpressionSchema 返回面，D12；内核 console.warn 收口不变），注入键扩为
@@ -33,7 +34,7 @@
 // shortcuts 注册表自带（useShortcuts 已接），宿主零键位代码；data-ruler-* /
 // data-guide-* / data-snap-* 钩子组件自带。挂点次序：参考线层在标尺之前——拖回
 // 删除的落点判定（elementFromPoint 命中 data-ruler-*）要求标尺条盖在参考线命中条
-// 之上。对齐浮条顶部居中与缩放浮条右下落位不动。
+// 之上。对齐浮条顶部居中落位不动。
 import { computed, nextTick, onBeforeUnmount, provide, ref, watch } from 'vue'
 
 import {
@@ -48,6 +49,7 @@ import { EditorSession, parseExpressionSchema } from '@hankchen/canvas-next-edit
 import type { ExpressionSchemaDiagnostic, FontCatalogEntry, UploadFile } from '@hankchen/canvas-next-editor'
 import {
     FONT_PICKER_KEY,
+    HelpDialog,
     StatusBar,
     formatLayerPath,
     uploadFileFromDom,
@@ -64,7 +66,6 @@ import {
     PropertyPanel,
     Ruler,
     useHistory,
-    useViewport,
     type CanvasSurfaceReady,
 } from '@hankchen/canvas-next-editor-vue'
 import type { OverlayPainter } from '@hankchen/canvas-next-editor'
@@ -170,8 +171,6 @@ function onUploadImageClick(): void {
     imageInput.value?.click()
 }
 
-const viewport = useViewport(editor)
-const zoomPercent = computed(() => Math.round(viewport.value.zoom * 100))
 const { canUndo, canRedo } = useHistory(editor)
 // 快捷键注册表的绑定桥（工单 14）：撤销/重做/复制/粘贴/副本/删除走集中注册表；
 // Ctrl/Cmd+S 保存是宿主职责，仍在下方 onKeydown 自理。让路规则（文本编辑态/
@@ -450,12 +449,6 @@ function onReady({ contentCanvas, overlayCanvas }: CanvasSurfaceReady) {
     editor.fitToSurface() // 初始进入：整页 fit-min 语义
 }
 
-// 缩放浮条（工单 04）：以当前视口中心为锚做倍率/复位，平移不跳变
-function zoomBy(factor: number): void {
-    const { width, height } = editor.getSurfaceSize()
-    editor.zoomAt(width / 2, height / 2, viewport.value.zoom * factor)
-}
-
 /** 键盘：仅 Ctrl/Cmd+S（保存是宿主职责，不入内核注册表）。文本编辑中键盘路由
  *  进 textarea：Ctrl+Z 撤「输入」而非文档（useShortcuts 的让路规则同源裁决），
  *  保存同理不抢。其余快捷键（撤销/重做/复制/粘贴/副本/删除）已由 useShortcuts
@@ -470,19 +463,6 @@ function onKeydown(event: KeyboardEvent): void {
     }
 }
 window.addEventListener('keydown', onKeydown)
-
-function zoomTo100(): void {
-    const { width, height } = editor.getSurfaceSize()
-    editor.zoomAt(width / 2, height / 2, 1)
-}
-
-function fitToCanvas(): void {
-    editor.fitToSurface()
-}
-
-function fitToSelection(): void {
-    editor.fitToSelection()
-}
 
 // ---- 桌面网格（原型）：区分画布与背景的底纹开关 ----
 
@@ -543,8 +523,9 @@ onBeforeUnmount(() => {
              并存保留，就近补充不回退既有能力；新层置顶 priority = min−1 并自动选中，
              一次调用 = 一步历史）。上传图片维持 uploadHandler 管线与 data-upload-image
              钩子。分组视觉用分隔线语义（toolbar-divider 延伸），按钮 ghost 形态随
-             工单 05 暗色壳统一落定（插入组亮色引导高频动作）。缩放控件已整组摘除
-             归画布右下浮条（工单 04）；目验样图
+             工单 05 暗色壳统一落定（插入组亮色引导高频动作）。缩放控件已整组摘除，
+             缩放入口唯一归状态栏缩放控件（工单 04；kbd-nav 工单 06 缩放浮条退役）；
+             目验样图
              与 schema 三键已在工单 02 迁入帮助抽屉。标尺/网格在工单 03 时点不出现
              （⑥ 范围外，不放死按钮）——网格开关后以视图组入列（宿主侧原型，调研
              见 .scratch/canvas-web/canvas-grid-research.md）；标尺仍不设钮（常显
@@ -601,9 +582,10 @@ onBeforeUnmount(() => {
 
         <section class="workbench" aria-label="画布与面板">
             <LayerPanel :editor="editor" />
-            <!-- canvas-area：浮条的宿主级定位上下文（工单 04）。浮条是 CanvasSurface
-                 的兄弟而非子元素——画布事件桥全部挂在 .cn-surface 上，浮条点击不会
-                 透进画布（不触发点选/平移），画布右下角浮条外的点击照常命中画布。 -->
+            <!-- canvas-area：画布覆盖物（标尺/参考线/对齐浮条）的宿主级定位上下文。
+                 覆盖物是 CanvasSurface 的兄弟而非子元素——画布事件桥全部挂在
+                 .cn-surface 上，覆盖物点击不会透进画布（不触发点选/平移）。
+                 缩放浮条 kbd-nav 工单 06 起退役，缩放入口唯一归状态栏缩放控件。 -->
             <div class="canvas-area">
                 <CanvasSurface class="surface" :editor="editor" @ready="onReady" />
                 <!-- 参考线/吸附线层（ruler-guides-snap 工单 04，spec 决策 4/5）：root
@@ -632,34 +614,11 @@ onBeforeUnmount(() => {
                 </div>
                 <!-- 对齐浮条（layer-align-snap 工单 03，spec 决策 3）：画布容器顶部
                      居中宿主级挂载（原型 FIG.2 .float.align 落位），浮于 CanvasSurface
-                     之上。与缩放浮条同款兄弟挂点——画布事件桥全在 .cn-surface 上，
-                     浮条点击不透进画布。组件自身零页面定位（工单 02），宿主只出
-                     .align-float 定位壳；暗色令牌组件自带（#0b1220 族与壳层面板同
-                     值），选中态/禁用态/逐键 data-align-* 钩子全在组件内。 -->
+                     之上——画布事件桥全在 .cn-surface 上，浮条点击不透进画布。
+                     组件自身零页面定位（工单 02），宿主只出 .align-float 定位壳；
+                     暗色令牌组件自带（#0b1220 族与壳层面板同值），选中态/禁用态/
+                     逐键 data-align-* 钩子全在组件内。 -->
                 <AlignFloatBar class="align-float" :editor="editor" />
-                <!-- 缩放浮条（playground-canvas-first 工单 04，spec 决策 5）：画布右下角
-                     呼吸边悬浮条，就近鼠标工作区。键序 − / %（只读，等宽字体）/ ＋ /
-                     适应画布 / 适应选区 / 1:1，全部沿用现有视口语义：± 以视口中心为锚
-                     （zoomBy）、适应画布 = fitToSurface、适应选区 = fitToSelection、
-                     1:1 = zoomTo100；ctrl/cmd+滚轮缩放不变（CanvasSurface 事件桥）。
-                     % 是操作组旁的只读伴随显示（原型 FIG.2 同款），全壳读数归口仍唯一
-                     在状态栏（data-zoom 钩子只在状态栏）；工具栏缩放控件本单摘除。
-                     暗色按原型配色内联（#0b1220 族 = 状态栏 --cn-bg 同源令牌），壳层
-                     统一归工单 05。 -->
-                <div class="zoom-float" role="toolbar" aria-label="缩放" data-zoom-float>
-                    <span class="zoom-float__group">
-                        <button type="button" class="zoom-float__key" data-zoom-out title="缩小（以视口中心为锚）" @click="zoomBy(1 / 1.25)">−</button>
-                        <span class="zoom-float__pct">{{ zoomPercent }}%</span>
-                        <button type="button" class="zoom-float__key" data-zoom-in title="放大（以视口中心为锚）" @click="zoomBy(1.25)">＋</button>
-                    </span>
-                    <span class="zoom-float__group">
-                        <button type="button" class="zoom-float__key zoom-float__key--text" data-zoom-fit title="视口适配整幅画布（留 fit 呼吸边）" @click="fitToCanvas">适应画布</button>
-                        <button type="button" class="zoom-float__key zoom-float__key--text" data-zoom-fit-selection title="视口适配当前选中的图层盒" @click="fitToSelection">适应选区</button>
-                    </span>
-                    <span class="zoom-float__group">
-                        <button type="button" class="zoom-float__key zoom-float__key--text" data-zoom-100 title="缩放复位 100%（以视口中心为锚）" @click="zoomTo100">1:1</button>
-                    </span>
-                </div>
             </div>
             <PropertyPanel :editor="editor" />
         </section>
@@ -676,6 +635,12 @@ onBeforeUnmount(() => {
             :save-state="isDirty ? 'dirty' : 'clean'"
             :feedback="docNote"
         />
+
+        <!-- 快捷键帮助面板（kbd-nav 工单 06 挂载，工单 04 组件）：Teleport body
+             自带令牌；开合态是 useShortcutsHelp 单例——⌘/ 入口随 useShortcuts 桥、
+             状态栏「快捷键」段按钮随 StatusBar，双入口共享同一 open 态，宿主
+             零键位代码、全壳挂载一次。 -->
+        <HelpDialog />
 
         <!-- 帮助抽屉（playground-canvas-first 工单 02，spec 决策 2）：头栏「帮助」开
              的宿主级浮层，Teleport 到 body（fixed 定位不占文档流，不破工单 05 的
@@ -704,8 +669,8 @@ onBeforeUnmount(() => {
                             <ul>
                                 <li><b>剪贴板（工单 14）</b>：选中图层后 <b>Ctrl/Cmd+C</b> 复制、<b>Ctrl/Cmd+V</b> 粘贴、<b>Ctrl/Cmd+D</b> 创建副本（右键菜单「创建副本」同款）；复制的是<b>整棵子树深拷贝</b>（表格连行/格/内容一起复制，复制后改原件不影响粘贴产物）；粘贴<b>置顶</b>（priority = min−1）且位置偏移 +20 不与原件重叠，连续粘贴偏移递增（+20、+40…）互不压叠；一次粘贴/副本 = 一步历史，Ctrl/Cmd+Z 可撤销；副本不覆盖剪贴板（复制 A → 副本 B → 粘贴仍出 A）；行/格不可复制（容器内结构），格内容可复制出表</li>
                                 <li><b>右键菜单（工单 14）</b>：画布上<b>右键点图层</b> = 选中并弹出最小菜单（创建副本/置顶/置底/删除）——按视口坐标定位（pan/zoom 不跟随、画布边缘自动钳位）；可用态随选择裁剪：置顶/置底只对根层生效（表格行/格是数组序语义），菜单上右键/点菜单外/Esc/执行动作即关；textarea 内右键仍是浏览器原生菜单</li>
-                                <li><b>快捷键（工单 14 注册表）</b>：Ctrl/Cmd+Z 撤销、Ctrl/Cmd+Shift+Z（或 Ctrl+Y）重做、Delete/Backspace 删除选中图层、Ctrl/Cmd+C/V/D 剪贴板三件套、<b>⇧⌘L 锁定/解锁选中根层、⇧⌘H 显隐选中根层</b>（canvas-web-layer-lock 工单 02 补位）；<b>文本编辑态与输入框焦点自动让路</b>——编辑文本时 Delete/Backspace 只改文字不删图层、Ctrl/Cmd+Z 撤「输入」、属性面板输入框内原生编辑优先；输入法候选窗里的按键不误触发（isComposing/229 守卫）</li>
-                                <li><b>状态栏（工单 14）</b>：画布下方的暗色读数条 = <b>缩放百分比</b>（随 ctrl/cmd+滚轮实时更新）· <b>选中图层路径</b>（图层 N · 行 N · 格 N · 格内容，未选中回落文案）· <b>物化进行数</b>（在途资源装载 &gt; 0 时显示「物化中 N」，归零隐藏）</li>
+                                <li><b>快捷键面板（kbd-nav 工单 04/06）</b>：<b>⌘/（Ctrl+/）或状态栏「快捷键」按钮</b>打开快捷键面板——注册表驱动列出全部键位（撤销/重做/删除/剪贴板/z 序四件套/方向键微调/循环选层/缩放/锁定与显隐/⇧R 标尺，新动作自动入面板）与内置交互（滚轮缩放/空格平移/双击编辑/Esc/方向键微调/Tab 循环）；<b>文本编辑态与输入框焦点自动让路</b>——编辑文本时 Delete/Backspace 只改文字不删图层、Ctrl/Cmd+Z 撤「输入」、属性面板输入框内原生编辑优先；输入法候选窗里的按键不误触发（isComposing/229 守卫）</li>
+                                <li><b>状态栏（工单 14）</b>：画布下方的暗色读数条 = <b>缩放百分比</b>（随 ctrl/cmd+滚轮实时更新；<b>点击弹缩放菜单</b>——100%/适应画布/适应选区/放大/缩小，kbd-nav 工单 06 起缩放浮条退役、全壳缩放入口唯一归此）· <b>选中图层路径</b>（图层 N · 行 N · 格 N · 格内容，未选中回落文案）· <b>物化进行数</b>（在途资源装载 &gt; 0 时显示「物化中 N」，归零隐藏）</li>
                                 <li><b>保存 / 打开（工单 13）</b>：<b>保存</b>（Ctrl/Cmd+S 或顶栏按钮）= 导出 canonical graph JSON 文件；<b>打开</b> = 解码回编辑器，再次打开无损复原（编辑→保存→打开→再保存字节级恒等）；保存时机归宿主，内核只经 store 订阅暴露「文档已变更」信号——顶部 <b>● 未保存</b> 标记随文档变更点亮、保存/打开后复位（撤销回已保存状态同样复位）；关闭页面前有未保存变更会弹确认</li>
                                 <li><b>导出 PNG（预览图，非终图）</b>：顶栏「导出 PNG」先<b>等待全部资源物化</b>（慢资源在途时按钮显示「导出中…」、读数提示进行中），再全幅渲染下载；出图写入 PNG 元数据标注（tEXt: CanvasNext = preview render, not the final image）+ 文件名 <code>-preview.png</code> 后缀——<b>终图由服务端渲染端依据 graph JSON 权威产出</b>（ADR 0004），物化失败的资源以占位出图并在读数中注明</li>
                                 <li><b>上传（本机资源 → 可物化引用）</b>：顶栏「上传图片」选本机图片 → 内核 uploadHandler 注入点转成引用 → 自动新建图片图层并选中（上传+建层 = 一步历史可撤销）；playground 以 <b>data URL 兜底</b>实现（内联进保存产物，可离线演示；生产宿主接自己的存储返回 URL）；<b>core 不内置任何上传实现</b>——未注入时上传入口禁用、动作抛明确错误（降级提示）</li>
@@ -807,8 +772,8 @@ onBeforeUnmount(() => {
    44 / 工作台 1fr / 状态栏 auto（组件自然高 ≈30），页面零滚动。小视口降级：工作台
    行压缩（minmax(0,1fr)）+ 面板自内滚 + 工具栏横向内滚，不回退成页滚。壳层暗色
    令牌 = 原型 #070d18/#0b1220 族（与状态栏 --cn-bg 同源）；editor-vue 面板/状态栏
-   令牌零改动。浮条随 .stage 级联取令牌；帮助抽屉 Teleport 出 body，自带一份同值
-   令牌块（工单 04 内联字面量在此吸收）。 */
+   令牌零改动。对齐浮条随 .stage 级联取令牌；帮助抽屉 Teleport 出 body，自带一份
+   同值令牌块（工单 04 内联字面量在此吸收）。 */
 .stage {
     --shell-bg: #070d18;
     --shell-panel: #0b1220;
@@ -1018,8 +983,8 @@ onBeforeUnmount(() => {
     border-top: 1px solid var(--shell-line);
 }
 
-/* 工单 04：画布容器 = 缩放浮条的定位上下文。flex:1 从 .surface 移到本层，
-   surface 以 100% 填满；浮条是 surface 的兄弟元素（见模板注释） */
+/* 画布容器 = 覆盖物（标尺/参考线/对齐浮条）的定位上下文；flex:1 从 .surface
+   移到本层，surface 以 100% 填满（缩放浮条 kbd-nav 工单 06 起退役，见模板注释） */
 .canvas-area {
     position: relative;
     flex: 1;
@@ -1054,82 +1019,14 @@ onBeforeUnmount(() => {
 }
 
 /* 对齐浮条（layer-align-snap 工单 03）：宿主只出定位——画布容器顶部居中
-   （原型 FIG.2 .float.align 同款 top 14 + translateX 居中，14 呼吸边与右下
-   缩放浮条一致）；浮于画布之上的层次 z-index 与缩放浮条同级。暗色观感是
-   组件自带令牌，宿主不再着色。 */
+   （原型 FIG.2 .float.align 同款 top 14 + translateX 居中）；浮于画布之上
+   z-index 10。暗色观感是组件自带令牌，宿主不再着色。 */
 .align-float {
     position: absolute;
     top: 14px;
     left: 50%;
     z-index: 10;
     transform: translateX(-50%);
-}
-
-/* 缩放浮条（工单 04）：定位与点击隔离依据见模板注释（canvas-area 挂点）。
-   暗色原为工单 04 按原型内联的字面量，工单 05 吸收为 .stage 级联令牌（同值），
-   并补原型浮条的投影与毛玻璃（浮于暗色桌面上增加层次）。 */
-.zoom-float {
-    position: absolute;
-    right: 14px;
-    bottom: 14px;
-    z-index: 10;
-    display: flex;
-    align-items: center;
-    padding: 5px 8px;
-    border: 1px solid var(--shell-line-strong);
-    border-radius: 9px;
-    background: var(--shell-panel-92);
-    box-shadow: 0 10px 26px rgb(0 0 0 / 0.45);
-    backdrop-filter: blur(4px);
-    user-select: none;
-}
-
-/* 分组：缩放步进（− % ＋）/ 适应族（适应画布/适应选区）/ 复位（1:1），
-   组间分隔线沿用原型 .float .fg 语义 */
-.zoom-float__group {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    padding: 0 6px;
-    border-right: 1px solid var(--shell-line-strong);
-}
-
-.zoom-float__group:last-child {
-    border-right: 0;
-}
-
-.zoom-float__key {
-    display: grid;
-    place-content: center;
-    min-width: 24px;
-    height: 24px;
-    padding: 0 2px;
-    border: none;
-    border-radius: 6px;
-    background: transparent;
-    font-size: 14px;
-    line-height: 1;
-    color: var(--shell-fg);
-    cursor: pointer;
-}
-
-.zoom-float__key--text {
-    padding: 0 8px;
-    font-size: 12px;
-}
-
-.zoom-float__key:hover {
-    background: var(--shell-hover);
-}
-
-/* 只读百分比：等宽字体 + 表格数字（与状态栏缩放段同一呈现口径） */
-.zoom-float__pct {
-    min-width: 46px;
-    text-align: center;
-    font-family: var(--shell-font-mono);
-    font-size: 12.5px;
-    font-variant-numeric: tabular-nums;
-    color: var(--shell-fg);
 }
 
 /* 帮助抽屉（工单 02）：宿主级浮层，右缘滑出面板 + 半透明遮罩；Teleport 到 body，
