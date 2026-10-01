@@ -7,6 +7,8 @@
  * - 菜单根拦截 pointerdown 冒泡（不触发画布点选关闭路径误动作）
  * - 样式复制/粘贴两项（canvas-web-style-paste 工单 02）：渲染/可用态/置灰
  *   title/分发（内核只读查询口 + 动作口；样式槽无响应式足迹，打开时重算）
+ * - 键位提示文案（复制样式/锁定解锁）按宿主平台渲染两形态（shortcutsHelp
+ *   平台 helper 直查注册表，文案不另抄键位）
  */
 import { describe, expect, it, beforeAll, afterAll, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
@@ -115,7 +117,8 @@ describe('ContextMenu：可用态裁剪（v1 单选 + 根层语义）', () => {
         // 粘贴样式置灰（样式槽空）；其余全可用
         expect(disabled).toEqual([false, false, false, true, false, false, false, false, false])
         const paste = buttons.find((b) => b.text() === '粘贴样式')!
-        expect(paste.attributes('title')).toContain('⌥⌘C')
+        // 键位提示按平台渲染（jsdom navigator.platform 为空 → win 文本系；mac 形态另测）
+        expect(paste.attributes('title')).toContain('Ctrl+Alt+C')
         wrapper.unmount()
     })
 
@@ -340,7 +343,8 @@ describe('ContextMenu：锁定层删除项置灰（canvas-web-layer-lock 工单 
         await wrapper.vm.openAt(10, 10)
         const del = itemButtons(wrapper).find((b) => b.text() === '删除')!
         expect(del.attributes('disabled')).toBeDefined()
-        expect(del.attributes('title')).toContain('锁定')
+        // 键位提示按平台渲染（jsdom 缺省 win 文本系）
+        expect(del.attributes('title')).toBe('图层已锁定（Ctrl+Shift+L 解锁后可删除）')
         // 锁定只挡误操作：显隐/置顶照常可用（刻意通道不受限）
         expect(itemButtons(wrapper)[0]!.attributes('disabled')).toBeUndefined()
         wrapper.unmount()
@@ -350,6 +354,24 @@ describe('ContextMenu：锁定层删除项置灰（canvas-web-layer-lock 工单 
         await wrapper2.vm.openAt(10, 10)
         expect(itemButtons(wrapper2).find((b) => b.text() === '删除')!.attributes('disabled')).toBeUndefined()
         wrapper2.unmount()
+    })
+
+    it('键位提示 mac 形态（navigator 桩）：粘贴样式 ⌥⌘C、锁定删除 ⇧⌘L', async () => {
+        const original = window.navigator
+        Object.defineProperty(window, 'navigator', { value: { platform: 'MacIntel' }, configurable: true })
+        try {
+            const editor = makeEditor([textLayer({ priority: 10 })])
+            editor.toggleLayerLock(['layers', 0])
+            editor.setSelection(['layers', 0])
+            const wrapper = mountMenu(editor)
+            await wrapper.vm.openAt(10, 10)
+            const buttons = itemButtons(wrapper)
+            expect(buttons.find((b) => b.text() === '粘贴样式')!.attributes('title')).toBe('先 ⌥⌘C 复制样式')
+            expect(buttons.find((b) => b.text() === '删除')!.attributes('title')).toBe('图层已锁定（⇧⌘L 解锁后可删除）')
+            wrapper.unmount()
+        } finally {
+            Object.defineProperty(window, 'navigator', { value: original, configurable: true })
+        }
     })
 
     it('锁定根层的行/格子树：右键不可达路径兜底（面板选中行）删除项同样 disabled', async () => {

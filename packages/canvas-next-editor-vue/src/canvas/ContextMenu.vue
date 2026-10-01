@@ -25,12 +25,19 @@ import { computed, nextTick, ref } from 'vue'
 import { isRootLayerPath, rootLayerOf, type EditorSession, type LayerPath } from '@hankchen/canvas-next-editor'
 
 import { useSelection } from '../shared/useSelection'
+import { detectShortcutPlatform, shortcutActionLabel } from '../shared/shortcutsHelp'
 
 const props = defineProps<{ editor: EditorSession }>()
 
 const rootRef = ref<HTMLElement | null>(null)
 const open = ref(false)
 const position = ref({ x: 0, y: 0 })
+
+// 键位提示按宿主平台渲染两形态（⌥⌘C 或 Ctrl+Alt+C 等）：直查注册表，文案不另抄
+// 键位；平台不会话中变更，挂载时求值一次
+const shortcutPlatform = detectShortcutPlatform()
+const copyStyleHint = `先 ${shortcutActionLabel('copyStyle', shortcutPlatform)} 复制样式`
+const lockedHint = `图层已锁定（${shortcutActionLabel('toggleLayerLock', shortcutPlatform)} 解锁后可删除）`
 
 const selection = useSelection(props.editor)
 
@@ -155,7 +162,8 @@ const items = computed<MenuItem[]>(() => [
         run: () => props.editor.duplicateSelection(),
     },
     // 样式两项（canvas-web-style-paste 工单 02，spec 决策 7）：执行经内核动作，
-    // ⌥⌘C/V 键位随注册表自带（零键位代码）；复制项替身置灰 + title（适用面为空，
+    // ⌥⌘C/V 键位随注册表自带（零键位代码；置灰提示键位经 shortcutsHelp 按平台
+    // 直查注册表）；复制项替身置灰 + title（适用面为空，
     // 置灰 + title 统一先例），粘贴项槽空置灰 + title 说明
     {
         key: 'copy-style',
@@ -171,7 +179,7 @@ const items = computed<MenuItem[]>(() => [
         key: 'paste-style',
         label: '粘贴样式',
         enabled: canPasteStyle.value,
-        title: canPasteStyle.value ? undefined : '先 ⌥⌘C 复制样式',
+        title: canPasteStyle.value ? undefined : copyStyleHint,
         run: () => {
             const path = selection.value
             if (path) props.editor.pasteStyle(path)
@@ -247,7 +255,7 @@ const items = computed<MenuItem[]>(() => [
         title: isTemplateRowSelection.value
             ? '行模板由表持有——转换回普通表请用 V2 转换入口'
             : lockedSelection.value
-                ? '图层已锁定（⇧⌘L 解锁后可删除）'
+                ? lockedHint
                 : undefined,
         run: () => {
             const path = selection.value

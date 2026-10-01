@@ -818,4 +818,28 @@ describe('LayerPanel：锁定（canvas-web-layer-lock 工单 02）', () => {
         expect(editor.store.history).toHaveLength(0)
         wrapper.unmount()
     })
+
+    it('锁定钮/删除钮的键位提示按平台渲染：缺省 win 文本系（Ctrl+Shift+L），mac 桩 ⇧⌘L', async () => {
+        const editor = makeEditor([textLayer(10, '顶')])
+        editor.toggleLayerLock(['layers', 0]) // 锁定行：锁定钮常显 + 删除钮置灰，两处 title 带键位提示
+        const original = window.navigator
+        Object.defineProperty(window, 'navigator', { value: { platform: 'MacIntel' }, configurable: true })
+        try {
+            const wrapper = mount(LayerPanel, { props: { editor } })
+            const lock = wrapper.find('[data-lock]')
+            const remove = wrapper.findAll('button').find((button) => button.text() === '✕')!
+            expect(lock.attributes('title')).toBe('解锁图层（⇧⌘L）')
+            expect(remove.attributes('title')).toBe('图层已锁定（⇧⌘L 解锁后可删除）')
+            wrapper.unmount()
+        } finally {
+            Object.defineProperty(window, 'navigator', { value: original, configurable: true })
+        }
+
+        const wrapper = mount(LayerPanel, { props: { editor } })
+        expect(wrapper.find('[data-lock]').attributes('title')).toBe('解锁图层（Ctrl+Shift+L）')
+        expect(wrapper.findAll('button').find((button) => button.text() === '✕')!.attributes('title')).toBe(
+            '图层已锁定（Ctrl+Shift+L 解锁后可删除）',
+        )
+        wrapper.unmount()
+    })
 })

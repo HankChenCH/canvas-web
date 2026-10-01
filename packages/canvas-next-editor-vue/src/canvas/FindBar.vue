@@ -122,7 +122,8 @@ watch(
 // 与桥分类器 editableTarget 同一口径，本监听不拦默认行为）。
 function onWindowKeydown(e: KeyboardEvent): void {
     if (!open.value) return
-    if (e.key !== 'f' || !(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return
+    // key 小写归一（内核分类器同口径）：大写锁定时 'f' 是 'F'，不归一则重聚焦失效
+    if (e.key.toLowerCase() !== 'f' || !(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return
     if (isEditableEventTarget(e.target)) return
     queryInput.value?.focus({ preventScroll: true })
 }

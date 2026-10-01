@@ -1,14 +1,16 @@
 /**
- * 快捷键帮助面板的展示侧纯函数与常量（kbd-nav 工单 04）。
+ * 快捷键展示侧纯函数与常量（kbd-nav 工单 04）。
  *
  * 分组展示名与分节顺序归本包：内核注册表只定 group 枚举域（注册表即数据），
  * 中文展示名与分节序是 UI 关注点。键位符号按平台渲染两形态——mac 用 ⌥⇧⌘ 符号系
  * （惯例序 ⌥<⇧<⌘，⌘ 贴键），win 用 Ctrl/Shift/Alt 文本系（Microsoft 惯例序
  * Ctrl<Shift<Alt）；注册表存 KeyboardEvent.key 的小写归一形态，方向键/退格等
  * 非打印键在此翻成人可读键帽。无 DOM 依赖（侦测函数读 globalThis.navigator，
- * Node/测试环境空串回落 win）。
+ * Node/测试环境空串回落 win）。除帮助面板外，散落组件的键位提示文案（状态栏
+ * tooltip/右键菜单/图层面板）也经 shortcutActionLabel 直查注册表按平台渲染。
  */
-import type { EditorShortcutGroup, ShortcutCombo } from '@hankchen/canvas-next-editor'
+import type { EditorShortcutAction, EditorShortcutGroup, ShortcutCombo } from '@hankchen/canvas-next-editor'
+import { DEFAULT_EDITOR_SHORTCUTS } from '@hankchen/canvas-next-editor'
 
 export type ShortcutPlatform = 'mac' | 'win'
 
@@ -67,8 +69,26 @@ export function shortcutKeyLabel(combo: ShortcutCombo, platform: ShortcutPlatfor
     return parts.join('+')
 }
 
-/** 平台侦测：navigator.platform/userAgent 含 mac 形态 → mac；未知/其余 → win 文本系 */
+/**
+ * 注册表动作 → 平台键位符号（如 ⌘/ 与 Ctrl+/）：直查内核缺省注册表——注册表是
+ * 键位唯一事实源，提示文案不另抄键位，改键位自动跟随。同动作多注册条目时取
+ * 声明首条（多通道动作如 delete 的展示歧义归帮助面板，本口供无歧义提示用）。
+ */
+export function shortcutActionLabel(action: EditorShortcutAction, platform: ShortcutPlatform): string {
+    const binding = DEFAULT_EDITOR_SHORTCUTS.find((entry) => entry.action === action)
+    return binding ? shortcutKeyLabel(binding.combo, platform) : ''
+}
+
+/**
+ * 平台侦测：userAgentData.platform（Client Hints 新 API，Safari 尚无——三源拼串
+ * 一次匹配）与 platform/userAgent 含 mac 形态 → mac；未知/其余 → win 文本系。
+ * userAgentData 未进全量 TS DOM lib，结构化局部读取免随 lib 版本漂移。
+ */
 export function detectShortcutPlatform(): ShortcutPlatform {
-    const nav = globalThis.navigator
-    return /mac/i.test(`${nav?.platform ?? ''} ${nav?.userAgent ?? ''}`) ? 'mac' : 'win'
+    const nav = globalThis.navigator as
+        | { platform?: string; userAgent?: string; userAgentData?: { platform?: string } }
+        | undefined
+    return /mac/i.test(`${nav?.userAgentData?.platform ?? ''} ${nav?.platform ?? ''} ${nav?.userAgent ?? ''}`)
+        ? 'mac'
+        : 'win'
 }

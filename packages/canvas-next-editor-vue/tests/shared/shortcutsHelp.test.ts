@@ -14,6 +14,7 @@ import {
     SHORTCUT_GROUP_LABELS,
     SHORTCUT_GROUP_ORDER,
     detectShortcutPlatform,
+    shortcutActionLabel,
     shortcutKeyLabel,
 } from '../../src/shared/shortcutsHelp'
 
@@ -80,9 +81,26 @@ describe('分组展示名与分节顺序（归本包：内核只定枚举域）'
     })
 })
 
+describe('shortcutActionLabel：注册表动作 → 平台键位符号（提示文案直查注册表，不另抄键位）', () => {
+    it('帮助面板 ⌘/ 与 Ctrl+/ 两平台', () => {
+        expect(shortcutActionLabel('helpShortcuts', 'mac')).toBe('⌘/')
+        expect(shortcutActionLabel('helpShortcuts', 'win')).toBe('Ctrl+/')
+    })
+
+    it('复制样式 ⌥⌘C 与 Ctrl+Alt+C 两平台（⌥ 变体条目按 code 匹配，展示走 key 形态）', () => {
+        expect(shortcutActionLabel('copyStyle', 'mac')).toBe('⌥⌘C')
+        expect(shortcutActionLabel('copyStyle', 'win')).toBe('Ctrl+Alt+C')
+    })
+
+    it('锁定/解锁 ⇧⌘L 与 Ctrl+Shift+L 两平台', () => {
+        expect(shortcutActionLabel('toggleLayerLock', 'mac')).toBe('⇧⌘L')
+        expect(shortcutActionLabel('toggleLayerLock', 'win')).toBe('Ctrl+Shift+L')
+    })
+})
+
 describe('detectShortcutPlatform：navigator 侦测回落', () => {
-    const stubNavigator = (platform: string, userAgent = ''): void => {
-        Object.defineProperty(window, 'navigator', { value: { platform, userAgent }, configurable: true })
+    const stubNavigator = (platform: string, userAgent = '', userAgentData?: { platform?: string }): void => {
+        Object.defineProperty(window, 'navigator', { value: { platform, userAgent, userAgentData }, configurable: true })
     }
 
     it('Mac 平台形态 → mac；Windows/未知（含 jsdom 空串）→ win', () => {
@@ -95,6 +113,13 @@ describe('detectShortcutPlatform：navigator 侦测回落', () => {
         stubNavigator('', 'Mozilla/5.0 (X11; Linux x86_64)')
         expect(detectShortcutPlatform()).toBe('win')
         stubNavigator('')
+        expect(detectShortcutPlatform()).toBe('win')
+    })
+
+    it('userAgentData.platform（Client Hints 新 API）参与侦测：macOS → mac、Windows → win', () => {
+        stubNavigator('', '', { platform: 'macOS' })
+        expect(detectShortcutPlatform()).toBe('mac')
+        stubNavigator('', '', { platform: 'Windows' })
         expect(detectShortcutPlatform()).toBe('win')
     })
 })

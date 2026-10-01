@@ -353,6 +353,32 @@ describe('StatusBar：「快捷键」段按钮（kbd-nav 工单 04，帮助面�
         expect(help.open.value).toBe(false)
         wrapper.unmount()
     })
+
+    // 平台文案（jsdom navigator.platform 为空 → win 文本系；mac 用 navigator 桩）
+    const withNavigator = (nav: Record<string, unknown>, run: () => void): void => {
+        const original = window.navigator
+        Object.defineProperty(window, 'navigator', { value: nav, configurable: true })
+        try {
+            run()
+        } finally {
+            Object.defineProperty(window, 'navigator', { value: original, configurable: true })
+        }
+    }
+
+    it('tooltip 键位提示按平台渲染：缺省 win 文本系（Ctrl+/）', () => {
+        const editor = makeEditor()
+        const wrapper = mountBar(editor)
+        expect(wrapper.find('[data-help]').attributes('title')).toBe('快捷键帮助（Ctrl+/）')
+        wrapper.unmount()
+    })
+
+    it('tooltip 键位提示按平台渲染：mac 形态（⌘/）', () => {
+        withNavigator({ platform: 'MacIntel' }, () => {
+            const wrapper = mountBar(makeEditor())
+            expect(wrapper.find('[data-help]').attributes('title')).toBe('快捷键帮助（⌘/）')
+            wrapper.unmount()
+        })
+    })
 })
 
 describe('StatusBar：瞬时反馈段（宿主注入）', () => {

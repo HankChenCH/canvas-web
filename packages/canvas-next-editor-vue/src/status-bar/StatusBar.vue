@@ -36,6 +36,7 @@ import { formatLayerPath } from './layerPathLabel'
 import { formatLayerGeometry } from './layerGeometryLabel'
 import { useDataSourceSchema } from './useDataSourceSchema'
 import { useDoc } from './useDoc'
+import { detectShortcutPlatform, shortcutActionLabel } from '../shared/shortcutsHelp'
 import { useSelection } from '../shared/useSelection'
 import { useShortcutsHelp } from '../shared/useShortcutsHelp'
 import { useTransientFeedback } from '../shared/useTransientFeedback'
@@ -93,6 +94,10 @@ const zoomMenuOpen = ref(false)
 
 /** 帮助面板单例开合（「快捷键」段按钮；⌘/ 走 useShortcuts 桥共享同一 open 态） */
 const { toggle: toggleHelp } = useShortcutsHelp()
+
+/** 键位提示按宿主平台渲染两形态（⌘/ 或 Ctrl+/）：直查注册表，文案不另抄键位；
+ *  平台不会话中变更，挂载时求值一次 */
+const helpTitle = `快捷键帮助（${shortcutActionLabel('helpShortcuts', detectShortcutPlatform())}）`
 
 /** 包内瞬时反馈单例（kbd-nav 工单 05）：canvas 域拖放降级等直写，这里补位显示 */
 const transient = useTransientFeedback()
@@ -204,7 +209,7 @@ onBeforeUnmount(() => {
             class="cn-statusbar__segment cn-statusbar__help"
             data-help
             aria-haspopup="dialog"
-            title="快捷键帮助（⌘/）"
+            :title="helpTitle"
             @click="toggleHelp"
         >
             快捷键

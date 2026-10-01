@@ -254,6 +254,18 @@ describe('FindBar：重复 ⌘F 重新聚焦（spec 决策 5）', () => {
         wrapper.unmount()
     })
 
+    it('大写锁定（key=F）同款聚焦：键名小写归一（与内核分类器同口径）', async () => {
+        const editor = makeEditor()
+        editor.beginFind()
+        const wrapper = mountBar(editor)
+        await nextTick()
+        ;(document.activeElement as HTMLElement).blur()
+
+        press({ key: 'F', metaKey: true })
+        expect(document.activeElement).toBe(wrapper.find('[data-find-query]').element)
+        wrapper.unmount()
+    })
+
     it('焦点在替换输入框时：⌘F 让路不抢焦点（editableTarget 既有规则）', async () => {
         const editor = makeEditor()
         editor.beginFind()

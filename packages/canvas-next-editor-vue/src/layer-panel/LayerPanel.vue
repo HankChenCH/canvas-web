@@ -31,8 +31,14 @@ import {
 } from '@hankchen/canvas-next-editor'
 
 import PanelIcon from '../shared/PanelIcon.vue'
+import { detectShortcutPlatform, shortcutActionLabel } from '../shared/shortcutsHelp'
 import { isUpperHalf, useLayerPanel } from './useLayerPanel'
 const props = defineProps<{ editor: EditorSession }>()
+
+// 键位提示按宿主平台渲染两形态（⇧⌘L 或 Ctrl+Shift+L）：直查注册表，文案不另抄
+// 键位；平台不会话中变更，挂载时求值一次
+const lockHint = `解锁图层（${shortcutActionLabel('toggleLayerLock', detectShortcutPlatform())}）`
+const lockedDeleteHint = `图层已锁定（${shortcutActionLabel('toggleLayerLock', detectShortcutPlatform())} 解锁后可删除）`
 
 const panel = useLayerPanel(props.editor)
 
@@ -549,7 +555,7 @@ watch(panel.renaming, async (path) => {
                     data-lock
                     class="cn-layers__lock size-5 shrink-0 items-center justify-center rounded text-cn-muted hover:bg-cn-accent/15 hover:text-cn-accent"
                     :class="row.node.locked ? 'flex' : 'hidden group-hover:flex'"
-                    :title="row.node.locked ? '解锁图层（⇧⌘L）' : '锁定图层（画布不可点选/拖动/删除，渲染照常）'"
+                    :title="row.node.locked ? lockHint : '锁定图层（画布不可点选/拖动/删除，渲染照常）'"
                     :aria-pressed="row.node.locked"
                     @click.stop="toggleLock(row)"
                 >
@@ -605,7 +611,7 @@ watch(panel.renaming, async (path) => {
                     :title="row.node.role === 'templateRow'
                         ? '行模板由表持有——转换回普通表请用 V2 转换入口'
                         : row.node.locked
-                            ? '图层已锁定（⇧⌘L 解锁后可删除）'
+                            ? lockedDeleteHint
                             : '删除（含子层）'"
                     @click.stop="remove(row)"
                 >
