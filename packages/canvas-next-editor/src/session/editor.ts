@@ -81,6 +81,7 @@ import {
     cloneLayerSubtree,
     pastePosition,
     prepareRootPaste,
+    type ClipboardEntry,
 } from '../editing/clipboard'
 import {
     replaceHitsInDraft,
@@ -261,12 +262,13 @@ export class EditorSession {
     private previewSource: Canvas | null = null
     private previewValue: Canvas | null = null
     /**
-     * 会话级剪贴板（工单 14）：复制源的子树深拷贝快照 + 复制时点绝对盒（粘贴落位
-     * 基准，格内容的格内相对 position 据此换算画布绝对落位）+ 连续粘贴计数。
-     * 不跨会话、不碰 OS 剪贴板；openDocument 不清空——粘贴进另一份文档是合法用法
-     * （条目是与源树断开引用的普通对象）。
+     * 会话级剪贴板（工单 14；alt-drag-paste 工单 02 收窄）：复制源的子树深拷贝
+     * 快照 + 复制时点绝对盒（粘贴落位基准，格内容的格内相对 position 据此换算
+     * 画布绝对落位）+ 源路径（粘贴时紧邻插入的解析凭据）。不跨会话、不碰 OS
+     * 剪贴板；openDocument 不清空——粘贴进另一份文档是合法用法（条目是与源树
+     * 断开引用的普通对象；他文档 sourcePath 必失配 → 粘贴退化置顶）。
      */
-    private clipboardEntry: { layer: Layer; sourceBox: LayerBox; pasteCount: number } | null = null
+    private clipboardEntry: ClipboardEntry | null = null
     /**
      * 样式剪贴板（canvas-web-style-paste 工单 01）：源类型 + 适用面逐字段值快照。
      * 与图层剪贴板**分立互不覆盖**（⌘C 与 ⌥⌘C 并存）；不碰 OS 剪贴板、不进历史
@@ -1313,9 +1315,10 @@ export class EditorSession {
     // ---- 剪贴板与置顶/置底（工单 14）：子树深拷贝语义见 clipboard.ts ----
 
     /**
-     * 复制当前选中层：子树深拷贝快照进会话剪贴板（重置连续粘贴计数），并捕获
-     * 复制时点的绝对盒（粘贴落位基准）。源须为可落根层的类型（行/格是容器内
-     * 结构，v1 不可复制）；无选择/不可复制为 false。
+     * 复制当前选中层：子树深拷贝快照进会话剪贴板，并捕获复制时点的绝对盒（粘贴
+     * 落位基准）与源路径（sourcePath——粘贴时紧邻插入的解析凭据，alt-drag-paste
+     * 工单 02）。源须为可落根层的类型（行/格是容器内结构，v1 不可复制）；无选择/
+     * 不可复制为 false。
      */
     copySelection(): boolean {
         if (!this.canCopySelection) return false
@@ -1326,7 +1329,7 @@ export class EditorSession {
         this.clipboardEntry = {
             layer: cloneLayerSubtree(resolveLayer(doc, path)!),
             sourceBox: box,
-            pasteCount: 0,
+            sourcePath: path,
         }
         return true
     }
@@ -1348,27 +1351,19 @@ export class EditorSession {
     }
 
     /**
-     * 粘贴剪贴板：子树深拷贝插入根层——置顶（priority = min−1）、落位 = 复制时点
-     * 绝对盒 + 按粘贴次数递增的偏移（+20、+40…，多份粘贴互不重叠）、自动选中
-     * 新层；一次调用 = 一步历史。空剪贴板为 null。每次粘贴从剪贴板快照重新克隆：
-     * 粘贴产物之间以及与源文档都不共享引用。
+     * 粘贴剪贴板（alt-drag-paste 工单 02 真原位）：子树深拷贝插入根层——落点 =
+     * 复制时点绝对盒、零偏移（重复粘贴同位叠放；锚点补偿保留：dx=0 时根层源
+     * position 恒等原位、格内容源落其视觉位置）；z 序紧邻源层（sourcePath 解析
+     * 与退化置顶见 insertRootCopy）；自动选中新层；一次调用 = 一步历史。空剪贴板
+     * 为 null。每次粘贴从剪贴板快照重新克隆：粘贴产物之间以及与源文档都不共享
+     * 引用。
      */
     pasteFromClipboard(): LayerPath | null {
         const entry = this.clipboardEntry
-        if (!entry || !this.store.doc) return null
-        const pasteIndex = entry.pasteCount + 1
-        const offset = PASTE_OFFSET_PX * pasteIndex
-        const prepared = prepareRootPaste(
-            entry.layer,
-            entry.sourceBox,
-            this.store.doc.width,
-            this.store.doc.height,
-            offset,
-            offset,
-        )
-        const path = this.insertRootCopy(prepared)
-        if (path !== null) entry.pasteCount = pasteIndex
-        return path
+        const doc = this.store.doc
+        if (!entry || !doc) return null
+        const prepared = prepareRootPaste(entry.layer, entry.sourceBox, doc.width, doc.height, 0, 0)
+        return this.insertRootCopy(prepared, entry.sourcePath)
     }
 
     /**
@@ -1393,11 +1388,21 @@ export class EditorSession {
         return this.insertRootCopy(prepared)
     }
 
-    /** 粘贴/副本的公共落库尾：根层置顶插入 + 自动选中新层；一次调用 = 一步历史 */
-    private insertRootCopy(prepared: Layer): LayerPath | null {
+    /**
+     * 粘贴/副本的公共落库尾：根层插入 + 自动选中新层；一次调用 = 一步历史。
+     * source 给定时先试紧邻源层（源仍可解析且为根层——alt-drag-paste 工单 02 的
+     * ⌘V 紧邻消费；路径寻址尽力而为：删源后同下标兄弟层/他文档同下标层会顶替
+     * 解析，紧邻彼层是可接受的近似，工单 Comments 记档）——原语返回 null 或条件
+     * 不满足回落置顶；source 缺省恒置顶（⌘D 语义不动）。
+     */
+    private insertRootCopy(prepared: Layer, source?: LayerPath): LayerPath | null {
         const index: TxOut<number> = { v: -1 }
         this.store.transact((draft) => {
-            index.v = insertRootLayerInDraft(draft, prepared as Draft<Layer>)
+            index.v =
+                source !== undefined && resolveLayer(draft, source) !== null && isRootLayerPath(source)
+                    ? insertRootLayerAdjacentInDraft(draft, prepared as Draft<Layer>, source) ?? -1
+                    : -1
+            if (index.v < 0) index.v = insertRootLayerInDraft(draft, prepared as Draft<Layer>)
         })
         if (index.v < 0) return null
         const path: LayerPath = ['layers', index.v]
