@@ -83,6 +83,7 @@ import {
     type LayerPath,
 } from '../shared/layerPath'
 import { normalizeExpressionSchemaSource } from '../shared/expressionSchema'
+import { scanExpressionFragments } from '../shared/expressionScan'
 import {
     ALIGN_CORNER_MARGIN_PX,
     alignToCanvasTarget,
@@ -190,6 +191,13 @@ export interface TextEditLayout {
     verticalAnchorY: number
     /** autowrap = textarea  pre-wrap 软换行，否则 pre 单行（断行允许与预览不同，决策 A） */
     autowrap: boolean
+    /**
+     * 内容类型会话模式（canvas-web-expression-editing 工单 01）：true = 表达式——
+     * 绑定层 pill 激活态与补全 enabled 的消费面。取会话标志（编辑中 pill 切换
+     * 实时跟随，不受层标记态影响——面板在会话窗口期显示的是提交前旧状态）；路径
+     * 无活动会话时按层标记态回落（进入编辑即锚定同值）。
+     */
+    expressionMode: boolean
 }
 
 /** 拖动事务的合并键：一次拖动的全部 pointermove 并成一步历史 */
@@ -216,6 +224,19 @@ const nudgeMergeKey = (path: LayerPath): string => `nudge:${path.join(':')}`
 function clampFindCursor(cursor: number, count: number): number {
     if (count <= 0) return 0
     return Math.min(Math.max(cursor, 0), count - 1)
+}
+
+/**
+ * 串含 ≥1 语法有效闭合片段（canvas-web-expression-editing 工单 01，spec 决策 3）：
+ * `scanExpressionFragments` 切出 `kind: 'fragment'` 且 `error === null`——与求值器
+ * `expression_syntax_error` 同码。未闭合 `{{` 是 open 片段（求值期字面直通）、
+ * 空片段/路径空段带错误信号，均不算合法片段——表达式会话提交去向（标记写 vs
+ * 字面回落）的判定原语，守住不变量「标记 ⟹ ≥1 合法片段」。
+ */
+function hasValidExpressionFragment(template: string): boolean {
+    return scanExpressionFragments(template).parts.some(
+        (part) => part.kind === 'fragment' && part.error === null,
+    )
 }
 
 /**
@@ -1113,12 +1134,19 @@ export class EditorSession {
     /**
      * 进入文本编辑：路径必须解析到 TextLayer。会话只进 ui 分支（不进历史），
      * live 文本住在绑定层的 textarea，内容层随即跳绘该层文本（防重影）。
+     *
+     * 内容类型会话标志（canvas-web-expression-editing 工单 01，spec 决策 2）按
+     * 进入瞬间 `layer.expression !== null` 锚定进会话快照——「进入时计、编辑中
+     * 稳定」（verticalAnchorY 同门）：编辑中面板改标记不回写标志，提交去向由
+     * 快照裁决（打标是显式动作，内容判定制已否决）。同路径重复进入短路（快照
+     * 不重锚）；换层进入按新层现状重锚。
      */
     beginTextEdit(path: LayerPath): boolean {
-        if (this.textLayerAt(path) === null) return false
+        const layer = this.textLayerAt(path)
+        if (layer === null) return false
         const current = this.store.ui.editing
         if (current && pathsEqual(current.path, path)) return true
-        this.store.setEditing({ path })
+        this.store.setEditing({ path, expression: layer.expression !== null })
         return true
     }
 
@@ -1127,9 +1155,16 @@ export class EditorSession {
      * 到这里。先清会话再落文档——退出路径可能级联触发（画布点按的 pointerdown
      * 提交与随后 blur 竞态），会话清空后后续调用幂等，保证一次退出恰一步历史。
      *
-     * - 文本与文档一致：不进历史（进出编辑零噪声），返回 false；
-     * - 空文本：删除该图层（复用 deleteLayer 的 splice/重映射语义），一步历史可撤销；
-     * - 其余：一次无 mergeKey 事务写入 text（独立步，不并入开启中的拖动/滑杆合并）。
+     * 提交矩阵（canvas-web-expression-editing 工单 01，spec 决策 3，空串判定先于
+     * 片段判定）：
+     * - 串与文档一致：不进历史（进出编辑零噪声），返回 false——对比对象随会话
+     *   模式取：表达式会话对比 `layer.expression`、字面会话对比 `layer.text`（现行
+     *   语义）；
+     * - 空串：删除该图层（复用 deleteLayer 的 splice/重映射语义），任何模式同语义；
+     * - 表达式会话且串含 ≥1 语法有效闭合片段（hasValidExpressionFragment）：
+     *   updateDataExpression 标记写（保持标记、text 自动重镜像）；
+     * - 其余（字面会话恒走此支；表达式会话无合法片段回落）：updateData 字面写、
+     *   字面接管解标——含 `{{...}}` 按字面保留，杜绝无片段标记层。
      */
     commitTextEdit(text: string): boolean {
         const editing = this.store.ui.editing
@@ -1138,9 +1173,13 @@ export class EditorSession {
 
         const layer = this.textLayerAt(editing.path)
         if (!layer) return false
-        if (text === layer.text) return false
+        if (editing.expression ? text === layer.expression : text === layer.text) return false
         if (text === '') {
             this.deleteLayer(editing.path)
+            return true
+        }
+        if (editing.expression && hasValidExpressionFragment(text)) {
+            this.updateDataExpression(editing.path, text)
             return true
         }
         this.updateData(editing.path, text)
@@ -1159,6 +1198,7 @@ export class EditorSession {
         if (!layer || !doc) return null
         const box = this.boxByPath(path)
         if (!box) return null
+        const editing = this.store.ui.editing
         return {
             box,
             text: layer.text,
@@ -1171,6 +1211,10 @@ export class EditorSession {
             verticalAlign: layer.align.vertical,
             verticalAnchorY: textOrigin(layer, this.textPolicies).y,
             autowrap: layer.autowrap,
+            expressionMode:
+                editing !== null && pathsEqual(editing.path, path)
+                    ? editing.expression
+                    : layer.expression !== null,
         }
     }
 

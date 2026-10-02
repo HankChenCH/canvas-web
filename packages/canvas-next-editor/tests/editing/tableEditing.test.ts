@@ -607,7 +607,8 @@ describe('单元格内容层编辑复用 09/11 能力', () => {
         const contentPath = ['layers', 0, 'rows', 0, 'cells', 0, 'content']
 
         expect(session.beginTextEdit(contentPath)).toBe(true)
-        expect(session.store.ui.editing).toEqual({ path: contentPath })
+        // expression 会话标志随字面层锚定为 false（canvas-web-expression-editing 工单 01）
+        expect(session.store.ui.editing).toEqual({ path: contentPath, expression: false })
         expect(session.commitTextEdit('新文本')).toBe(true)
 
         const table = tableAt(session, 0)

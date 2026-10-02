@@ -91,9 +91,17 @@ export interface CreateGesture {
  * 文本编辑会话（ui 分支，工单 11）：编辑中的文本层路径。live 文本住在绑定层的
  * textarea（非受控），提交经 commitTextEdit 一次性落文档——「每个拼音音节一个
  * undo」被会话缓冲天然避免（impl 研究 §2.4）。
+ *
+ * expression 是内容类型会话标志（canvas-web-expression-editing 工单 01，spec 决策
+ * 2）：beginTextEdit 按进入瞬间 `layer.expression !== null` 锚定的会话快照（与
+ * verticalAnchorY「进入时计、编辑中稳定」同门），裁决提交去向（表达式会话含合法
+ * 片段走标记写，字面会话恒字面写）与补全 enabled。住 ui 分支不进历史；面板编辑
+ * 中改动 layer.expression 不回写标志（打标是显式动作，快照是提交去向的裁决依据）；
+ * 内容类型 pill 切换仅翻转本标志（零文档变更零历史步）。
  */
 export interface TextEditingSession {
     path: LayerPath
+    expression: boolean
 }
 
 /**

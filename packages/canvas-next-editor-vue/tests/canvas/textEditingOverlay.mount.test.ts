@@ -84,7 +84,7 @@ describe('beginAt：双击进入编辑', () => {
         expect(textarea.exists()).toBe(true)
         expect(textarea.element.value).toBe('你好画布')
         expect(document.activeElement).toBe(textarea.element)
-        expect(editor.store.ui.editing).toEqual({ path: ['layers', 0] })
+        expect(editor.store.ui.editing).toEqual({ path: ['layers', 0], expression: false })
     })
 
     it('进入编辑全选保持：样式 watch 的 selection 恢复不得回打入口全选（旧样式为 null 跳过）', async () => {
@@ -196,7 +196,7 @@ describe('提交漏斗：四路退出各恰好一步历史', () => {
         textarea.element.value = '两行'
         await textarea.trigger('keydown', { key: 'Enter' })
         expect(editor.store.history).toHaveLength(0)
-        expect(editor.store.ui.editing).toEqual({ path: ['layers', 0] })
+        expect(editor.store.ui.editing).toEqual({ path: ['layers', 0], expression: false })
 
         await textarea.trigger('keydown', { key: 'Enter', ctrlKey: true })
         await wrapper.vm.$nextTick()
@@ -219,7 +219,7 @@ describe('提交漏斗：四路退出各恰好一步历史', () => {
 
         expect(editor.store.history).toHaveLength(0)
         expect(editor.store.doc!.layers[0]).toMatchObject({ text: '你好画布' })
-        expect(editor.store.ui.editing).toEqual({ path: ['layers', 0] })
+        expect(editor.store.ui.editing).toEqual({ path: ['layers', 0], expression: false })
         expect(wrapper.find('textarea').exists()).toBe(true)
     })
 
@@ -269,7 +269,7 @@ describe('提交漏斗：四路退出各恰好一步历史', () => {
 
         expect(editor.store.history).toHaveLength(0)
         expect(editor.store.doc!.layers[0]).toMatchObject({ text: '你好画布' })
-        expect(editor.store.ui.editing).toEqual({ path: ['layers', 0] })
+        expect(editor.store.ui.editing).toEqual({ path: ['layers', 0], expression: false })
         expect(wrapper.find('textarea').exists()).toBe(true)
     })
 
@@ -327,7 +327,7 @@ describe('提交漏斗：四路退出各恰好一步历史', () => {
         expect(editor.store.doc!.layers[0]).toMatchObject({ text: '你好画布' })
         // 编辑会话保持：textarea 仍挂载（blurred），点回画布才提交
         expect(wrapper.find('textarea').exists()).toBe(true)
-        expect(editor.store.ui.editing).toEqual({ path: ['layers', 0] })
+        expect(editor.store.ui.editing).toEqual({ path: ['layers', 0], expression: false })
 
         outside.remove()
     })
@@ -343,7 +343,7 @@ describe('提交漏斗：四路退出各恰好一步历史', () => {
         await new Promise((resolve) => setTimeout(resolve, 0))
 
         expect(editor.store.history).toHaveLength(0)
-        expect(editor.store.ui.editing).toEqual({ path: ['layers', 0] })
+        expect(editor.store.ui.editing).toEqual({ path: ['layers', 0], expression: false })
     })
 })
 
