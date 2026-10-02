@@ -24,6 +24,7 @@ export {
 } from './shortcuts'
 export {
     EditorStore,
+    type CreateGesture,
     type DocRecipe,
     type DragGesture,
     type EditorChange,

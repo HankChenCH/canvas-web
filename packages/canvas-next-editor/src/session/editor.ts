@@ -56,6 +56,7 @@ import {
     type GuideOrientation,
     type SnapAxis,
 } from '../spatial/snap'
+import { CREATE_DEAD_ZONE_SCREEN_PX, createRubberBandRect } from '../spatial/create'
 import {
     handleResizesHeight,
     handleResizesWidth,
@@ -103,6 +104,7 @@ import {
 } from '../editing/findReplace'
 import {
     addRootLayerInDraft,
+    createDefaultLayer,
     createTemplateTable,
     deleteLayerInDraft,
     insertRootLayerAdjacentInDraft,
@@ -556,7 +558,7 @@ export class EditorSession {
      * 副本（dragTo 消费，见 ALT_DRAG_DEAD_ZONE_SCREEN_PX）。
      */
     beginDrag(path: LayerPath, sceneX: number, sceneY: number, options: { copy?: boolean } = {}): boolean {
-        if (this.store.ui.drag || this.store.ui.resize) return false
+        if (this.store.ui.drag || this.store.ui.resize || this.store.ui.create) return false
         if (this.isLocked(path)) return false
         const doc = this.store.doc
         const layer = doc ? resolveLayer(doc, path) : null
@@ -753,7 +755,7 @@ export class EditorSession {
      * false——gizmo 只渲染可用柄，此守卫兜其余手势来源（键盘/宿主直调）。
      */
     beginResize(path: LayerPath, handle: ResizeHandle, sceneX: number, sceneY: number): boolean {
-        if (this.store.ui.drag || this.store.ui.resize) return false
+        if (this.store.ui.drag || this.store.ui.resize || this.store.ui.create) return false
         if (this.isLocked(path)) return false
         if (!RESIZE_HANDLES.includes(handle)) return false
         const doc = this.store.doc
@@ -867,6 +869,124 @@ export class EditorSession {
         this.store.setResize(null)
         this.store.setSnapAxes([])
         this.store.closeMerge(RESIZE_MERGE_KEY)
+    }
+
+    // ---- 画拉建层（drag-create 工单 01）：武装 + 橡皮筋纯视觉 + pointerup 落库 ----
+
+    /**
+     * 武装建层（面板新增项/层型快捷键的统一入口，CONTEXT「武装」词条）：置 ui
+     * 分支待命层型，下一次画布按下即开画拉；建层提交或 Esc 即解除——一次性
+     * 待命态，无粘性工具（spec 决策 2）。重复武装同型值等短路零通知。
+     */
+    armLayerCreate(type: LayerType): void {
+        this.store.setArmedCreate(type)
+    }
+
+    /** 解除建层武装（取消入口）：仅清待命态，零副作用。 */
+    cancelArmLayerCreate(): void {
+        this.store.setArmedCreate(null)
+    }
+
+    /**
+     * 开始画拉会话：须已武装（未武装空转防御——画布手势态机的分派前置，此守卫
+     * 兜其余调用来源），与拖动/缩放会话互斥（手势起点一次性定死，beginDrag/
+     * beginResize 同门），文档未打开空转。层型在起点一次性捕获进会话（spec
+     * 决策 7：拖拽中改主意 = Esc 重武装，v1 不做拖拽中层型切换）。会话只进
+     * ui 分支——拖拽期纯视觉、文档零变更（spec 决策 4）。
+     */
+    beginLayerCreate(sceneX: number, sceneY: number): boolean {
+        const armed = this.store.ui.armedCreate
+        if (armed === null || this.store.ui.drag || this.store.ui.resize || this.store.ui.create) return false
+        if (!this.store.doc) return false
+        const point = { x: sceneX, y: sceneY }
+        this.store.setCreate({
+            type: armed,
+            startScene: point,
+            currentScene: point,
+            rect: { x: sceneX, y: sceneY, width: 0, height: 0 },
+        })
+        return true
+    }
+
+    /**
+     * 画拉进行中：橡皮筋求位（spatial/create.createRubberBandRect——两点正规化
+     * + QR 钳 height := width + 左右/上下缘各两点进 resolveSnapPoints，吸附数学
+     * 零新增）写回会话 rect 供 overlay 直读（虚线矩形 + W×H 气泡），命中轴回写
+     * ui.snapAxes 走 GuidesOverlay 既有通道回显（dragTo 同门）。吸附排除面为空
+     * （snapAxesForGesture(null)——新层尚未入库，全部可见根层供轴，copyMode
+     * 首移同门）。零文档事务：修正只进会话几何，落库在 endCreate。
+     */
+    createTo(sceneX: number, sceneY: number): void {
+        const gesture = this.store.ui.create
+        const doc = this.store.doc
+        if (!gesture || !doc) return
+        const resolution = createRubberBandRect(
+            gesture.type,
+            gesture.startScene,
+            { x: sceneX, y: sceneY },
+            this.snapAxesForGesture(null),
+            snapThresholdScene(this.store.ui.viewport.zoom),
+        )
+        this.store.setCreate({
+            ...gesture,
+            currentScene: { x: sceneX, y: sceneY },
+            rect: resolution.rect,
+        })
+        this.store.setSnapAxes(resolution.axes)
+    }
+
+    /**
+     * 结束画拉：按死区分流落库（一次手势 = 一步历史，undo 整体回退落位 + 尺寸
+     * + priority）。先清会话再落文档（commitTextEdit 同门——退出路径级联时幂等）：
+     * - 死区外：单事务写入「createDefaultLayer 缺省形态 + position 左上角对准
+     *   橡皮筋矩形（含吸附修正）+ shape.width/height」并 insertRootLayerInDraft
+     *   置顶（priority min−1、push 数组尾）；
+     * - 死区内（点击兜底，位移按 CREATE_DEAD_ZONE_SCREEN_PX 屏幕 px 随 zoom 折算，
+     *   ALT_DRAG_DEAD_ZONE_SCREEN_PX 同门）：缺省尺寸、左上角对准点击点。
+     * 落库后自动选中新层并解除武装；返回新层路径（绑定层消费：文本层据此自动
+     * 进文本编辑，spec 决策 6）。无会话/无文档空转返回 null。点击兜底不产生
+     * 零尺寸层（缺省形态自带可见尺寸）。
+     */
+    endCreate(): LayerPath | null {
+        const gesture = this.store.ui.create
+        if (!gesture) return null
+        this.store.setCreate(null)
+        this.store.setSnapAxes([])
+        this.store.setArmedCreate(null)
+        if (!this.store.doc) return null
+        const dx = gesture.currentScene.x - gesture.startScene.x
+        const dy = gesture.currentScene.y - gesture.startScene.y
+        const deadZoneScene = CREATE_DEAD_ZONE_SCREEN_PX / this.store.ui.viewport.zoom
+        const clicked = Math.hypot(dx, dy) <= deadZoneScene
+        const index: TxOut<number> = { v: -1 }
+        this.store.transact((draft) => {
+            const layer = createDefaultLayer(gesture.type) as Draft<Layer>
+            if (clicked) {
+                // 点击兜底：缺省尺寸原样，position 左上角对准点击点（拖文件入画布
+                // 「左上角对准释放点」同门，spec 决策 5）
+                layer.position = { ...layer.position, x: gesture.startScene.x, y: gesture.startScene.y }
+            } else {
+                layer.position = { ...layer.position, x: gesture.rect.x, y: gesture.rect.y }
+                layer.shape.width = gesture.rect.width
+                layer.shape.height = gesture.rect.height
+            }
+            index.v = insertRootLayerInDraft(draft, layer)
+        })
+        if (index.v < 0) return null
+        const path: LayerPath = ['layers', index.v]
+        this.store.setSelection(path)
+        return path
+    }
+
+    /**
+     * 取消画拉（Esc 语义）：清橡皮筋会话、命中轴回显与武装态——零文档写入、
+     * 零历史步（拖拽期纯视觉因此取消零回退成本，spec 决策 4）。幂等：无会话时
+     * 仅解除武装（待命态 Esc 同走此口）。
+     */
+    cancelCreate(): void {
+        this.store.setCreate(null)
+        this.store.setSnapAxes([])
+        this.store.setArmedCreate(null)
     }
 
     /**

@@ -13,9 +13,9 @@
  */
 import { applyPatches, enablePatches, produceWithPatches, setAutoFreeze, type Draft, type Patch } from 'immer'
 
-import type { Canvas, LayerBox } from '@hankchen/canvas-next'
+import type { Canvas, LayerBox, LayerType } from '@hankchen/canvas-next'
 
-import type { Point, Viewport } from '../spatial/camera'
+import type { Point, Rect, Viewport } from '../spatial/camera'
 import type { Guide, SnapAxis } from '../spatial/snap'
 import type { ResizeHandle } from '../spatial/resize'
 import { pathsEqual, type LayerPath } from '../shared/layerPath'
@@ -70,6 +70,24 @@ export interface ResizeGesture {
 }
 
 /**
+ * 画拉建层橡皮筋会话（ui 分支，drag-create 工单 01）：武装层型 + 起点场景坐标
+ * + 当前点 + 橡皮筋矩形。拖拽期纯视觉——文档零变更（spec 决策 4，比先建后
+ * resize 少踩零尺寸渲染/命中两坑），rect 是 createTo 求位产物（两点正规化 +
+ * QR 钳方 + 吸附修正并入），overlay 直读绘制虚线矩形与 W×H 气泡；落库在
+ * endCreate 单事务（返回新层路径），与 drag/resize 会话互斥。
+ */
+export interface CreateGesture {
+    /** 本次画拉的层型（beginLayerCreate 时从 armedCreate 捕获，会话内定死） */
+    type: LayerType
+    /** 起点场景坐标（两点正规化与死区判定基准） */
+    startScene: Point
+    /** 当前指针场景坐标 */
+    currentScene: Point
+    /** 当前橡皮筋矩形（吸附修正已并入），绑定层 overlay 直读 */
+    rect: Rect
+}
+
+/**
  * 文本编辑会话（ui 分支，工单 11）：编辑中的文本层路径。live 文本住在绑定层的
  * textarea（非受控），提交经 commitTextEdit 一次性落文档——「每个拼音音节一个
  * undo」被会话缓冲天然避免（impl 研究 §2.4）。
@@ -105,6 +123,14 @@ export interface EditorUi {
     drag: DragGesture | null
     /** 进行中的缩放会话（工单 07 八柄）；null = 无缩放 */
     resize: ResizeGesture | null
+    /**
+     * 画拉建层武装态（drag-create 工单 01，CONTEXT「武装」词条）：面板新增项/
+     * 层型快捷键选定的一次性待命层型——下一次画布按下即开画拉，建层或 Esc 即
+     * 解除。无粘性工具态（spec 决策 2）；openDocument 重置。
+     */
+    armedCreate: LayerType | null
+    /** 进行中的画拉建层橡皮筋会话（拖拽期纯视觉，文档零变更）；null = 无 */
+    create: CreateGesture | null
     /** 进行中的文本编辑会话；null = 非编辑态 */
     editing: TextEditingSession | null
     /**
@@ -224,6 +250,8 @@ export class EditorStore {
         hovered: null,
         drag: null,
         resize: null,
+        armedCreate: null,
+        create: null,
         editing: null,
         renaming: null,
         anchorExpanded: false,
@@ -262,8 +290,8 @@ export class EditorStore {
     }
 
     /** 打开/替换文档：ui 选择/编辑/重命名会话与双向历史一并重置（新文档不继承旧路径/旧事务）；
-     *  参考线/锁定集合/查找会话随当次会话清空（对位轴/文档内容防护/查询词不跨文档），
-     *  标尺显隐作为偏好保留 */
+     *  参考线/锁定集合/查找会话/建层武装与画拉会话随当次会话清空（对位轴/文档内容防护/
+     *  查询词/待命层型不跨文档），标尺显隐作为偏好保留 */
     openDocument(canvas: Canvas): void {
         this.docValue = canvas
         this.undoSteps = []
@@ -274,6 +302,8 @@ export class EditorStore {
             hovered: null,
             drag: null,
             resize: null,
+            armedCreate: null,
+            create: null,
             editing: null,
             renaming: null,
             guides: [],
@@ -382,6 +412,19 @@ export class EditorStore {
     setResize(gesture: ResizeGesture | null): void {
         this.uiValue = { ...this.uiValue, resize: gesture }
         this.notify({ scope: 'ui', branch: 'resize' })
+    }
+
+    /** 建层武装置/解除（null，drag-create 工单 01）；标量值等短路（重复武装同型不通知） */
+    setArmedCreate(type: LayerType | null): void {
+        if (this.uiValue.armedCreate === type) return
+        this.uiValue = { ...this.uiValue, armedCreate: type }
+        this.notify({ scope: 'ui', branch: 'armedCreate' })
+    }
+
+    /** 画拉橡皮筋会话开始/更新/结束（null）；会话对象住 ui 分支，落库在 endCreate 单事务 */
+    setCreate(gesture: CreateGesture | null): void {
+        this.uiValue = { ...this.uiValue, create: gesture }
+        this.notify({ scope: 'ui', branch: 'create' })
     }
 
     /** 文本编辑会话开始/结束（null）；会话住 ui 分支，文本经 commitTextEdit 一次性落文档 */

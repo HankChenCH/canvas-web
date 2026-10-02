@@ -1,8 +1,9 @@
 /**
  * 内核 spatial 层出口：视口几何纯函数（camera）、命中测试（hitTest）、
  * 滚轮意图分类（wheel）、拖动吸附数学与参考线轴几何（snap）、八柄缩放几何
- * （resize，工单 07）。只向下依赖 shared（layerPath），不得引用
- * editing/session（editor-spatial-isolation 红线锁定）。
+ * （resize，工单 07）、画拉建层橡皮筋求位（create，drag-create 工单 01）。
+ * 只向下依赖 shared（layerPath），不得引用 editing/session
+ * （editor-spatial-isolation 红线锁定）。
  */
 export {
     DEFAULT_ZOOM_BOUNDS,
@@ -57,4 +58,9 @@ export {
     type ResizeBoxResult,
     type ResizeHandle,
 } from './resize'
+export {
+    CREATE_DEAD_ZONE_SCREEN_PX,
+    createRubberBandRect,
+    type CreateRectResult,
+} from './create'
 export { classifyWheel, type WheelIntent, type WheelInput } from './wheel'
