@@ -535,3 +535,23 @@ describe('呈现参数与防御', () => {
         expect(changes).toEqual([{ scope: 'ui', branch: 'viewport' }])
     })
 })
+
+describe('layerBoxAt 生效面（autowidth-content-injection 工单 03）：宽自适应文本层盒立即贴合文本', () => {
+    it('打开 autoWidth 的文本层盒宽 = 自然宽（不再是声明 0 宽塌缩），高自适应同步', () => {
+        const { session } = makeSession()
+        // 夹具缺省 '你好画布' @16：启发式自然宽 = 4 × 16 = 64；行高 ceil(16 × 1.2) = 20
+        session.openDocument({
+            width: 800,
+            height: 600,
+            layers: [textLayer({ shape: { width: 0, autoWidth: true, autoHeight: true } })],
+        })
+
+        // gizmo 选择框/命中/适应选区/面板同源（layerBoxAt 单一几何来源）
+        expect(session.layerBoxAt(['layers', 0])).toMatchObject({
+            width: 64,
+            height: 20,
+            contentWidth: 64,
+            contentHeight: 20,
+        })
+    })
+})
