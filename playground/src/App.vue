@@ -45,6 +45,7 @@ import {
     Canvas2DBackend,
     Materializer,
     applyViewportTransform,
+    canvasFontCssFamily,
     drawResourceMarkers,
     exportPreviewPng,
 } from '@hankchen/canvas-next-browser-renderer'
@@ -74,7 +75,7 @@ import {
     type CanvasSurfaceReady,
 } from '@hankchen/canvas-next-editor-vue'
 import type { OverlayPainter } from '@hankchen/canvas-next-editor'
-import { decodeGraph, encodeGraph } from '@hankchen/canvas-next'
+import { createMeasureTextMeasurerFactory, decodeGraph, encodeGraph } from '@hankchen/canvas-next'
 
 import { DEMO_GRAPH_JSON } from './demoGraph'
 // 桌面网格底纹（原型）：内容层 begin 后垫网格线（只画纸面外桌面），区分纸面与
@@ -87,11 +88,19 @@ import { buildVisualCheckGraph } from './visualCheckGraph'
 // 上传注入点：playground 以 data URL 兜底（文件内联进 graph，可离线演示；生产
 // 宿主接自己的存储返回 URL）。字体清单：内置清单可配置（清单 ≠ 物化，加载仍走
 // 渲染端物化管线），自定义字体上传后追加。
+// measureText 度量注入（autowidth-content-injection 工单 04）：专用离屏 2D 上下文
+// + 渲染端字体映射（canvasFontCssFamily，族名派生与 FontFace 注册、未注册回落
+// sans-serif 同门）构造真实字体度量器，经 session 既有 textPolicies 缝显式注入——
+// 画布盒、面板解析值、导出预览同源走真实度量（不注入恒启发式，不隐式切换）。
+const measureCtx = document.createElement('canvas').getContext('2d')
 const editor = new EditorSession({
     scheduleFrame: createRafScheduler(),
     fitMargin: 48,
     uploadHandler: uploadToDataUrl,
     fontCatalog: [{ label: 'Open Sans（演示字体）', ref: '/fonts/open-sans.ttf' }],
+    textPolicies: measureCtx
+        ? { measurerFactory: createMeasureTextMeasurerFactory(measureCtx, { fontCssFamily: canvasFontCssFamily }) }
+        : undefined,
 })
 
 // 数据源 schema 声明（content-completion 工单 03/11，D2 宿主随会话注入）：playground

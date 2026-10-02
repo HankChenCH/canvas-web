@@ -82,25 +82,31 @@ const visibleSections = computed<readonly RenderSection[]>(() => {
 })
 
 /**
- * pair 自适应列的禁用态替代显示（工票 03）：高自适应 → layerBoxAt 解析值
- * （gizmo 同源；模板子树是预览盒，preview 标记驱动斜体 + 悬停说明的区分
- * 展示）；宽自适应不给显示值——三端布局求值缺失，解析值 = 声明值会误导，
- * 控件显「自动」占位（缺口跟踪：layer-panel-ux 工票 11）。显示键按注册表
- * 推导（auto.key = autoHeight 的 pair 列），不硬编码键串。
+ * pair 自适应列的禁用态替代显示：自适应开 → layerBoxAt 解析值（gizmo 同源）。
+ * 高自适应为工票 03 落地，宽自适应随自然宽求值补齐（autowidth 工单 04）——盒几何
+ * 同源解析，两列同一视觉语言。模板子树是预览盒，preview 标记驱动斜体 + 悬停说明
+ * 的区分展示。显示键按注册表推导（auto.key → 盒维度映射），不硬编码键串。
  */
 const pairDisplays = computed<Record<string, FieldDisplay>>(() => {
     const displays: Record<string, FieldDisplay> = {}
     const box = panel.layerBox.value
     const layer = panel.layer.value
-    if (!box || !layer || !layer.shape.autoHeight) return displays
+    if (!box || !layer) return displays
+
+    // auto.key（相对 pair 值对象）→ 该 flag 开启时的解析维度；只收集开着的 flag
+    const resolved = new Map<string, number>()
+    if (layer.shape.autoWidth) resolved.set('autoWidth', Math.round(box.width * 100) / 100)
+    if (layer.shape.autoHeight) resolved.set('autoHeight', Math.round(box.height * 100) / 100)
+    if (resolved.size === 0) return displays
+
     for (const section of panel.sections.value) {
         for (const field of section.fields) {
             for (const item of field.items ?? []) {
-                if (item.auto && item.auto.key.join('.') === 'autoHeight') {
-                    displays[pairItemKey(field, item).join('.')] = {
-                        value: Math.round(box.height * 100) / 100,
-                        preview: panel.isPreviewBox.value,
-                    }
+                const value = item.auto ? resolved.get(item.auto.key.join('.')) : undefined
+                if (value === undefined) continue
+                displays[pairItemKey(field, item).join('.')] = {
+                    value,
+                    preview: panel.isPreviewBox.value,
                 }
             }
         }

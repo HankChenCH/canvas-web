@@ -195,7 +195,7 @@ describe('位置与尺寸组重排（layer-panel-ux 工票 03：两列行 + auto
         const height = wh.items?.find((i) => i.key.join('.') === 'height')
         expect(width?.auto?.key).toEqual(['autoWidth'])
         expect(height?.auto?.key).toEqual(['autoHeight'])
-        // 宽自适应开显示「自动」占位（三端布局求值缺失，解析值 = 声明值会误导）
+        // 「自动」是盒未解析时的兜底占位（正常路径面板传 layerBoxAt 解析值，工单 04）
         expect(width?.auto?.placeholder).toBe('自动')
         // 数值约束跟随子字段（整数、非负），提交约束不回归
         expect(width?.integer).toBe(true)

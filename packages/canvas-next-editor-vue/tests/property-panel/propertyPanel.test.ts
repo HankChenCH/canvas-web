@@ -279,7 +279,7 @@ describe('位置与尺寸组（layer-panel-ux 工票 03：两列行 + auto prefi
         wrapper.unmount()
     })
 
-    it('宽自适应开 → 宽框禁用显「自动」占位（布局求值缺失不显解析值）', async () => {
+    it('宽自适应开 → 宽框禁用显示 layerBoxAt 解析值（工单 04：自然宽求值落地，与高自适应同源），高不受影响', async () => {
         const editor = makeEditor([textLayer({ shape: { width: 120, height: 80, autoWidth: true, autoHeight: false, lineHeight: 1.2, padding: { top: 0, bottom: 0, left: 0, right: 0 }, border: { top: null, bottom: null, left: null, right: null }, backgroundColor: null } })])
         const wrapper = mount(PropertyPanel, { props: { editor } })
         editor.setSelection(['layers', 0])
@@ -287,8 +287,22 @@ describe('位置与尺寸组（layer-panel-ux 工票 03：两列行 + auto prefi
 
         const widthInput = wrapper.find('input[aria-label="宽"]').element as HTMLInputElement
         expect(widthInput.disabled).toBe(true)
-        expect(widthInput.placeholder).toBe('自动')
-        expect(widthInput.value).toBe('') // 不显声明值（会误导为已生效）
+        // 解析值与 EditorSession.layerBoxAt 同源（同一布局求值，不漂移）——不再是「自动」占位
+        expect(widthInput.value).toBe(String(editor.layerBoxAt(['layers', 0])!.width))
+        expect(widthInput.value).not.toBe('')
+        expect((wrapper.find('input[aria-label="高"]').element as HTMLInputElement).disabled).toBe(false)
+        wrapper.unmount()
+    })
+
+    it('宽高自适应同开 → 两列各显各的解析值（auto.key → 盒维度映射，注册表推导不硬编码键串）', async () => {
+        const editor = makeEditor([textLayer({ shape: { width: 0, height: 0, autoWidth: true, autoHeight: true, lineHeight: 1.2, padding: { top: 0, bottom: 0, left: 0, right: 0 }, border: { top: null, bottom: null, left: null, right: null }, backgroundColor: null } })])
+        const wrapper = mount(PropertyPanel, { props: { editor } })
+        editor.setSelection(['layers', 0])
+        await wrapper.vm.$nextTick()
+
+        const box = editor.layerBoxAt(['layers', 0])!
+        expect((wrapper.find('input[aria-label="宽"]').element as HTMLInputElement).value).toBe(String(box.width))
+        expect((wrapper.find('input[aria-label="高"]').element as HTMLInputElement).value).toBe(String(box.height))
         wrapper.unmount()
     })
 

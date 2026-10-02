@@ -39,8 +39,8 @@ export type FieldControl =
 
 /**
  * 自适应 prefix 钮描述（pair 子字段用）：key 相对 pair 值对象上的布尔键；
- * 开启 → 本输入禁用。placeholder 是禁用态占位（宽自适应的布局求值三端缺失，
- * 解析值 = 声明值会误导，故显「自动」而不显值）。
+ * 开启 → 本输入禁用。placeholder 是禁用态兜底占位（盒未解析时；正常路径面板
+ * 传 layerBoxAt 解析值，宽列随自然宽求值落地与高列同源，autowidth 工单 04）。
  */
 export interface FieldAutoToggle {
     readonly key: readonly string[]
@@ -97,10 +97,10 @@ export interface FieldSection {
 
 /**
  * 位置与尺寸（layer-panel-ux 工票 03）：X|Y、宽|高两条两列语义行；宽/高列带
- * 自适应 prefix（autoWidth/autoHeight 不再有独立布尔行）。高自适应开 → 输入
- * 禁用、显示 layerBoxAt 解析值（gizmo 同源，替代显示由面板算好传控件）；
- * 宽自适应开 → 禁用、显「自动」占位。angle 从文本组迁入（旋转属变换语义，
- * TextLayer 专属 visibleWhen 不变）；锚点是块级折叠区（面板路由，默认收起）。
+ * 自适应 prefix（autoWidth/autoHeight 不再有独立布尔行）。宽/高自适应开 → 输入
+ * 禁用、显示 layerBoxAt 解析值（gizmo 同源，替代显示由面板算好传控件；宽列随
+ * 自然宽求值落地与高列同语言，autowidth 工单 04）。angle 从文本组迁入（旋转属
+ * 变换语义，TextLayer 专属 visibleWhen 不变）；锚点是块级折叠区（面板路由，默认收起）。
  */
 const POSITION_SECTION: FieldSection = {
     title: '位置与尺寸',

@@ -420,25 +420,40 @@ describe('PairField（两列语义行 + 自适应 prefix，layer-panel-ux 工票
         void widthInput
     })
 
-    it('自适应开：本列禁用——宽显「自动」占位，高显 displays 解析值', async () => {
+    it('自适应开：本列禁用——displays 在场显解析值（工单 04 起宽列同语言），缺显示条目的列回落「自动」占位', async () => {
         const wrapper = mount(PairField, {
             props: {
                 field: sizeField,
                 modelValue: shape({ autoWidth: true, autoHeight: true }),
-                displays: { 'shape.height': { value: 137.5, preview: false } },
+                displays: {
+                    'shape.width': { value: 464, preview: false },
+                    'shape.height': { value: 137.5, preview: false },
+                },
             },
         })
         const widthInput = wrapper.find('input[aria-label="宽"]').element as HTMLInputElement
         const heightInput = wrapper.find('input[aria-label="高"]').element as HTMLInputElement
         expect(widthInput.disabled).toBe(true)
-        expect(widthInput.placeholder).toBe('自动')
-        expect(widthInput.value).toBe('')
+        expect(widthInput.value).toBe('464')
         expect(heightInput.disabled).toBe(true)
         expect(heightInput.value).toBe('137.5')
 
         // 禁用列不产生提交
         await wrapper.find('input[aria-label="宽"]').trigger('input')
         expect(wrapper.emitted('sub-commit')).toBeUndefined()
+    })
+
+    it('盒未解析（面板缺 displays 条目）：禁用列空值回落「自动」占位', async () => {
+        const wrapper = mount(PairField, {
+            props: {
+                field: sizeField,
+                modelValue: shape({ autoWidth: true }),
+            },
+        })
+        const widthInput = wrapper.find('input[aria-label="宽"]').element as HTMLInputElement
+        expect(widthInput.disabled).toBe(true)
+        expect(widthInput.value).toBe('')
+        expect(widthInput.placeholder).toBe('自动')
     })
 
     it('模板子树预览值：preview 标记驱动 cn-field--preview 区分展示 + 悬停说明', () => {
