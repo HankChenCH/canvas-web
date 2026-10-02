@@ -19,6 +19,7 @@ import { mount } from '@vue/test-utils'
 import { EditorSession, type FrameScheduler, type OverlayPainter } from '@hankchen/canvas-next-editor'
 
 import CanvasSurface from '../../src/canvas/CanvasSurface.vue'
+import { drawCreateRubberBand } from '../../src/canvas/createBand'
 import { cellLayer, rowLayer, tableLayer, textLayer } from '../../../canvas-next-editor/tests/support/fixtures'
 
 // ---- jsdom 环境桩 ----
@@ -102,12 +103,14 @@ function manualScheduler(): FrameScheduler & { flush: () => void } {
 
 const emptyDoc = { width: 400, height: 300, layers: [] }
 
-function mountSurface() {
+function mountSurface(painterFactory?: (editor: EditorSession) => OverlayPainter) {
     const scheduler = manualScheduler()
     const editor = new EditorSession({ scheduleFrame: scheduler })
     const backend = recordingBackend()
     const overlayDprs: number[] = []
-    const overlayPainter: OverlayPainter = (args) => overlayDprs.push(args.dpr)
+    const overlayPainter: OverlayPainter = painterFactory
+        ? painterFactory(editor)
+        : (args) => overlayDprs.push(args.dpr)
 
     const hostEl = document.createElement('div')
     document.body.appendChild(hostEl)
@@ -342,6 +345,208 @@ describe('八柄缩放接线（工单 07）：柄面优先于图层命中', () =
         dispatchPointer('pointerdown', { button: 0, clientX: 100, clientY: 50 })
         expect(editor.store.ui.resize).toBeNull()
         dispatchPointer('pointerup', { clientX: 100, clientY: 50 })
+        cleanup()
+    })
+})
+
+describe('画拉建层接线（drag-create 工单 02）：武装态手势 + Esc 守卫 + 橡皮筋呈现', () => {
+    // jsdom 无 PointerEvent/布局：MouseEvent 按类型直发；视口缺省 {0,0,1} →
+    // 场景点 == 客户端像素
+    const surfaceHost = () => document.querySelector('.cn-surface')!
+    const dispatchPointer = (type: string, init: MouseEventInit = {}) =>
+        surfaceHost().dispatchEvent(new MouseEvent(type, { bubbles: true, ...init }))
+    const dispatchKey = (key: string, init: KeyboardEventInit = {}) =>
+        window.dispatchEvent(new KeyboardEvent('keydown', { key, ...init }))
+
+    /** 橡皮筋画笔的录制 ctx：记虚线矩形笔画、气泡文本与清屏次数（缩放恒 1 口径） */
+    function bandRecorder() {
+        return {
+            strokes: [] as string[],
+            texts: [] as string[],
+            canvas: { width: 800, height: 600 },
+            setTransform() {},
+            clearRect() {},
+            setLineDash() {},
+            fillRect() {},
+            strokeRect(...args: number[]) {
+                this.strokes.push(`stroke:${args.join(',')}`)
+            },
+            beginPath() {},
+            roundRect() {},
+            fill() {},
+            fillText(text: string) {
+                this.texts.push(text)
+            },
+            measureText() {
+                return { width: 40 }
+            },
+        }
+    }
+
+    it('武装态左键按下开画拉：不平移、不改选、不开拖动/缩放会话；move 求位、up 落库选中解除武装', () => {
+        const { editor, cleanup } = mountSurface()
+        editor.openDocument({ width: 800, height: 600, layers: [textLayer({ priority: 10 })] })
+        editor.setSelection(['layers', 0])
+        editor.armLayerCreate('TableLayer')
+
+        dispatchPointer('pointerdown', { button: 0, clientX: 300, clientY: 200 })
+        // 优先开画拉：压过空白平移（视口不动）、图层命中/柄面（选中不变、无 drag/resize 会话）
+        expect(editor.store.ui.create?.startScene).toEqual({ x: 300, y: 200 })
+        expect(editor.store.ui.drag).toBeNull()
+        expect(editor.store.ui.resize).toBeNull()
+        expect(editor.store.ui.selection).toEqual(['layers', 0])
+        expect(editor.store.ui.viewport).toEqual({ x: 0, y: 0, zoom: 1 })
+
+        dispatchPointer('pointermove', { clientX: 360, clientY: 240 })
+        expect(editor.store.ui.create?.rect).toEqual({ x: 300, y: 200, width: 60, height: 40 })
+
+        dispatchPointer('pointerup', { clientX: 360, clientY: 240 })
+        expect(editor.store.doc!.layers).toHaveLength(2) // 落库
+        expect(editor.store.ui.selection).toEqual(['layers', 1]) // 自动选中新层
+        expect(editor.store.ui.armedCreate).toBeNull() // 解除武装
+        expect(editor.store.ui.create).toBeNull()
+        expect(editor.store.history).toHaveLength(1) // 一次手势 = 一步历史
+        cleanup()
+    })
+
+    it('非武装态行为回归不变：空白按下拖拽仍平移、不建层', () => {
+        const { editor, cleanup } = mountSurface()
+        editor.openDocument({ width: 800, height: 600, layers: [textLayer({ priority: 10 })] })
+
+        dispatchPointer('pointerdown', { button: 0, clientX: 300, clientY: 200 })
+        expect(editor.store.ui.create).toBeNull()
+        dispatchPointer('pointermove', { clientX: 320, clientY: 210 })
+        expect(editor.store.ui.viewport).toEqual({ x: -20, y: -10, zoom: 1 }) // 空白平移
+        dispatchPointer('pointerup', { clientX: 320, clientY: 210 })
+        expect(editor.store.doc!.layers).toHaveLength(1)
+        cleanup()
+    })
+
+    it('武装态空格+左键 / 中键平移不受影响（wantPan 先于武装分派）', () => {
+        const { editor, cleanup } = mountSurface()
+        editor.openDocument({ width: 800, height: 600, layers: [] })
+        editor.armLayerCreate('TableLayer')
+
+        // 中键平移
+        dispatchPointer('pointerdown', { button: 1, clientX: 300, clientY: 200 })
+        dispatchPointer('pointermove', { clientX: 310, clientY: 210 })
+        expect(editor.store.ui.create).toBeNull()
+        expect(editor.store.ui.viewport).toEqual({ x: -10, y: -10, zoom: 1 })
+        dispatchPointer('pointerup', { clientX: 310, clientY: 210 })
+
+        // 空格 + 左键平移（空格按住跟踪在窗口级）
+        window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space' }))
+        dispatchPointer('pointerdown', { button: 0, clientX: 300, clientY: 200 })
+        dispatchPointer('pointermove', { clientX: 320, clientY: 200 })
+        expect(editor.store.ui.create).toBeNull()
+        expect(editor.store.ui.viewport).toEqual({ x: -30, y: -10, zoom: 1 }) // 纯横向拖：y 不变
+        dispatchPointer('pointerup', { clientX: 320, clientY: 200 })
+        window.dispatchEvent(new KeyboardEvent('keyup', { code: 'Space' }))
+        cleanup()
+    })
+
+    it('Esc 解除武装（待命态）：零副作用，不走 escapeSelection 选择升级链', () => {
+        const { editor, cleanup } = mountSurface()
+        editor.openDocument({ width: 800, height: 600, layers: [textLayer({ priority: 10 })] })
+        editor.setSelection(['layers', 0]) // 根层选中：escapeSelection 会清空选择
+        editor.armLayerCreate('TableLayer')
+
+        dispatchKey('Escape')
+        expect(editor.store.ui.armedCreate).toBeNull()
+        expect(editor.store.ui.selection).toEqual(['layers', 0]) // 选择升级链未走
+        expect(editor.store.doc!.layers).toHaveLength(1)
+        expect(editor.store.history).toHaveLength(0)
+        cleanup()
+    })
+
+    it('Esc 取消画拉（画拉态）：会话清除零文档写入，随后的抬手空转', () => {
+        const { editor, cleanup } = mountSurface()
+        editor.openDocument({ width: 800, height: 600, layers: [] })
+        editor.armLayerCreate('TextLayer')
+
+        dispatchPointer('pointerdown', { button: 0, clientX: 100, clientY: 100 })
+        dispatchPointer('pointermove', { clientX: 200, clientY: 160 })
+        dispatchKey('Escape')
+        expect(editor.store.ui.create).toBeNull()
+        expect(editor.store.ui.armedCreate).toBeNull()
+        expect(editor.store.doc!.layers).toHaveLength(0)
+        expect(editor.store.history).toHaveLength(0)
+
+        dispatchPointer('pointerup', { clientX: 200, clientY: 160 }) // 会话已清：空转
+        expect(editor.store.doc!.layers).toHaveLength(0)
+        expect(editor.store.ui.editing).toBeNull()
+        cleanup()
+    })
+
+    it('文本层画完自动进入编辑会话（spec 决策 6「画框即打字」）', () => {
+        const { editor, cleanup } = mountSurface()
+        editor.openDocument({ width: 800, height: 600, layers: [] })
+        editor.armLayerCreate('TextLayer')
+
+        dispatchPointer('pointerdown', { button: 0, clientX: 100, clientY: 100 })
+        dispatchPointer('pointermove', { clientX: 200, clientY: 160 })
+        dispatchPointer('pointerup', { clientX: 200, clientY: 160 })
+        expect(editor.store.ui.selection).toEqual(['layers', 0])
+        expect(editor.store.ui.editing?.path).toEqual(['layers', 0])
+        cleanup()
+    })
+
+    it('非文本层仅选中不进编辑', () => {
+        const { editor, cleanup } = mountSurface()
+        editor.openDocument({ width: 800, height: 600, layers: [] })
+        editor.armLayerCreate('QrCodeLayer')
+
+        dispatchPointer('pointerdown', { button: 0, clientX: 100, clientY: 100 })
+        dispatchPointer('pointermove', { clientX: 200, clientY: 160 })
+        dispatchPointer('pointerup', { clientX: 200, clientY: 160 })
+        expect(editor.store.ui.selection).toEqual(['layers', 0])
+        expect(editor.store.ui.editing).toBeNull()
+        cleanup()
+    })
+
+    it('武装态 crosshair 光标：待命即现、画拉中保持、落库解除随武装清空', async () => {
+        const { editor, cleanup } = mountSurface()
+        editor.openDocument({ width: 800, height: 600, layers: [] })
+        const host = () => surfaceHost() as HTMLElement
+
+        editor.armLayerCreate('TextLayer')
+        await nextTick() // 光标经响应式桥 → 样式绑定，等待渲染刷新
+        expect(host().style.cursor).toBe('crosshair') // 武装待命
+
+        dispatchPointer('pointerdown', { button: 0, clientX: 100, clientY: 100 })
+        dispatchPointer('pointermove', { clientX: 200, clientY: 160 })
+        await nextTick()
+        expect(host().style.cursor).toBe('crosshair') // 画拉中一次定死
+
+        dispatchPointer('pointerup', { clientX: 200, clientY: 160 })
+        await nextTick()
+        expect(host().style.cursor).toBe('') // 建层解除武装，光标还原
+        cleanup()
+    })
+
+    it('橡皮筋呈现（gizmo 同缝组合画笔）：虚线矩形 + W×H 气泡随会话，落库即撤', () => {
+        const bandCtx = bandRecorder()
+        const { editor, scheduler, cleanup } = mountSurface((editor) => (args) =>
+            drawCreateRubberBand(bandCtx as unknown as CanvasRenderingContext2D, editor, args),
+        )
+        editor.openDocument({ width: 800, height: 600, layers: [] })
+        editor.armLayerCreate('TextLayer')
+
+        // 按下即建会话但零尺寸不画；合帧语义下 move 后的 flush 画的是最新 rect
+        dispatchPointer('pointerdown', { button: 0, clientX: 100, clientY: 100 })
+        dispatchPointer('pointermove', { clientX: 180, clientY: 140 })
+        scheduler.flush()
+        expect(bandCtx.strokes).toEqual(['stroke:100,100,80,40'])
+        expect(bandCtx.texts).toEqual(['80 × 40'])
+
+        dispatchPointer('pointermove', { clientX: 220, clientY: 200 })
+        scheduler.flush()
+        expect(bandCtx.texts).toEqual(['80 × 40', '120 × 100']) // 气泡跟随橡皮筋
+
+        dispatchPointer('pointerup', { clientX: 220, clientY: 200 })
+        scheduler.flush()
+        expect(bandCtx.texts).toEqual(['80 × 40', '120 × 100']) // 会话清空：不再画
+        expect(bandCtx.strokes).toHaveLength(2) // 落库帧只有清屏（无新笔画）
         cleanup()
     })
 })

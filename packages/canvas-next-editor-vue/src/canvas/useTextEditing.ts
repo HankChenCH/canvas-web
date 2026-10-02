@@ -50,6 +50,9 @@ export interface TextEditingBinding {
     setComposing(value: boolean): void
     /** 双击入口：场景点命中 TextLayer 才进入编辑（内核校验类型） */
     beginAt(sceneX: number, sceneY: number): boolean
+    /** 路径入口：已知路径直接进入编辑（画拉建层自动进编辑，drag-create 工单 02；
+     *  内核校验 TextLayer 与会话幂等） */
+    beginTextEdit(path: LayerPath): boolean
     /** 立即提交（Esc / Ctrl+Enter / 画布点按路径）；合成中暂存到 compositionend */
     commitNow(): void
     /** blur 延迟提交：外部指针交互豁免、焦点落回取消（语义见模块头注释） */
@@ -160,6 +163,8 @@ export function useTextEditing(editor: EditorSession, hosts: TextEditingHosts): 
         return path !== null && editor.beginTextEdit(path)
     }
 
+    const beginTextEdit = (path: LayerPath): boolean => editor.beginTextEdit(path)
+
     // ---- 提交漏斗与 blur 延迟提交 ----
 
     let blurTimer: ReturnType<typeof setTimeout> | null = null
@@ -253,6 +258,7 @@ export function useTextEditing(editor: EditorSession, hosts: TextEditingHosts): 
         composing: computed(() => composingRef.value),
         setComposing,
         beginAt,
+        beginTextEdit,
         commitNow,
         armBlurCommit,
         ownsEventTarget,

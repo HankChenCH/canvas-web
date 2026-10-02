@@ -65,6 +65,7 @@ import {
     AlignFloatBar,
     CanvasSurface,
     createRafScheduler,
+    drawCreateRubberBand,
     drawFindMatches,
     drawSelectionGizmo,
     GuidesOverlay,
@@ -253,10 +254,11 @@ let unsubscribeAssets: (() => void) | null = null
 let unsubscribeDoc: (() => void) | null = null
 
 /** 覆盖层画笔：资源状态标识（playground-canvas-first 工单 04）+ 查找命中轮廓
- *  （canvas-web-find-replace 工单 04 接线）+ 选区 gizmo（工单 06）。与内容层同一
- *  呈现变换（场景坐标，经共享的 applyViewportTransform 施加），但重绘入口独立
- *  （选择/悬停/查找会话只脏覆盖层）。组合序按 findHighlight 调用契约：资源标识 →
- *  命中高亮 → 选区 gizmo（当前命中与选区框重叠时选区框压上）。 */
+ *  （canvas-web-find-replace 工单 04 接线）+ 选区 gizmo（工单 06）+ 画拉橡皮筋
+ *  （drag-create 工单 02）。与内容层同一呈现变换（场景坐标，经共享的
+ *  applyViewportTransform 施加），但重绘入口独立（选择/悬停/查找/建层会话只脏
+ *  覆盖层）。组合序按 findHighlight 调用契约：资源标识 → 命中高亮 → 选区 gizmo
+ *  （当前命中与选区框重叠时选区框压上）→ 橡皮筋（手势进行中最顶层）。 */
 const overlayPainter: OverlayPainter = (args) => {
     const ctx = overlayCtx
     if (!ctx) return
@@ -267,6 +269,7 @@ const overlayPainter: OverlayPainter = (args) => {
     drawResourceMarkers(ctx, args.doc, (materializer?.state ?? {}) as ResourceState)
     drawFindMatches(ctx, editor, args)
     drawSelectionGizmo(ctx, editor, args)
+    drawCreateRubberBand(ctx, editor, args)
 }
 
 function assetsStatus(state: ResourceState, pendingCount: number): string {

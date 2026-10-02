@@ -75,6 +75,9 @@ const onBlur = () => binding.armBlurCommit()
 defineExpose({
     /** 双击入口（表面组件转发）：命中 TextLayer 才进入 */
     beginAt: binding.beginAt,
+    /** 路径入口（表面组件转发）：已知路径直接进入编辑——画拉建层的文本层
+     *  自动进编辑（drag-create 工单 02），内核校验类型 */
+    beginTextEdit: binding.beginTextEdit,
     /** 画布点按的显式提交路径（表面组件 pointerdown 调用） */
     commitEditing: () => binding.commitNow(),
     /** 编辑态查询 */

@@ -11,6 +11,14 @@
  *   全部经内核意图级 API，组件只做坐标与指针状态翻译。Alt+拖快速复制
  *   （alt-drag-paste 工单 01）：pointerdown 读 altKey 且命中层可复制
  *   （canCopyLayerAt）→ beginDrag 携 copy 标记，不可复制目标/未按 Alt 走现状路径。
+ * - 画拉建层（drag-create 工单 02）：武装态（ui.armedCreate）左键按下优先开画拉
+ *   ——压过柄面命中与图层命中（画布全面即画布拉面，spec 决策 8）；空格+左键/
+ *   中键平移不受影响；文本编辑会话先提交再武装（右键菜单同款前置）。pointermove
+ *   → createTo（橡皮筋纯视觉 + 吸附轴回显走 GuidesOverlay 既有通道）、pointerup
+ *   → endCreate 落库（返回路径且层型为 TextLayer → 自动进入文本编辑，spec 决策 6）、
+ *   Esc → cancelCreate（窗口 Esc 守卫：武装/画拉态先解除武装，不走选择升级链）。
+ *   武装态 crosshair 光标（画拉中一次定死同 resize 柄先例）；橡皮筋与 W×H 尺寸
+ *   气泡由宿主组合 drawCreateRubberBand 呈现（gizmo 同缝，createBand.ts）。
  * - 文本编辑（工单 11）：宿主内挂 TextEditingOverlay，双击进入（命中 TextLayer）、
  *   编辑中点 textarea 外先提交再点选、textarea 内指针归编辑光标。
  * - 右键菜单（工单 14）：contextmenu → 场景命中即右键选中 → 视口坐标开菜单
@@ -30,7 +38,7 @@
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
-import { classifyWheel, type EditorSession, type ResizeHandle } from '@hankchen/canvas-next-editor'
+import { classifyWheel, type EditorSession, type LayerType, type ResizeHandle } from '@hankchen/canvas-next-editor'
 
 import ContextMenu from './ContextMenu.vue'
 import FindBar from './FindBar.vue'
@@ -68,10 +76,22 @@ const panning = ref(false)
  */
 const hoverHandle = ref<ResizeHandle | null>(null)
 const activeResizeHandle = ref<ResizeHandle | null>(null)
+/**
+ * 画拉建层（drag-create 工单 02）：armedCreate 经订阅桥进本地 ref（光标响应式），
+ * creating 是画拉会话中的光标一次定死标志（同 activeResizeHandle 先例）。
+ */
+const armedCreate = ref<LayerType | null>(props.editor.store.ui.armedCreate)
+const creating = ref(false)
 const cursorClass = computed(() =>
     panning.value ? 'cn-surface--panning' : spaceHeld.value ? 'cn-surface--pannable' : '',
 )
 const cursorStyle = computed(() => {
+    if (panning.value) return undefined // 平移中 grabbing 类生效（柄/武装光标让位）
+    // 武装待命/画拉中呈 crosshair（武装态画布全面即画布拉面）；空格按住转平移
+    // （wantPan 分派不受武装影响，spec 决策 8）光标同让位
+    if (armedCreate.value !== null || creating.value) {
+        return spaceHeld.value ? undefined : { cursor: 'crosshair' }
+    }
     const handle = activeResizeHandle.value ?? hoverHandle.value
     return handle === null ? undefined : { cursor: RESIZE_HANDLE_CURSORS[handle] }
 })
@@ -129,6 +149,15 @@ onMounted(() => {
     editor.setDevicePixelRatio(window.devicePixelRatio)
     applySurfaceSize()
 
+    // 武装待命层型桥进本地 ref（画拉建层光标响应式，drag-create 工单 02）：
+    // doc 分支一并重读——openDocument 重置族随清但只发 doc 通知（store.reset 语义）
+    const unsubscribeArmed = editor.subscribe((change) => {
+        if (change.scope === 'doc' || (change.scope === 'ui' && change.branch === 'armedCreate')) {
+            armedCreate.value = editor.store.ui.armedCreate
+        }
+    })
+    teardown.push(unsubscribeArmed)
+
     const observer = new ResizeObserver(applySurfaceSize)
     observer.observe(host)
     teardown.push(() => observer.disconnect())
@@ -172,9 +201,11 @@ onMounted(() => {
     host.addEventListener('wheel', onWheel, { passive: false })
     teardown.push(() => host.removeEventListener('wheel', onWheel))
 
-    // 拖拽平移（中键/空格+左键）与选择/拖动/八柄缩放图层（左键）共用一个活跃指针：
-    // mode 'pan' 抓取相机，'drag' 移动选中图层，'resize' 八柄缩放（工单 07）
-    let active: { id: number; mode: 'pan' | 'drag' | 'resize' } | null = null
+    // 拖拽平移（中键/空格+左键）与选择/拖动/八柄缩放/画拉建层（左键）共用一个
+    // 活跃指针：mode 'pan' 抓取相机，'drag' 移动选中图层，'resize' 八柄缩放
+    // （工单 07），'create' 画拉建层（drag-create 工单 02——橡皮筋手势，落库与
+    // 建后行为在抬手收口）
+    let active: { id: number; mode: 'pan' | 'drag' | 'resize' | 'create' } | null = null
     let last: { x: number; y: number } = { x: 0, y: 0 }
 
     const sceneAt = (e: PointerEvent) => {
@@ -202,9 +233,20 @@ onMounted(() => {
             textEditRef.value.commitEditing()
         }
         e.preventDefault()
+        const sceneBeforeSelect = sceneAt(e)
+        // 画拉建层（drag-create 工单 02）：武装态左键按下优先开画拉——压过柄面
+        // 命中与图层命中（武装态画布全面即画布拉面，spec 决策 8）；文本编辑会话
+        // 已在上方先提交再武装（右键菜单同款前置）。未武装由内核空转防御返回
+        // false，落回常规柄面/命中路径
+        if (editor.beginLayerCreate(sceneBeforeSelect.x, sceneBeforeSelect.y)) {
+            active = { id: e.pointerId, mode: 'create' }
+            creating.value = true
+            hoverHandle.value = null
+            host.setPointerCapture(e.pointerId)
+            return
+        }
         // 八柄缩放（工单 07）：选中框柄面优先于图层命中——点柄不再改选/开拖动；
         // 命中即开缩放会话（内核校验可用柄与锁定），光标一次定死随抓取走
-        const sceneBeforeSelect = sceneAt(e)
         const handle = editor.resizeHandleAt(sceneBeforeSelect.x, sceneBeforeSelect.y)
         if (handle !== null && editor.beginResize(editor.store.ui.selection!, handle, sceneBeforeSelect.x, sceneBeforeSelect.y)) {
             active = { id: e.pointerId, mode: 'resize' }
@@ -245,6 +287,11 @@ onMounted(() => {
             } else if (active.mode === 'resize') {
                 const scene = sceneAt(e)
                 editor.resizeTo(scene.x, scene.y)
+            } else if (active.mode === 'create') {
+                // 画拉求位（drag-create 工单 02）：橡皮筋纯视觉，吸附轴回显在内核
+                // createTo 内回写 ui.snapAxes 走 GuidesOverlay 既有通道
+                const scene = sceneAt(e)
+                editor.createTo(scene.x, scene.y)
             } else {
                 const scene = sceneAt(e)
                 editor.dragTo(scene.x, scene.y)
@@ -270,6 +317,13 @@ onMounted(() => {
         } else if (active.mode === 'resize') {
             editor.endResize() // 闭合缩放事务：一次八柄手势 = 一步历史
             activeResizeHandle.value = null
+        } else if (active.mode === 'create') {
+            // 画拉落库（drag-create 工单 02）：死区分流在内核，返回新层路径；
+            // 文本层画完直接打字（spec 决策 6「画框即打字」）——类型校验归内核
+            // beginTextEdit（非文本层返回 false 仅选中），绑定层不重复判定
+            creating.value = false
+            const createdPath = editor.endCreate()
+            if (createdPath !== null) textEditRef.value?.beginTextEdit(createdPath)
         } else {
             panning.value = false
         }
@@ -345,9 +399,16 @@ onMounted(() => {
         if (e.code === 'Space') spaceHeld.value = false
     }
     // Escape 升级选择归属链（格→行→表→清空）；输入法/输入框内不拦；顺带关右键菜单
-    // 与查找条（浮层先例协议——焦点漂出查找条输入框时 Esc 由窗口监听转发关闭）
+    // 与查找条（浮层先例协议——焦点漂出查找条输入框时 Esc 由窗口监听转发关闭）。
+    // 武装/画拉态（drag-create 工单 02）守卫前置：Esc 先解除武装/取消画拉即收口
+    // ——不走选择升级链、不动浮层（建层或 Esc 即解除，CONTEXT「武装」词条；
+    // 「Esc 解除零副作用」验收——选择变更属副作用）
     const onEscape = (e: KeyboardEvent) => {
         if (e.key !== 'Escape' || isEditableEventTarget(e.target)) return
+        if (editor.store.ui.armedCreate !== null || editor.store.ui.create !== null) {
+            editor.cancelCreate()
+            return
+        }
         contextMenuRef.value?.close()
         findBarRef.value?.close()
         editor.escapeSelection()
