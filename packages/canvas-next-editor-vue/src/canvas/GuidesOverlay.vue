@@ -9,8 +9,8 @@
  * 挂载点、pointer-events:none，只有参考线命中条留事件，吸附线纯回显。
  *
  * 两个概念（根 CONTEXT.md，视觉必须可区分）：
- * - 参考线（guide）：使用者从标尺拖出的会话级对位轴——读内核 listGuides，贯穿
- *   画布（doc 边界内）实线，驻留到拖回标尺删除；
+ * - 参考线（guide）：使用者从标尺拖出的会话级对位轴——读内核 listGuides，横跨
+ *   可视窗口实线（自标尺条底下起线），驻留到拖回标尺删除；
  * - 吸附线（snap line）：拖动会话命中吸附轴的瞬时回显——读内核命中轴查询
  *   （store.ui.snapAxes，dragTo 写入 / endDrag 清空），虚线区分，松手即消失。
  *
@@ -25,9 +25,10 @@
  * 再定位）；落点在标尺条上（document.elementFromPoint 命中 data-ruler-*，钩子即
  * 判定面、不感知宿主挂载几何）调 removeGuide，落在别处原线复原。
  *
- * 与内容层同一呈现视口（读 ui.viewport 分支）：线上位置 = (场景值 − viewport
+ * 与内容层同一呈现视口（读 ui.viewport 分支）：线上轴向位置 = (场景值 − viewport
  * 原点) × zoom。挂载契约同 Ruler：根铺满宿主给的挂载点（与画布内容区重合），
- * 页面定位归宿主（工单 04）；根 overflow:hidden 把线体裁进内容区。
+ * 页面定位归宿主（工单 04）；根 overflow:hidden + 壳层同族圆角把满幅线体裁进
+ * 可视窗口（挂点次序保证标尺条盖在参考线之上——线自标尺底下钻出）。
  */
 import { computed, onScopeDispose, ref, shallowRef } from 'vue'
 
@@ -68,6 +69,11 @@ onScopeDispose(unsubscribe, true)
 
 // ---- 几何：场景 → 挂载点屏幕坐标（与 Ruler 条内偏移同一换算式） ----
 
+/**
+ * 线体沿轴向满幅（对标行业：自标尺条底下起线、横跨整个可视窗口）——轴向定位
+ * 随场景值换算，轴向尺寸恒 top/left 0 + 100%，不随视口平移伸缩；可视窗口边缘
+ * 的收边归根节点 overflow:hidden + 壳层同族圆角（见样式）。
+ */
 function lineStyle(orientation: GuideOrientation, position: number): Record<string, string> {
     const d = doc.value
     const v = viewport.value
@@ -75,14 +81,14 @@ function lineStyle(orientation: GuideOrientation, position: number): Record<stri
     if (orientation === 'vertical') {
         return {
             left: `${(position - v.x) * v.zoom}px`,
-            top: `${-v.y * v.zoom}px`,
-            height: `${d.height * v.zoom}px`,
+            top: '0px',
+            height: '100%',
         }
     }
     return {
         top: `${(position - v.y) * v.zoom}px`,
-        left: `${-v.x * v.zoom}px`,
-        width: `${d.width * v.zoom}px`,
+        left: '0px',
+        width: '100%',
     }
 }
 
@@ -306,16 +312,26 @@ function onGuidePointerCancel(e: PointerEvent): void {
 <style scoped>
 /* 暗色令牌与壳层/标尺同族（Ruler 同款 #0b1220 族思路）：参考线层自带主题、
    不依赖宿主接线。参考线与吸附线的视觉区分（根 CONTEXT.md 两概念）：参考线
-   实线天青、驻留；吸附线虚线玫红、瞬时回显。命中条厚度留 CSS 变量供宿主覆盖。 */
+   实线天青、驻留；吸附线虚线玫红、瞬时回显。命中条厚度与辉光强度留 CSS 变量
+   供宿主覆盖。圆角与 .workbench .surface / .ruler-shell 同族（12px）：满幅
+   线体裁在壳圆角内，不顶出画布卡片收边。 */
 .cn-guides {
     --cn-guide-line: #38bdf8;
+    --cn-guide-glow: rgba(56, 189, 248, 0.4);
     --cn-guide-will-delete: #f87171;
+    --cn-guide-will-delete-glow: rgba(248, 113, 113, 0.45);
     --cn-snap-line: #fb7185;
+    --cn-snap-glow: rgba(251, 113, 133, 0.45);
+    --cn-snap-dash: 4px;
     --cn-guide-hit: 9px;
+    /* 满幅线体的壳内收边圆角：缺省与 Playground 壳层同族（12px），壳圆角不同的
+       宿主覆盖此变量——收边几何归宿主（挂载契约），组件只出覆盖缝 */
+    --cn-guide-clip-radius: 12px;
 
     position: absolute;
     inset: 0;
     overflow: hidden;
+    border-radius: var(--cn-guide-clip-radius);
     pointer-events: none;
     user-select: none;
 }
@@ -340,29 +356,37 @@ function onGuidePointerCancel(e: PointerEvent): void {
     cursor: ns-resize;
 }
 
-.cn-guides__guide--vertical::after {
+/* 参考线可见线体：纵横镜像共用线色与辉光，几何各自声明 */
+.cn-guides__guide--vertical::after,
+.cn-guides__guide--horizontal::after {
     content: '';
     position: absolute;
+    background: var(--cn-guide-line);
+    /* 细线辉光：亮/暗两种纸面内容上都读得出（实线是纯矩形，box-shadow 最省） */
+    box-shadow: 0 0 6px var(--cn-guide-glow);
+}
+
+.cn-guides__guide--vertical::after {
     top: 0;
     bottom: 0;
     left: calc(50% - 0.5px);
     width: 1px;
-    background: var(--cn-guide-line);
 }
 
 .cn-guides__guide--horizontal::after {
-    content: '';
-    position: absolute;
     left: 0;
     right: 0;
     top: calc(50% - 0.5px);
     height: 1px;
-    background: var(--cn-guide-line);
 }
 
-/* 拖出预览：手势途中呈线，指针归标尺条，命中条语义关闭 */
+/* 拖出预览：手势途中呈线，微透示意未落定；指针归标尺条，命中条语义关闭 */
 .cn-guides__guide--preview {
     pointer-events: none;
+}
+
+.cn-guides__guide--preview::after {
+    opacity: 0.85;
 }
 
 /* 拖回途中弱化；悬到标尺条转删除色（落点判定面 elementFromPoint） */
@@ -372,20 +396,24 @@ function onGuidePointerCancel(e: PointerEvent): void {
 
 .cn-guides__guide--will-delete::after {
     background: var(--cn-guide-will-delete);
+    box-shadow: 0 0 6px var(--cn-guide-will-delete-glow);
 }
 
-/* 吸附线：瞬时回显，虚线与参考线实线区分 */
+/* 吸附线：瞬时回显，虚线与参考线实线区分；密齿 4/4 比疏齿利落（齿长/齿距同值
+   由 --cn-snap-dash 一处定），辉光走 drop-shadow 沿虚线 alpha 出光（box-shadow
+   会连透明段一起框亮成实心矩形） */
 .cn-guides__snap {
     position: absolute;
     pointer-events: none;
+    filter: drop-shadow(0 0 3px var(--cn-snap-glow));
 }
 
 .cn-guides__snap--vertical {
     width: 1px;
     background-image: repeating-linear-gradient(
         to bottom,
-        var(--cn-snap-line) 0 6px,
-        transparent 6px 11px
+        var(--cn-snap-line) 0 var(--cn-snap-dash),
+        transparent var(--cn-snap-dash) calc(var(--cn-snap-dash) * 2)
     );
 }
 
@@ -393,8 +421,8 @@ function onGuidePointerCancel(e: PointerEvent): void {
     height: 1px;
     background-image: repeating-linear-gradient(
         to right,
-        var(--cn-snap-line) 0 6px,
-        transparent 6px 11px
+        var(--cn-snap-line) 0 var(--cn-snap-dash),
+        transparent var(--cn-snap-dash) calc(var(--cn-snap-dash) * 2)
     );
 }
 </style>

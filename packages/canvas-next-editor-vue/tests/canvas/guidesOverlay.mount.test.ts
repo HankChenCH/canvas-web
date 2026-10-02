@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 /**
  * GuidesOverlay 组件集成测试（ruler-guides-snap 工单 03）：
- * - 参考线呈现：读内核 listGuides 画贯穿画布细线，data-guide-* 钩子（id/取向/
- *   位置）与几何（位置=场景→屏幕换算，线体贯穿 doc 边界）随 ui.viewport 联动；
+ * - 参考线呈现：读内核 listGuides 画横跨可视窗口的满幅细线（自标尺条底下起线），
+ *   data-guide-* 钩子（id/取向/位置）与几何（轴向位置=场景→屏幕换算，线体沿轴
+ *   向满幅 top/left 0 + 100%，不随视口平移伸缩）随 ui.viewport 联动；
  *   removeGuide/换文档随内核消线；
  * - 拖出预览与落线：宿主把 Ruler 的 guide-drag-* 四事件转发到 defineExpose 的
  *   同名四方法——预览线随 begin/move 呈现、自身吸附（复用内核吸附数学）、end 落
@@ -93,7 +94,7 @@ describe('GuidesOverlay：参考线呈现（读 listGuides）', () => {
         wrapper.unmount()
     })
 
-    it('addGuide 后呈现贯穿细线：id/取向/位置钩子齐备，线体贯穿 doc 边界', async () => {
+    it('addGuide 后呈现贯穿细线：id/取向/位置钩子齐备，线体满幅贯穿挂载点', async () => {
         const editor = makeEditor()
         const wrapper = mountOverlay(editor)
         editor.addGuide({ orientation: 'vertical', position: 205 })
@@ -105,15 +106,16 @@ describe('GuidesOverlay：参考线呈现（读 listGuides）', () => {
         expect(vertical.attributes('data-guide-orientation')).toBe('vertical')
         expect(vertical.attributes('data-guide-position')).toBe('205')
         expect(vertical.attributes('style')).toContain('left: 205px')
+        // 满幅：自挂载点顶/左缘（标尺条底下）起，铺满可视窗口，不再按 doc 边界体裁
         expect(vertical.attributes('style')).toContain('top: 0px')
-        expect(vertical.attributes('style')).toContain('height: 600px')
+        expect(vertical.attributes('style')).toContain('height: 100%')
 
         const horizontal = wrapper.find('[data-guide-line="2"]')
         expect(horizontal.attributes('data-guide-orientation')).toBe('horizontal')
         expect(horizontal.attributes('data-guide-position')).toBe('300')
         expect(horizontal.attributes('style')).toContain('top: 300px')
         expect(horizontal.attributes('style')).toContain('left: 0px')
-        expect(horizontal.attributes('style')).toContain('width: 800px')
+        expect(horizontal.attributes('style')).toContain('width: 100%')
         wrapper.unmount()
     })
 
@@ -127,8 +129,8 @@ describe('GuidesOverlay：参考线呈现（读 listGuides）', () => {
         editor.store.setViewport({ x: 100, y: 50, zoom: 1 })
         await wrapper.vm.$nextTick()
         expect(wrapper.find('[data-guide-line="1"]').attributes('style')).toContain('left: 105px')
-        // 线体起点=场景 0：视口下移后顶缘越出挂载点（贯穿画布按 doc 边界计）
-        expect(wrapper.find('[data-guide-line="1"]').attributes('style')).toContain('top: -50px')
+        // 线体满幅自挂载点顶缘起：视口平移只动轴向定位，线体不随视口越出/伸缩
+        expect(wrapper.find('[data-guide-line="1"]').attributes('style')).toContain('top: 0px')
         expect(wrapper.find('[data-guide-line="2"]').attributes('style')).toContain('top: 250px')
 
         editor.store.setViewport({ x: 100, y: 50, zoom: 2 })
