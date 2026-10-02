@@ -460,6 +460,61 @@ describe('注册表元数据（kbd-nav 工单 01）：label/group 数据完备�
     })
 })
 
+describe('画拉建层武装条目（canvas-web-drag-create 工单 03）：T/G/Q/I 层型快捷键', () => {
+    it('注册表四条目：裸键按物理键 code 命中 armCreate*，mod/shift/alt 变体精确不入表', () => {
+        expect(classifyEditorShortcut(input({ key: 't', mod: false, shift: false, code: 'KeyT' }))).toBe('armCreateText')
+        expect(classifyEditorShortcut(input({ key: 'g', mod: false, shift: false, code: 'KeyG' }))).toBe('armCreateTable')
+        expect(classifyEditorShortcut(input({ key: 'q', mod: false, shift: false, code: 'KeyQ' }))).toBe('armCreateQrCode')
+        expect(classifyEditorShortcut(input({ key: 'i', mod: false, shift: false, code: 'KeyI' }))).toBe('armCreateImage')
+        // 修饰键变体精确不入表（⌘T 浏览器新标签、⇧T 大写变体、⌥T 变体字符均不抢）
+        expect(classifyEditorShortcut(input({ key: 't', mod: true, shift: false, code: 'KeyT' }))).toBeNull()
+        expect(classifyEditorShortcut(input({ key: 't', mod: false, shift: true, code: 'KeyT' }))).toBeNull()
+        expect(classifyEditorShortcut(input({ key: 't', mod: false, shift: false, alt: true, code: 'KeyT' }))).toBeNull()
+    })
+
+    it('让路规则前置：文本编辑态 / 输入框焦点 / 输入法合成中 T 不抢', () => {
+        expect(classifyEditorShortcut(input({ key: 't', mod: false, shift: false, code: 'KeyT', editing: true }))).toBeNull()
+        expect(classifyEditorShortcut(input({ key: 't', mod: false, shift: false, code: 'KeyT', editableTarget: true }))).toBeNull()
+        expect(classifyEditorShortcut(input({ key: 't', mod: false, shift: false, code: 'KeyT', composing: true }))).toBeNull()
+    })
+
+    it('注册表元数据：四条目 label「画拉建…」+ group layer（帮助面板注册表驱动自动收录）', () => {
+        const labelsOf = (action: string): string[] =>
+            DEFAULT_EDITOR_SHORTCUTS.filter((binding) => binding.action === action).map((binding) => binding.label)
+        expect(labelsOf('armCreateText')).toEqual(['画拉建文本层'])
+        expect(labelsOf('armCreateTable')).toEqual(['画拉建表格'])
+        expect(labelsOf('armCreateQrCode')).toEqual(['画拉建二维码'])
+        expect(labelsOf('armCreateImage')).toEqual(['画拉建图片'])
+        for (const action of ['armCreateText', 'armCreateTable', 'armCreateQrCode', 'armCreateImage']) {
+            expect(DEFAULT_EDITOR_SHORTCUTS.find((binding) => binding.action === action)?.group).toBe('layer')
+        }
+    })
+
+    it('executeShortcut 分派四型武装：ui.armedCreate 置层型，不落库零历史', () => {
+        const session = makeSession()
+        expect(session.executeShortcut('armCreateText')).toBe(true)
+        expect(session.store.ui.armedCreate).toBe('TextLayer')
+        expect(session.executeShortcut('armCreateImage')).toBe(true)
+        expect(session.store.ui.armedCreate).toBe('ImageLayer')
+        expect(session.executeShortcut('armCreateQrCode')).toBe(true)
+        expect(session.store.ui.armedCreate).toBe('QrCodeLayer')
+        expect(session.executeShortcut('armCreateTable')).toBe(true)
+        expect(session.store.ui.armedCreate).toBe('TableLayer')
+        expect(session.store.doc!.layers).toHaveLength(1)
+        expect(session.store.history).toHaveLength(0)
+    })
+
+    it('端到端：快捷键武装后 beginLayerCreate 可开画拉会话，Esc 取消解除武装', () => {
+        const session = makeSession()
+        expect(session.executeShortcut('armCreateText')).toBe(true)
+        expect(session.beginLayerCreate(100, 80)).toBe(true)
+        expect(session.store.ui.create?.type).toBe('TextLayer')
+        session.cancelCreate()
+        expect(session.store.ui.armedCreate).toBeNull()
+        expect(session.store.ui.create).toBeNull()
+    })
+})
+
 describe('executeShortcut：z 序与缩放分派（kbd-nav 工单 01）', () => {
     const makeZSession = () => {
         const session = makeSession()

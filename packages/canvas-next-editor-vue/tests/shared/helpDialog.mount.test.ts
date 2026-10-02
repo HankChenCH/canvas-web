@@ -59,11 +59,17 @@ describe('HelpDialog：内容两组', () => {
         // 图层节含前移一层（kbd-nav 工单 01 条目）；键位行带 data-help-shortcut
         const layerRows = rows('[data-help-group="layer"] [data-help-shortcut]')
         expect(layerRows.some((row) => row.includes('前移一层'))).toBe(true)
-        // 内置交互静态清单：滚轮缩放/空格平移/双击编辑/Esc/方向键微调/Tab 循环
+        // 画拉建层武装四条目自动入图层节（drag-create 工单 03：注册表即数据，零改面板）
+        expect(layerRows.some((row) => row.includes('画拉建文本层T'))).toBe(true)
+        expect(layerRows.some((row) => row.includes('画拉建二维码Q'))).toBe(true)
+        // 内置交互静态清单：滚轮缩放/空格平移/画拉建层/双击编辑/Esc/方向键微调/Tab 循环
         const interactions = rows('[data-help-interactions] [data-help-interaction]').join('\n')
-        for (const fragment of ['滚轮', '空格', '双击', 'Esc', '方向键', 'Tab']) {
+        for (const fragment of ['滚轮', '空格', '画拉建层', '双击', 'Esc', '方向键', 'Tab']) {
             expect(interactions.includes(fragment)).toBe(true)
         }
+        // 画拉建层条目带全流程语义（武装 → 画拉/点击兜底 → 自动选中文本直打）
+        expect(interactions.includes('点击兜底')).toBe(true)
+        expect(interactions.includes('直打')).toBe(true)
         wrapper.unmount()
     })
 

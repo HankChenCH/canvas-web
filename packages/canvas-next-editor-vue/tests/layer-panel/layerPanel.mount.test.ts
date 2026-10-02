@@ -20,6 +20,7 @@ import {
 
 import LayerPanel from '../../src/layer-panel/LayerPanel.vue'
 import { isUpperHalf } from '../../src/layer-panel/useLayerPanel'
+import { useTransientFeedback } from '../../src/shared/useTransientFeedback'
 
 const nullScheduler: FrameScheduler = () => () => {}
 
@@ -183,16 +184,34 @@ describe('LayerPanel：渲染与联动', () => {
         wrapper.unmount()
     })
 
-    it('新增按钮走 addRootLayer：置顶 min−1 并自动选中', async () => {
+    it('新增菜单点击 = armLayerCreate 武装（drag-create 工单 03）：不再直建落层——文档零变化、armedCreate 置层型、菜单收起、瞬时提示上状态栏', async () => {
         const editor = makeEditor([textLayer(30, '底'), textLayer(10, '顶')])
         const wrapper = mount(LayerPanel, { props: { editor } })
 
         await wrapper.find('[data-add-menu]').trigger('click')
         await wrapper.find('[data-add-layer="TextLayer"]').trigger('click')
-        const layers = editor.store.doc!.layers
-        expect(layers).toHaveLength(3)
-        expect(layers[2]!.priority).toBe(9)
-        expect(editor.store.ui.selection).toEqual(['layers', 2])
+        // 不再直建落 (0,0)：落库改由画拉 endCreate（内核工单 01 已测）
+        expect(editor.store.doc!.layers).toHaveLength(2)
+        expect(editor.store.history).toHaveLength(0)
+        expect(editor.store.ui.armedCreate).toBe('TextLayer')
+        // 菜单即收（武装是面板外的画布手势，弹层不留场）
+        expect(wrapper.find('[data-add-layer]').exists()).toBe(false)
+        // 武装态状态栏瞬时提示（useTransientFeedback 通道，面板与快捷键两入口同句）
+        expect(useTransientFeedback().message.value).toBe('画拉或点击落层，Esc 取消')
+        wrapper.unmount()
+    })
+
+    it('新增菜单连续武装换型：先文本后二维码，armedCreate 跟随最后一次武装（同型值等短路归内核）', async () => {
+        const editor = makeEditor([])
+        const wrapper = mount(LayerPanel, { props: { editor } })
+
+        await wrapper.find('[data-add-menu]').trigger('click')
+        await wrapper.find('[data-add-layer="TextLayer"]').trigger('click')
+        expect(editor.store.ui.armedCreate).toBe('TextLayer')
+
+        await wrapper.find('[data-add-menu]').trigger('click')
+        await wrapper.find('[data-add-layer="QrCodeLayer"]').trigger('click')
+        expect(editor.store.ui.armedCreate).toBe('QrCodeLayer')
         wrapper.unmount()
     })
 
@@ -609,7 +628,8 @@ describe('LayerPanel：模板表创建菜单（spec §2.1）', () => {
         expect(editor.store.doc!.layers).toHaveLength(0)
         expect(wrapper.find('[data-template-rows-path]').classes().some((c) => c.includes('border-cn-danger'))).toBe(true)
 
-        // 非空确认 → 建表 + 选中（缺省格带文本内容）
+        // 非空确认 → 建表 + 选中（缺省格带文本内容）；模板表保持表单直建语义
+        // （spec 决策 3 唯一直建例外，不武装不提示——rowsPath 必填校验就地拦）
         await wrapper.find('[data-template-rows-path]').setValue('order.items')
         await wrapper.find('[data-template-confirm]').trigger('click')
         const layers = editor.store.doc!.layers
@@ -621,6 +641,7 @@ describe('LayerPanel：模板表创建菜单（spec §2.1）', () => {
         expect(table.template!.cells).toHaveLength(1)
         expect(table.template!.cells[0]!.content?.type).toBe('TextLayer')
         expect(editor.store.ui.selection).toEqual(['layers', 0])
+        expect(editor.store.ui.armedCreate).toBeNull()
         wrapper.unmount()
     })
 })

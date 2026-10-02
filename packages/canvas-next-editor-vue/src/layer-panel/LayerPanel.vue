@@ -3,10 +3,13 @@
  * <LayerPanel>：图层面板（工单 10/12）——树形大纲（根层 = 视觉逆序，表格三层
  * 嵌套展开）、拖动重排（根层走 priority 中点插值 / 行格直接改数组序，两套语义
  * 分立；行可跨表、格可跨行——跨容器落点走内核重建路径同步尺寸）、增删（新增
- * 置顶 min−1、加行/加格走重建路径、删除含子树）、点选/悬停与画布双向联动、
+ * 见下方画拉建层注、加行/加格走重建路径、删除含子树）、点选/悬停与画布双向联动、
  * 根层行内重命名（工单 09：双击/hover 铅笔/F2 开会话，Enter·失焦提交、Esc
  * 取消，会话与漏斗在内核 ui 分支）。表达式前置（工单 02）：带标记内容层行内
  * 等宽显示闭合片段串——只读 outline 投影字段，面板零计算。
+ * 新增菜单画拉建层（drag-create 工单 03）：四类图层项点击 = 武装一次画拉
+ * （armLayerCreate，落位与尺寸归画布拉出的橡皮筋），状态栏瞬时提示操作方式；
+ * 模板表项保持表单直建不变（rowsPath 必填校验就地拦）。
  * 视觉沿用 .cn-props 主题命名空间（与属性面板同一套设计令牌）；行卡片化 +
  * 根层拖拽把手见 panel-theme.css 的 cn-layers 区块（工单 08）。
  *
@@ -31,7 +34,8 @@ import {
 } from '@hankchen/canvas-next-editor'
 
 import PanelIcon from '../shared/PanelIcon.vue'
-import { detectShortcutPlatform, shortcutActionLabel } from '../shared/shortcutsHelp'
+import { ARM_LAYER_CREATE_HINT, detectShortcutPlatform, shortcutActionLabel } from '../shared/shortcutsHelp'
+import { useTransientFeedback } from '../shared/useTransientFeedback'
 import { isUpperHalf, useLayerPanel } from './useLayerPanel'
 const props = defineProps<{ editor: EditorSession }>()
 
@@ -57,16 +61,16 @@ interface FlatRow {
     draggable: boolean
 }
 
-/** 新增菜单项（spec §2.1）：四类图层直建；模板表带 rowsPath 必填表单 */
+/** 新增菜单项（spec §2.1）：四类图层武装画拉（drag-create 工单 03）；模板表带 rowsPath 必填表单 */
 type AddMenuKind =
     | { kind: 'layer'; type: LayerType; label: string; title: string }
     | { kind: 'template-table'; label: string; title: string }
 
 const ADD_MENU: readonly AddMenuKind[] = [
-    { kind: 'layer', type: 'TextLayer', label: '文本层', title: '新增文本层' },
-    { kind: 'layer', type: 'ImageLayer', label: '图片层', title: '新增图片层' },
-    { kind: 'layer', type: 'QrCodeLayer', label: '二维码层', title: '新增二维码层' },
-    { kind: 'layer', type: 'TableLayer', label: '表格', title: '新增表格层' },
+    { kind: 'layer', type: 'TextLayer', label: '文本层', title: '画拉建文本层（点击后在画布拖拽定落位与尺寸，Esc 取消）' },
+    { kind: 'layer', type: 'ImageLayer', label: '图片层', title: '画拉建图片层（点击后在画布拖拽定落位与尺寸，Esc 取消）' },
+    { kind: 'layer', type: 'QrCodeLayer', label: '二维码层', title: '画拉建二维码层（点击后在画布拖拽定落位与尺寸，恒方形，Esc 取消）' },
+    { kind: 'layer', type: 'TableLayer', label: '表格', title: '画拉建表格（点击后在画布拖拽定落位与尺寸，Esc 取消）' },
     { kind: 'template-table', label: '模板表', title: '新增模板表（行模板 + 数据行展开）' },
 ]
 
@@ -96,7 +100,11 @@ function addLayer(kind: AddMenuKind): void {
         templateFormOpen.value = true
         return
     }
-    props.editor.addRootLayer(kind.type)
+    // 画拉建层（drag-create 工单 03）：新增项点击 = 武装一次画拉（不再直建落
+    // (0,0)——落点从原点变点击处本身是改进，spec 决策 1）；落库归画拉 endCreate。
+    // 武装态操作方式走状态栏瞬时提示（与快捷键入口同句），菜单即收不留场
+    props.editor.armLayerCreate(kind.type)
+    useTransientFeedback().show(ARM_LAYER_CREATE_HINT)
     resetAddMenu()
 }
 

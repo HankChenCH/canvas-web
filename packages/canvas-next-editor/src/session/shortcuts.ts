@@ -36,6 +36,7 @@
  *
  * 本模块无 DOM：KeyboardEvent → 输入的折算归绑定层（useShortcuts）。
  */
+import type { LayerType } from '@hankchen/canvas-next'
 
 /** 快捷键动作（会话分派面 executeShortcut 的入参域） */
 export type EditorShortcutAction =
@@ -66,10 +67,29 @@ export type EditorShortcutAction =
     | 'nudgeRightCoarse'
     | 'selectNextLayer'
     | 'selectPrevLayer'
+    | 'armCreateText'
+    | 'armCreateTable'
+    | 'armCreateQrCode'
+    | 'armCreateImage'
     | 'zoomReset'
     | 'fitToSurface'
     | 'fitToSelection'
     | 'helpShortcuts'
+
+/** 画拉建层武装四动作的联合（注册表条目与分派、绑定层提示路由的共用键域） */
+export type ArmCreateShortcutAction = keyof typeof ARM_CREATE_LAYER_TYPES
+
+/**
+ * 武装动作 → 层型（canvas-web-drag-create 工单 03）：「哪四个动作是武装、各武装
+ * 什么层型」的单一事实源——executeShortcut 分派与绑定层桥（useShortcuts 的提示
+ * 路由）都从这里取，加层型只改此表与注册表条目两处。
+ */
+export const ARM_CREATE_LAYER_TYPES = {
+    armCreateText: 'TextLayer',
+    armCreateTable: 'TableLayer',
+    armCreateQrCode: 'QrCodeLayer',
+    armCreateImage: 'ImageLayer',
+} as const satisfies Record<string, LayerType>
 
 /**
  * 帮助面板的展示归组（kbd-nav 工单 04）：分节渲染的键位归类。展示名归 Vue，
@@ -200,6 +220,17 @@ export const DEFAULT_EDITOR_SHORTCUTS: readonly EditorShortcutBinding[] = [
     // 移动，不劫持
     { combo: { key: 'tab', mod: false, shift: false }, action: 'selectNextLayer', label: '循环选下一层', group: 'layer' },
     { combo: { key: 'tab', mod: false, shift: true }, action: 'selectPrevLayer', label: '循环选上一层', group: 'layer' },
+    // 画拉建层武装四条目（canvas-web-drag-create 工单 03，CONTEXT「武装」词条）：
+    // T/G/Q/I 层型待命——下一次画布按下即开画拉，建层或 Esc 即解除（一次性待命，
+    // 无粘性工具）。按物理键 code 匹配（⇧1/⇧2 数字行同门先例）：非拉丁布局的
+    // key 是本地字符（西里尔布局 T 位产出 'т'），code 恒 KeyT 两边通吃；mod/shift/
+    // alt 精确匹配（⌘T 新标签、⇧T、⌥T 变体不入表）。文本编辑态/输入框焦点由让路
+    // 规则天然放行（编辑文本时 T 打字不武装）——绑定层 useShortcuts 桥对命中条目
+    // 直写状态栏瞬时提示，不经本表
+    { combo: { key: 't', mod: false, shift: false, code: 'KeyT' }, action: 'armCreateText', label: '画拉建文本层', group: 'layer' },
+    { combo: { key: 'g', mod: false, shift: false, code: 'KeyG' }, action: 'armCreateTable', label: '画拉建表格', group: 'layer' },
+    { combo: { key: 'q', mod: false, shift: false, code: 'KeyQ' }, action: 'armCreateQrCode', label: '画拉建二维码', group: 'layer' },
+    { combo: { key: 'i', mod: false, shift: false, code: 'KeyI' }, action: 'armCreateImage', label: '画拉建图片', group: 'layer' },
     // 缩放（kbd-nav 工单 01）：⌘0 复位 100%（视口中心为锚；浏览器吞键时的降级
     // 预案 = Figma 纯 shift ⇧0/1/2，宿主注入亦可覆盖）；⇧1/⇧2 适应画布/选区，
     // 数字行按 code 匹配（US 布局 ⇧1 的 key 是 '!'，法国布局是 '1'，code 恒

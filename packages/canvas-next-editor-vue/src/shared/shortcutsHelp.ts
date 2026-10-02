@@ -80,6 +80,14 @@ export function shortcutActionLabel(action: EditorShortcutAction, platform: Shor
 }
 
 /**
+ * 武装建层的状态栏瞬时提示（canvas-web-drag-create 工单 03）：面板新增项与
+ * T/G/Q/I 层型快捷键两入口共用同一句（LayerPanel 与 useShortcuts 直引此常量，
+ * 文案单点维护）。瞬时语义 = show 后数秒自动清空（useTransientFeedback TTL），
+ * 武装本身是待命态，不随解除主动撤提示。
+ */
+export const ARM_LAYER_CREATE_HINT = '画拉或点击落层，Esc 取消'
+
+/**
  * 平台侦测：userAgentData.platform（Client Hints 新 API，Safari 尚无——三源拼串
  * 一次匹配）与 platform/userAgent 含 mac 形态 → mac；未知/其余 → win 文本系。
  * userAgentData 未进全量 TS DOM lib，结构化局部读取免随 lib 版本漂移。

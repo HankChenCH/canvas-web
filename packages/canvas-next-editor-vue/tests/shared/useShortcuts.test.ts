@@ -14,6 +14,7 @@ import { EditorSession, type FrameScheduler } from '@hankchen/canvas-next-editor
 
 import { useShortcuts } from '../../src/shared/useShortcuts'
 import { useShortcutsHelp } from '../../src/shared/useShortcutsHelp'
+import { useTransientFeedback } from '../../src/shared/useTransientFeedback'
 import { textLayer } from '../../../canvas-next-editor/tests/support/fixtures'
 
 const nullScheduler: FrameScheduler = () => () => {}
@@ -187,6 +188,72 @@ describe('useShortcuts：⌘/ 帮助面板路由（kbd-nav 工单 04，UI 面动
         input.remove()
         scope.stop()
         useShortcutsHelp().close()
+    })
+})
+
+describe('useShortcuts：T/G/Q/I 画拉建层武装（canvas-web-drag-create 工单 03）', () => {
+    beforeEach(() => {
+        useTransientFeedback().clear()
+    })
+
+    it('裸键 T/G/Q/I 武装对应层型（物理键 code 通道）+ 状态栏瞬时提示；不直建零历史', () => {
+        const scope = effectScope()
+        const editor = makeEditor()
+        scope.run(() => useShortcuts(editor))
+
+        expect(press({ key: 't', code: 'KeyT' })).toBe(true)
+        expect(editor.store.ui.armedCreate).toBe('TextLayer')
+        expect(useTransientFeedback().message.value).toBe('画拉或点击落层，Esc 取消')
+        expect(press({ key: 'g', code: 'KeyG' })).toBe(true)
+        expect(editor.store.ui.armedCreate).toBe('TableLayer')
+        expect(press({ key: 'q', code: 'KeyQ' })).toBe(true)
+        expect(editor.store.ui.armedCreate).toBe('QrCodeLayer')
+        expect(press({ key: 'i', code: 'KeyI' })).toBe(true)
+        expect(editor.store.ui.armedCreate).toBe('ImageLayer')
+        // 武装只置 ui 待命态：不落库（落库在画拉 endCreate）、不进历史
+        expect(editor.store.doc!.layers).toHaveLength(1)
+        expect(editor.store.history).toHaveLength(0)
+        scope.stop()
+    })
+
+    it('编辑文本时 T 不抢（让路分类器）：不武装不改字；提交后 T 恢复武装', () => {
+        const scope = effectScope()
+        const editor = makeEditor()
+        scope.run(() => useShortcuts(editor))
+        editor.setSelection(['layers', 0])
+        expect(editor.beginTextEdit(['layers', 0])).toBe(true)
+
+        expect(press({ key: 't', code: 'KeyT' })).toBe(false)
+        expect(editor.store.ui.armedCreate).toBeNull()
+
+        expect(editor.commitTextEdit('甲')).toBe(false) // 文本未变：收会话零历史
+        expect(press({ key: 't', code: 'KeyT' })).toBe(true)
+        expect(editor.store.ui.armedCreate).toBe('TextLayer')
+        scope.stop()
+    })
+
+    it('输入框焦点 T 让路（原生编辑优先）：不武装', () => {
+        const scope = effectScope()
+        const editor = makeEditor()
+        scope.run(() => useShortcuts(editor))
+
+        const input = document.createElement('input')
+        document.body.appendChild(input)
+        expect(press({ key: 't', code: 'KeyT' }, input)).toBe(false)
+        expect(editor.store.ui.armedCreate).toBeNull()
+        input.remove()
+        scope.stop()
+    })
+
+    it('Shift+T / Ctrl+T 变体精确不入表：不误触武装', () => {
+        const scope = effectScope()
+        const editor = makeEditor()
+        scope.run(() => useShortcuts(editor))
+
+        expect(press({ key: 'T', shiftKey: true, code: 'KeyT' })).toBe(false)
+        expect(press({ key: 't', ctrlKey: true, code: 'KeyT' })).toBe(false) // ⌘T 新标签不抢
+        expect(editor.store.ui.armedCreate).toBeNull()
+        scope.stop()
     })
 })
 

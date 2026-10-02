@@ -11,8 +11,8 @@
  * - 内容两组：① 注册表动作——bindings 注入缝缺省 DEFAULT_EDITOR_SHORTCUTS
  *   （注册表是键位唯一事实源，后续新动作自动入面板），按 group 分节、展示名归
  *   本包（shortcutsHelp）；键位符号按平台渲染（platform 注入缝缺省侦测）；
- *   ② 内置交互静态清单——画布表面的手势语义（滚轮缩放/空格平移/双击编辑/Escape/
- *   方向键微调/Tab 循环），不在注册表键位之列，静态文案随组件。
+ *   ② 内置交互静态清单——画布表面的手势语义（滚轮缩放/空格平移/画拉建层流程/
+ *   双击编辑/Escape/方向键微调/Tab 循环），不在注册表键位之列，静态文案随组件。
  */
 import { computed, onBeforeUnmount, watch } from 'vue'
 
@@ -58,8 +58,12 @@ const sections = computed(() =>
 const interactions = [
     { gesture: 'Ctrl/⌘ + 滚轮', text: '缩放画布（以指针为中心，5%–800%）' },
     { gesture: '空格拖动', text: '平移画布（中键拖拽、左键拖空白同效）' },
+    {
+        gesture: '面板菜单 / T·G·Q·I',
+        text: '画拉建层：点层型或按键武装 → 画布拖拽定落位与尺寸（位移小于死区 = 点击兜底缺省尺寸）→ 自动选中、文本直打；Esc 取消',
+    },
     { gesture: '双击', text: '就地编辑文本' },
-    { gesture: 'Esc', text: '退出编辑 / 关闭弹层 / 选择逐级升级（格→行→表）' },
+    { gesture: 'Esc', text: '退出编辑 / 解除武装 / 关闭弹层 / 选择逐级升级（格→行→表）' },
     { gesture: '方向键', text: '微调选中图层 1px（按住 Shift 大步 10px）' },
     { gesture: 'Tab / ⇧Tab', text: '在根图层间循环选层（跳过隐藏与锁定）' },
 ]

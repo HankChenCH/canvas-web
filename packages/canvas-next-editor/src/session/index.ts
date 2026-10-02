@@ -14,8 +14,10 @@ export {
     type TextEditLayout,
 } from './editor'
 export {
+    ARM_CREATE_LAYER_TYPES,
     classifyEditorShortcut,
     DEFAULT_EDITOR_SHORTCUTS,
+    type ArmCreateShortcutAction,
     type EditorShortcutAction,
     type EditorShortcutBinding,
     type EditorShortcutGroup,

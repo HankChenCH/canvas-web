@@ -127,7 +127,7 @@ import {
     type MovedSubtreeRef,
 } from '../editing/tableEditing'
 import { EditorStore, type DragGesture, type EditorChange, type TransactOptions } from './store'
-import type { EditorShortcutAction } from './shortcuts'
+import { ARM_CREATE_LAYER_TYPES, type EditorShortcutAction } from './shortcuts'
 import { FontCatalog, type FontCatalogEntry } from '../editing/fontCatalog'
 import {
     UploadHandlerMissingError,
@@ -1901,6 +1901,16 @@ export class EditorSession {
                 // 查找替换（canvas-web-find-replace 工单 01）：⌘F 分派 beginFind——
                 // 面板开合语义内核只持会话态（Esc 关归 Vue 面板组件，工单 03 接线）
                 return this.beginFind()
+            case 'armCreateText':
+            case 'armCreateTable':
+            case 'armCreateQrCode':
+            case 'armCreateImage':
+                // 画拉建层武装四条目（canvas-web-drag-create 工单 03）：T/G/Q/I 分派
+                // 统一武装口——面板新增项与层型快捷键同缝（spec 决策 1）；武装只置
+                // ui 待命态，落库在画拉 endCreate（此处恒 true，状态栏提示归绑定层桥；
+                // 动作→层型映射与绑定层共用 ARM_CREATE_LAYER_TYPES 单一事实源）
+                this.armLayerCreate(ARM_CREATE_LAYER_TYPES[action])
+                return true
             case 'toggleRulers':
                 this.toggleRulers()
                 return true

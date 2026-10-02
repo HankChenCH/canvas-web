@@ -3,9 +3,10 @@
  *
  * window keydown → KeyboardEvent 折算（mod/alt/composing/editing/editableTarget/
  * code）→ 内核 classifyEditorShortcut（让路规则在分类器裁决，有测试锁定）→
- * preventDefault + 分发。分发双路：helpShortcuts（kbd-nav 工单 04）是 UI 面动作
+ * preventDefault + 分发。分发三路：helpShortcuts（kbd-nav 工单 04）是 UI 面动作
  * ——开合帮助面板单例态（useShortcutsHelp），不经内核 dispatcher、不进内核
- * store；其余动作 editor.executeShortcut。折算说明：
+ * store；armCreate* 武装四动作（drag-create 工单 03）经内核 executeShortcut 置
+ * 待命态后由桥补状态栏瞬时提示；其余动作 editor.executeShortcut。折算说明：
  * - mod = Ctrl（Windows/Linux）或 Cmd（macOS），两平台等价；alt 同理（kbd-nav
  *   工单 01 起 ⌥⌘ 组合按 code 匹配，alt 必须折算）；
  * - code = event.code（物理键码）：⌥ 变体字符与 ⇧ 数字变体场景下 key 不可靠，
@@ -17,13 +18,26 @@
  */
 import { onScopeDispose } from 'vue'
 
-import { classifyEditorShortcut, type EditorSession } from '@hankchen/canvas-next-editor'
+import {
+    ARM_CREATE_LAYER_TYPES,
+    classifyEditorShortcut,
+    type EditorSession,
+    type EditorShortcutAction,
+} from '@hankchen/canvas-next-editor'
 
 import { isEditableEventTarget } from './editableTarget'
 import { useShortcutsHelp } from './useShortcutsHelp'
+import { ARM_LAYER_CREATE_HINT } from './shortcutsHelp'
+import { useTransientFeedback } from './useTransientFeedback'
+
+/** 武装动作集：从内核映射表派生（哪四个动作是武装的单一事实源在内核，加层型零改桥） */
+const ARM_CREATE_ACTIONS: ReadonlySet<EditorShortcutAction> = new Set(
+    Object.keys(ARM_CREATE_LAYER_TYPES) as EditorShortcutAction[],
+)
 
 export function useShortcuts(editor: EditorSession): void {
     const help = useShortcutsHelp()
+    const feedback = useTransientFeedback()
     const onKeyDown = (event: KeyboardEvent): void => {
         const action = classifyEditorShortcut({
             key: event.key,
@@ -44,6 +58,9 @@ export function useShortcuts(editor: EditorSession): void {
             return
         }
         editor.executeShortcut(action)
+        // 武装动作（drag-create 工单 03）：内核只置待命态，操作方式提示在这里补——
+        // 与面板新增项入口同句（ARM_LAYER_CREATE_HINT），武装恒成功故不查返回值
+        if (ARM_CREATE_ACTIONS.has(action)) feedback.show(ARM_LAYER_CREATE_HINT)
     }
     window.addEventListener('keydown', onKeyDown)
     // failSilently：测试可在无 effect scope 的环境调用
