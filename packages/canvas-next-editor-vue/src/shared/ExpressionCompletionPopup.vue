@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
- * ExpressionCompletionPopup：表达式路径补全浮层（content-completion 工单 04，
- * 域内行内辅助件——消费方直引，不进包级公共出口）。
+ * ExpressionCompletionPopup：表达式路径补全浮层（content-completion 工单 04）。
+ * shared 域切片（表达式就地编辑 spec 决策 5 迁入）：属性面板与画布文本编辑两域
+ * 共用的呈现件，经域 barrel 出口。
  *
  * - portal 到 body + fixed 定位（躲 288px 面板 overflow 裁剪），锚点坐标由
  *   useExpressionCompletion 测算（mirror div 光标测量），随 scroll/resize 重算；

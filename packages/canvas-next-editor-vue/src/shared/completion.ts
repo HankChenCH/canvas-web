@@ -1,5 +1,7 @@
 /**
  * 表达式补全浮层的数据契约与接受手术（content-completion 工单 04）。
+ * shared 域切片（表达式就地编辑 spec 决策 5 迁入）：属性面板与画布文本编辑两域
+ * 共用。
  *
  * 候选源按纯函数注入（CompletionSource）——浮层控件只认这个缝，不认识
  * schema/会话态：工单 05 接线时用内核 02 的 enumerateExpressionCandidates 适配

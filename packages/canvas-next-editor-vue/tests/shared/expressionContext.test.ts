@@ -24,7 +24,7 @@ import { cellLayer, rowLayer, tableLayer, textLayer } from '../../../canvas-next
 import {
     expressionCompletionSource,
     expressionFieldContext,
-} from '../../src/property-panel/expressionContext'
+} from '../../src/shared/expressionContext'
 
 /* ---------------------------------------------------------------- 造数 */
 

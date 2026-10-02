@@ -1,10 +1,13 @@
 /**
  * 补全上下文判定 + 候选源适配（content-completion 工单 05，spec §1 生效面/§2 规则表）。
  *
+ * shared 域切片（表达式就地编辑 spec 决策 5 迁入）：属性面板与画布文本编辑两域
+ * 共用——候选源与面板同源（模板格内容 row. 上下文自动正确）。
+ *
  * 上下文判定对齐 PHP 权威（CanvasHydrator 行上下文注入点）：rowNamespace 只在
- * 模板表实例化子树内注入——面板可达面里即「模板格内容层」（layerRoleAt 的
- * templateContent 角色）为行上下文，根层三字段与 V1 rows 格内容层都是根上下文
- * （V1 格内容写 row. 在填充期报 expression_row_outside_loop，候选不给）。
+ * 模板表实例化子树内注入——面板可达面里即「模板格内容层」为行上下文，根层三
+ * 字段与 V1 rows 格内容层都是根上下文（V1 格内容写 row. 在填充期报
+ * expression_row_outside_loop，候选不给）。
  *
  * 行 schema 解析沿路径上每个 template 段逐级下钻：外层表 rowsPath 对根 schema、
  * 嵌套模板表 rowsPath 对当前行 schema（行相对取数，hydrateTemplateNode 同门）；
@@ -17,6 +20,7 @@
  */
 import {
     enumerateExpressionCandidates,
+    isTemplateSubtreePath,
     resolveLayer,
     resolveRowSchema,
     type Canvas,
@@ -25,8 +29,7 @@ import {
     type LayerPath,
 } from '@hankchen/canvas-next-editor'
 
-import { layerRoleAt } from './fieldSchema'
-import type { CompletionSource } from './fields/completion'
+import type { CompletionSource } from './completion'
 
 /** 数据字段所在位置的补全上下文（kind = 候选分表面；rowSchema 仅行上下文在场） */
 export interface ExpressionFieldContext {
@@ -49,6 +52,20 @@ function rowSchemaAlongPath(doc: Canvas, path: LayerPath, rootSchema: Expression
 }
 
 /**
+ * 模板格内容层判定（fieldSchema.layerRoleAt 的 templateContent 支最小形态）。
+ *
+ * 对 fieldSchema 依赖的收窄（表达式就地编辑 spec 决策 5）：本模块只消费
+ * templateContent 一格判定，随迁完整角色表会把面板的过滤语义整表拖进 shared
+ * （迁出面最小原则）——此处以谓词最小形态落（路径尾 content 段 + 模板子树，
+ * isTemplateSubtreePath 由内核 shared 导出）；完整 LayerRole 表仍归
+ * property-panel/fieldSchema 域私有，语义漂移由 fieldSchema.test 与本模块
+ * expressionContext.test 两侧共同看护。
+ */
+function isTemplateContentPath(path: LayerPath): boolean {
+    return path[path.length - 1] === 'content' && isTemplateSubtreePath(path)
+}
+
+/**
  * 选中路径处数据字段的补全上下文：模板格内容层 = 行上下文（rowNamespace 注入
  * 面），其余可达位置（根层/V1 格内容）= 根上下文。doc/path/schema 任一缺席
  * 一律根上下文（画布级目标无数据字段，判定兜底一致）。
@@ -58,7 +75,7 @@ export function expressionFieldContext(
     doc: Canvas | null,
     path: LayerPath | null,
 ): ExpressionFieldContext {
-    if (schema === null || doc === null || path === null || layerRoleAt(path) !== 'templateContent') {
+    if (schema === null || doc === null || path === null || !isTemplateContentPath(path)) {
         return { kind: 'root', rowSchema: null }
     }
     return { kind: 'row', rowSchema: rowSchemaAlongPath(doc, path, schema) }
@@ -69,7 +86,7 @@ export function expressionFieldContext(
  * 浮层恒闭；否则包裹内核枚举器——ok:false（语法错误/无补全态）映射 null，
  * ok:true 原样透传（ExpressionCandidate 结构兼容 CompletionItem——description/
  * title D8 分离透传、展示回落归浮层；open 信号随结果面透出供工单 10 占位提示，
- * partial/candidates 契约见 fields/completion.ts）。
+ * partial/candidates 契约见 ./completion）。
  */
 export function expressionCompletionSource(
     schema: ExpressionSchemaNode | null,

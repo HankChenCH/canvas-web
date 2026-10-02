@@ -33,8 +33,8 @@ import {
 import {
     expressionCompletionSource,
     expressionFieldContext,
-} from './expressionContext'
-import type { CompletionSource } from './fields/completion'
+} from '../shared/expressionContext'
+import type { CompletionSource } from '../shared/completion'
 
 export type { FieldDef, FieldSection } from './fieldSchema'
 

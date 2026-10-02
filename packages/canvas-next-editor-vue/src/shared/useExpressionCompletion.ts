@@ -1,6 +1,9 @@
 /**
  * 表达式补全浮层控件（content-completion 工单 04，spec §3 交互规格）。
  *
+ * shared 域切片（表达式就地编辑 spec 决策 5 迁入）：属性面板（PropertyField）
+ * 与画布文本编辑两域共用——域间禁横引，跨域消费收口 shared。
+ *
  * composable 绑定宿主 input/textarea（原生 addEventListener，字段控件模板零
  * 改动），配 ExpressionCompletionPopup（Teleport 到 body）呈现。行为面：
  * - 触发：表达式态输入 `{{` 自动、片段内 `.`（经 input 事件）刷新候选、

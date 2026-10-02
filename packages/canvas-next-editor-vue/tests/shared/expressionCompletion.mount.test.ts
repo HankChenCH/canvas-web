@@ -18,9 +18,9 @@ import { afterEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { defineComponent, h, nextTick, ref, type Ref } from 'vue'
 import { mount, type VueWrapper } from '@vue/test-utils'
 
-import ExpressionCompletionPopup from '../../src/property-panel/fields/ExpressionCompletionPopup.vue'
-import { useExpressionCompletion } from '../../src/property-panel/fields/useExpressionCompletion'
-import type { CompletionItem, CompletionSource } from '../../src/property-panel/fields/completion'
+import ExpressionCompletionPopup from '../../src/shared/ExpressionCompletionPopup.vue'
+import { useExpressionCompletion } from '../../src/shared/useExpressionCompletion'
+import type { CompletionItem, CompletionSource } from '../../src/shared/completion'
 
 /* ---------------------------------------------------------------- 候选源桩 */
 

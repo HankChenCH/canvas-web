@@ -34,10 +34,10 @@ import { computed, ref, type ComponentPublicInstance } from 'vue'
 
 import { controlRegistry } from './controls'
 import type { FieldDef, FieldDisplay } from './fieldSchema'
-import ExpressionCompletionPopup from './fields/ExpressionCompletionPopup.vue'
-import { useExpressionCompletion } from './fields/useExpressionCompletion'
-import type { CompletionSource } from './fields/completion'
 import ValueTypeSegmented from './fields/ValueTypeSegmented.vue'
+import ExpressionCompletionPopup from '../shared/ExpressionCompletionPopup.vue'
+import { useExpressionCompletion } from '../shared/useExpressionCompletion'
+import type { CompletionSource } from '../shared/completion'
 
 const props = defineProps<{
     field: FieldDef
