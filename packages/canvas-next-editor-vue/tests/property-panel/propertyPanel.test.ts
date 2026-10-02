@@ -89,6 +89,46 @@ describe('PropertyField：<component :is> 注册表分发', () => {
     })
 })
 
+describe('PropertyField：行解剖布局（面板布局优化：标签列定宽 + 数据字段上下两行）', () => {
+    it('普通字段行 = 固定标签列网格（60px 列），label 与控件各占一列（弹性 justify-between 退役）', () => {
+        const field: FieldDef = { key: ['position', 'x'], label: 'X', control: 'number', integer: true }
+        const wrapper = mount(PropertyField, { props: { field, value: 7 } })
+        const root = wrapper.find('.cn-prop-field')
+        expect(root.classes()).toContain('grid')
+        expect(root.classes()).toContain('grid-cols-[60px_minmax(0,1fr)]')
+        expect(root.classes()).not.toContain('justify-between')
+        expect(wrapper.find('.cn-prop-field__label').text()).toBe('X')
+        // 非数据字段控件不跨列
+        expect(wrapper.findComponent(NumberField).classes()).not.toContain('col-span-2')
+    })
+
+    it('pair 行 = 全宽块级（列标签自描述，不进双列网格）', () => {
+        const field: FieldDef = {
+            key: ['position'],
+            label: '位置',
+            control: 'pair',
+            items: [
+                { key: ['x'], label: 'X', control: 'number', integer: true },
+                { key: ['y'], label: 'Y', control: 'number', integer: true },
+            ],
+        }
+        const wrapper = mount(PropertyField, { props: { field, value: { x: 1, y: 2 } } })
+        const root = wrapper.find('.cn-prop-field')
+        expect(root.classes()).toContain('block')
+        expect(root.classes()).not.toContain('grid-cols-[60px_minmax(0,1fr)]')
+    })
+
+    it('数据字段 = 上下两行：取值方式分段占第一行，输入控件 col-span-2 跨全宽', () => {
+        const field: FieldDef = { key: ['text'], label: '内容', control: 'textarea', data: true }
+        const wrapper = mount(PropertyField, { props: { field, value: '甲', dataMode: 'static' } })
+        // 第一行：标签 + 分段选择器（非 col-span-2，落右端列）
+        expect(wrapper.find('.cn-prop-field__label').text()).toBe('内容')
+        expect(wrapper.find('.cn-valuetype').exists()).toBe(true)
+        // 第二行：输入控件跨标签列 + 控件列（撑满面板宽）
+        expect(wrapper.find('textarea').classes()).toContain('col-span-2')
+    })
+})
+
 describe('PropertyPanel：schema 驱动表单', () => {
     it('未选中：画布级属性（宽/高），编辑写画布', async () => {
         const editor = makeEditor([textLayer()])

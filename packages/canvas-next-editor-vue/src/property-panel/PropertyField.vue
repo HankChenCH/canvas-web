@@ -20,6 +20,15 @@
  * = 行候选集）。静态态/未注入 schema 时 enabled 恒假，事件入口全短路零补全。
  * `{{` 自动配对（工单 07）独立于 schema 注入：表达式态即配对（防未闭合静默错），
  * 静态态 `{{` 是字面不配对。
+ *
+ * 行解剖（面板布局优化，三种形态共用同一份控件分发）：
+ * - pair：全宽块级（列标签 X/Y/宽/高 自描述，行级标签不复述）；
+ * - 数据字段（field.data）：上下两行——第一行 = 标签（定宽列）+ 取值方式分段
+ *   选择器（右端对齐），第二行 = 输入控件跨两列撑满面板宽（textarea 不再被
+ *   标签/分段挤压）；网格 gap-y 提供行距；
+ * - 其余：固定标签列（60px，容纳最长标签「数据行路径」5 字）+ 控件列的网格
+ *   行——标签列定宽消除逐行标签宽差导致的输入左缘参差（视差），定宽控件
+ *   （布尔开关）落在控件列左缘，与填充类控件同一条起始线。
  */
 import { computed, ref, type ComponentPublicInstance } from 'vue'
 
@@ -52,6 +61,21 @@ const emit = defineEmits<{
 
 const control = computed(() => controlRegistry[props.field.control])
 const isExpression = computed(() => props.dataMode === 'expression')
+
+/**
+ * 行根布局类（见文件头「行解剖」）：pair = 全宽块级；其余 = 固定标签列网格。
+ * 数据字段的上下两行由同一网格承载：标签 r1c1、分段选择器 r1c2（右端）、
+ * 控件 col-span-2 落 r2（gap-y-1.5 提供行距）——单行网格下 gap-y 惰性。
+ * 60px 标签列容纳最长标签「数据行路径」（5 字 × 11px），超出 truncate。
+ */
+const rowClass = computed(() =>
+    props.field.control === 'pair'
+        ? 'cn-prop-field block'
+        : 'cn-prop-field grid grid-cols-[60px_minmax(0,1fr)] items-center gap-x-2 gap-y-1.5',
+)
+
+/** 数据字段的输入控件跨标签列 + 控件列（上下布局的第二行） */
+const controlClass = computed(() => (props.field.data === true ? 'col-span-2' : ''))
 
 /**
  * 补全接线面：数据文本字段（fieldSchema 中 data:true 且 textarea/text 控件——
@@ -96,9 +120,10 @@ function relaySubCommit(field: FieldDef, value: unknown, final: boolean): void {
          归属会被外层劫持）；其余单控件行保持 label 包裹的点击聚焦行为 -->
     <component
         :is="field.control === 'pair' ? 'div' : 'label'"
-        class="cn-prop-field flex items-center justify-between gap-2"
+        :class="rowClass"
     >
-        <!-- pair 列自描述（X/Y/宽/高），行级标签不复述（消除「尺寸 尺寸」双 label） -->
+        <!-- pair 列自描述（X/Y/宽/高），行级标签不复述（消除「尺寸 尺寸」双 label）；
+             数据字段行标签占 r1c1，取值方式分段占 r1c2（右端对齐） -->
         <span
             v-if="field.control !== 'pair'"
             class="cn-prop-field__label shrink-0 select-none truncate text-[11px] leading-none text-cn-muted"
@@ -109,15 +134,17 @@ function relaySubCommit(field: FieldDef, value: unknown, final: boolean): void {
              事件），切换语义经既有 toggle-mode 归面板 toggleDataMode -->
         <ValueTypeSegmented
             v-if="field.data"
+            class="justify-self-end"
             :mode="dataMode ?? 'static'"
             @change="emit('toggle-mode')"
         />
-        <!-- 宽度由各控件自持：输入类自带 flex-1 撑满，定宽类（锚点九宫/开关）保持固有尺寸 -->
+        <!-- 宽度由各控件自持：输入类自带 flex-1 撑满列，定宽类（开关）落在控件列
+             左缘与填充类同线；数据字段控件 col-span-2 成上下布局的输入行 -->
         <component
             :is="control"
             ref="controlRef"
             class="cn-prop-field__control"
-            :class="{ 'cn-field--expression': isExpression }"
+            :class="[controlClass, { 'cn-field--expression': isExpression }]"
             :field="field"
             :model-value="value"
             :displays="field.control === 'pair' ? displays : undefined"

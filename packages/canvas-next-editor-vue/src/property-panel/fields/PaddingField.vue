@@ -60,11 +60,13 @@ function cycle(): void {
 </script>
 
 <template>
-    <span class="cn-padding flex w-full min-w-0 items-center gap-1">
+    <!-- 间距节奏与 BorderField 对齐（外层/格内均 gap-1.5、框标签定宽 w-5）：
+         两条简写行相邻时标签与输入的列缘同线（消除内嵌行视差） -->
+    <span class="cn-padding flex w-full min-w-0 items-center gap-1.5">
         <ShorthandModeButton :mode="mode" label="内边距" @cycle="cycle" />
-        <span class="grid min-w-0 flex-1 gap-1" :class="mode === 1 ? 'grid-cols-1' : 'grid-cols-2'">
-            <label v-for="box in boxes" :key="box.rep" class="flex min-w-0 items-center gap-1">
-                <span class="shrink-0 select-none text-[10px] leading-none text-cn-muted">{{ box.label }}</span>
+        <span class="grid min-w-0 flex-1 gap-1.5" :class="mode === 1 ? 'grid-cols-1' : 'grid-cols-2'">
+            <label v-for="box in boxes" :key="box.rep" class="flex min-w-0 items-center gap-1.5">
+                <span class="w-5 shrink-0 select-none text-[10px] leading-none text-cn-muted">{{ box.label }}</span>
                 <NumberField
                     class="min-w-0 flex-1"
                     :field="boxField(box)"

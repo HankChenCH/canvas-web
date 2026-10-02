@@ -145,7 +145,7 @@ function toggleAnchorExpanded(): void {
             <h3 class="cn-props__section-title mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-cn-muted">
                 {{ section.title }}
             </h3>
-            <div class="flex flex-col gap-1.5">
+            <div class="flex flex-col gap-2">
                 <template v-for="item in section.fields" :key="item.key">
                     <!-- 锚点 = 块级折叠区：不经 PropertyField 行布局，直接渲染注册表条目 -->
                     <AnchorDisclosureField

@@ -109,7 +109,9 @@ function disabledTitle(item: FieldDef): string {
             class="flex min-w-0 items-center gap-1"
             :title="item.auto ? undefined : item.label"
         >
-            <span class="shrink-0 select-none text-[10px] leading-none text-cn-muted">{{ item.label }}</span>
+            <!-- 列标签定宽（1 字标签 X/Y/宽/高）：左右列输入框同线起步，位置/尺寸
+                 两行的列缘对齐（ASCII 与汉字标签宽差不致输入错位） -->
+            <span class="w-3.5 shrink-0 select-none text-[10px] leading-none text-cn-muted">{{ item.label }}</span>
             <button
                 v-if="item.auto"
                 type="button"
