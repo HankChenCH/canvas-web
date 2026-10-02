@@ -17,6 +17,7 @@ import type { Canvas, LayerBox } from '@hankchen/canvas-next'
 
 import type { Point, Viewport } from '../spatial/camera'
 import type { Guide, SnapAxis } from '../spatial/snap'
+import type { ResizeHandle } from '../spatial/resize'
 import { pathsEqual, type LayerPath } from '../shared/layerPath'
 import type { ExpressionSchemaNode } from '../shared/expressionSchema'
 
@@ -53,6 +54,22 @@ export interface DragGesture {
 }
 
 /**
+ * 缩放会话（ui 分支，工单 07）：目标路径 + 八柄 + 起点场景坐标 + 起始解析盒
+ * （吸附求位与几何基准，spatial/resize 消费）。会话对象住 ui 分支，文档只收
+ * resizeTo 的合并事务；与 drag 会话互斥（手势起点一次性定死）。
+ */
+export interface ResizeGesture {
+    path: LayerPath
+    handle: ResizeHandle
+    startScene: Point
+    /**
+     * 缩放开始时的绝对解析盒（几何/吸附基准）：对缘固定、移动缘 = 起始缘 +
+     * 位移；auto 标志采纳把本盒解析尺寸落地为声明值（首个位移事务）。
+     */
+    startBox: LayerBox
+}
+
+/**
  * 文本编辑会话（ui 分支，工单 11）：编辑中的文本层路径。live 文本住在绑定层的
  * textarea（非受控），提交经 commitTextEdit 一次性落文档——「每个拼音音节一个
  * undo」被会话缓冲天然避免（impl 研究 §2.4）。
@@ -86,6 +103,8 @@ export interface EditorUi {
     hovered: LayerPath | null
     /** 进行中的拖动会话；null = 无拖动 */
     drag: DragGesture | null
+    /** 进行中的缩放会话（工单 07 八柄）；null = 无缩放 */
+    resize: ResizeGesture | null
     /** 进行中的文本编辑会话；null = 非编辑态 */
     editing: TextEditingSession | null
     /**
@@ -204,6 +223,7 @@ export class EditorStore {
         selection: null,
         hovered: null,
         drag: null,
+        resize: null,
         editing: null,
         renaming: null,
         anchorExpanded: false,
@@ -253,6 +273,7 @@ export class EditorStore {
             selection: null,
             hovered: null,
             drag: null,
+            resize: null,
             editing: null,
             renaming: null,
             guides: [],
@@ -355,6 +376,12 @@ export class EditorStore {
     setDrag(gesture: DragGesture | null): void {
         this.uiValue = { ...this.uiValue, drag: gesture }
         this.notify({ scope: 'ui', branch: 'drag' })
+    }
+
+    /** 缩放会话开始/结束（null，工单 07）；会话对象住 ui 分支，文档只收缩放事务 */
+    setResize(gesture: ResizeGesture | null): void {
+        this.uiValue = { ...this.uiValue, resize: gesture }
+        this.notify({ scope: 'ui', branch: 'resize' })
     }
 
     /** 文本编辑会话开始/结束（null）；会话住 ui 分支，文本经 commitTextEdit 一次性落文档 */

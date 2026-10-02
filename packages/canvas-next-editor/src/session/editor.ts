@@ -48,6 +48,7 @@ import type { LayerBox, Layer, LayerType, ImageLayer } from '@hankchen/canvas-ne
 import { hitTest as hitTestAt } from '../spatial/hitTest'
 import {
     resolveSnap,
+    resolveSnapPoints,
     snapAxesFromBoxes,
     snapThresholdScene,
     visibleRootBoxes,
@@ -55,6 +56,18 @@ import {
     type GuideOrientation,
     type SnapAxis,
 } from '../spatial/snap'
+import {
+    handleResizesHeight,
+    handleResizesWidth,
+    resizeBox,
+    resizeHandleAt as resizeHandleHit,
+    resizeHandlesAt as resizeHandlesForPath,
+    resizeSnapPoints,
+    resizableAxesAt,
+    RESIZE_HANDLES,
+    type ResizeHandle,
+} from '../spatial/resize'
+import { anchorOffset, layerHeight, layerWidth } from '@hankchen/canvas-next'
 import {
     isTemplateSubtreePath,
     isLockedPath,
@@ -179,6 +192,9 @@ export interface TextEditLayout {
 
 /** 拖动事务的合并键：一次拖动的全部 pointermove 并成一步历史 */
 const DRAG_MERGE_KEY = 'drag'
+
+/** 缩放事务的合并键（工单 07）：一次八柄手势的全部位移并成一步历史 */
+const RESIZE_MERGE_KEY = 'resize'
 
 /**
  * Alt+拖快速复制的死区（alt-drag-paste 工单 01，spec 决策 1）：屏幕 css 像素、
@@ -540,7 +556,7 @@ export class EditorSession {
      * 副本（dragTo 消费，见 ALT_DRAG_DEAD_ZONE_SCREEN_PX）。
      */
     beginDrag(path: LayerPath, sceneX: number, sceneY: number, options: { copy?: boolean } = {}): boolean {
-        if (this.store.ui.drag) return false
+        if (this.store.ui.drag || this.store.ui.resize) return false
         if (this.isLocked(path)) return false
         const doc = this.store.doc
         const layer = doc ? resolveLayer(doc, path) : null
@@ -591,7 +607,7 @@ export class EditorSession {
                 width: drag.startBox.width,
                 height: drag.startBox.height,
             },
-            this.snapAxesForDrag(drag.path),
+            this.snapAxesForGesture(drag.path),
             snapThresholdScene(this.store.ui.viewport.zoom),
         )
         this.store.transact((draft) => {
@@ -632,7 +648,7 @@ export class EditorSession {
                 width: drag.startBox.width,
                 height: drag.startBox.height,
             },
-            this.snapAxesForDrag(null),
+            this.snapAxesForGesture(null),
             snapThresholdScene(this.store.ui.viewport.zoom),
         )
         const copyIndex: TxOut<number> = { v: -1 }
@@ -670,15 +686,16 @@ export class EditorSession {
     }
 
     /**
-     * 拖动层可用的吸附轴集合（dragTo 每步重算，几何与其余消费同源）：可见根层盒
-     * （hitTest 同款 visible 过滤）排除拖动层自身根 + 画布中轴 + 当前参考线。
-     * dragPath 传 null = 排除面为空（copyMode 首移：副本未入库，源层供轴，
-     * alt-drag-paste 工单 01）。
+     * 手势可用的吸附轴集合（dragTo/resizeTo 每步重算，几何与其余消费同源）：
+     * 可见根层盒（hitTest 同款 visible 过滤）排除手势目标层自身根 + 画布中轴 +
+     * 当前参考线。自身根排除对缩放同样正确——被缩放层的自缘不供轴（对缘与移动
+     * 缘都在自身盒上，供轴只会命中自己）。gesturePath 传 null = 排除面为空
+     * （copyMode 首移：副本未入库，源层供轴，alt-drag-paste 工单 01）。
      */
-    private snapAxesForDrag(dragPath: LayerPath | null): readonly SnapAxis[] {
+    private snapAxesForGesture(gesturePath: LayerPath | null): readonly SnapAxis[] {
         const doc = this.store.doc
         if (!doc) return []
-        const excludeRootIndex = dragPath === null ? null : dragPath[1]
+        const excludeRootIndex = gesturePath === null ? null : gesturePath[1]
         if (excludeRootIndex !== null && typeof excludeRootIndex !== 'number') return []
         return snapAxesFromBoxes(
             doc.width,
@@ -688,9 +705,182 @@ export class EditorSession {
         )
     }
 
-    /** 当次拖动命中的吸附轴（只读查询，吸附线呈现消费）；非拖动态/未命中为空 */
+    /** 当次手势命中的吸附轴（只读查询，吸附线呈现消费）；非手势态/未命中为空 */
     listSnapAxes(): readonly SnapAxis[] {
         return this.store.ui.snapAxes
+    }
+
+    // ---- 八柄缩放（工单 07）：几何纯函数在 spatial/resize，写回/吸附/采纳在此收口 ----
+
+    /**
+     * 路径处图层当前可用的八柄集合（gizmo 柄渲染与手势起点同缝）：角色权威
+     * 过滤（行宽=表宽、格内容尺寸强同步面不可经柄改，语义见
+     * spatial/resize.resizableAxesAt）+ 锁定子树不出柄（锁定层只画选中框，
+     * gizmo 同门——柄是变换入口，锁定=可定位不可变换）。
+     */
+    resizeHandlesAt(path: LayerPath | null): readonly ResizeHandle[] {
+        const doc = this.store.doc
+        if (!doc || path === null || this.isLocked(path)) return []
+        return resizeHandlesForPath(doc, path)
+    }
+
+    /**
+     * 场景点命中选中层的可用柄（hitTest/hoverAt 同门的意图级查询，画布接线
+     * 与 gizmo 消费）：命中半径按屏幕 6px 常量折算（RESIZE_HANDLE_HIT_PX，随
+     * zoom 收放）；无选中/盒不可解析/未命中返回 null。命中判定以当前可用柄
+     * 集合为面——角色过滤与锁定折叠在此一条缝生效。
+     */
+    resizeHandleAt(sceneX: number, sceneY: number): ResizeHandle | null {
+        const selection = this.store.ui.selection
+        if (selection === null) return null
+        const box = this.boxByPath(selection)
+        if (!box) return null
+        return resizeHandleHit(
+            this.resizeHandlesAt(selection),
+            box,
+            sceneX,
+            sceneY,
+            this.store.ui.viewport.zoom,
+        )
+    }
+
+    /**
+     * 开始缩放会话：记录目标路径、柄、起点场景坐标与起始解析盒（ui 分支）。
+     * 起点记录指针位置而非柄中心——位移以抓取点为基准，移动缘不跳到指针下
+     * （与拖动保留抓取偏移同语义，两种主流做法中取不跳变侧）。
+     * 已在手势中（拖动/缩放互斥）、路径或盒几何无法解析、路径落在锁定子树、
+     * 柄的任一作用轴不在角色可缩放面内（行上拖 e/w、格内容上任意柄）时返回
+     * false——gizmo 只渲染可用柄，此守卫兜其余手势来源（键盘/宿主直调）。
+     */
+    beginResize(path: LayerPath, handle: ResizeHandle, sceneX: number, sceneY: number): boolean {
+        if (this.store.ui.drag || this.store.ui.resize) return false
+        if (this.isLocked(path)) return false
+        if (!RESIZE_HANDLES.includes(handle)) return false
+        const doc = this.store.doc
+        if (!doc || resolveLayer(doc, path) === null) return false
+        const axes = resizableAxesAt(doc, path)
+        if (handleResizesWidth(handle) && !axes.width) return false
+        if (handleResizesHeight(handle) && !axes.height) return false
+        const box = this.boxByPath(path)
+        if (!box) return false
+        this.store.setResize({ path, handle, startScene: { x: sceneX, y: sceneY }, startBox: box })
+        return true
+    }
+
+    /**
+     * 缩放进行中（工单 07）：八柄几何求位 + 移动缘吸附 + 文档写回，一个 mergeKey
+     * 事务合并成一步历史。
+     *
+     * 几何：移动缘 = 起始缘 + 场景位移，对缘固定，minSize 钳位不翻转
+     * （resizeBox）；非本柄轴的位移分量忽略。
+     * 吸附：移动缘位点（resizeSnapPoints，角柄双缘、边柄单缘；盒中心不参与缩放
+     * 吸附）对轴集合求位——轴集合与拖动同源（snapAxesForGesture），屏幕 6px 阈值
+     * 随 zoom 折算；修正施加在指针位移上、再进钳位，吸附不破「对缘固定 + minSize」
+     * 语义，吸附结果只改坐标不改尺寸语义（auto 标志采纳是手势起点的轴选择，不随
+     * 吸附翻转）。命中的吸附轴回写会话态供吸附线呈现（瞬时回显，endResize 清空）。
+     * 写回（工单验收项 2 的语义收口）：被拖轴写声明尺寸并清 auto 标志——autoWidth/
+     * autoHeight 图层首个位移事务把解析尺寸落地为声明值（「改尺寸标志」语义，
+     * 属性面板 auto 前缀输入框的可编辑化同门）；未被拖的轴零接触——autoWidth
+     * 文本层拖 s 柄后仍随文本自然宽、QR 拖 e 柄高随宽保持正方形（从动轴不采纳）。
+     * 写后重断言（updateSpec 同门）：autoHeight⟹声明高归零的解码不变量 + 表格
+     * 强同步 canonicalize（根表宽联动行宽、格内容宽同步、行高取最高格——行高缩到
+     * 最高格以下被不变量顶回属预期）。position 按目标盒反解（锚点偏移随新尺寸
+     * 重算，任意锚点/任意父级下落点都精确）：同步完成后以草稿内的解析尺寸与
+     * 父级盒求锚点偏移，position = 目标盒坐标 − 偏移。
+     *
+     * 拖不动写不动的同门守卫：无会话、目标层被结构编辑移除（悬空路径）整体
+     * 空转（不发事务、不发布命中轴）。
+     */
+    resizeTo(sceneX: number, sceneY: number): void {
+        const gesture = this.store.ui.resize
+        if (!gesture) return
+        const doc = this.store.doc
+        if (!doc || resolveLayer(doc, gesture.path) === null) return
+        const dx = sceneX - gesture.startScene.x
+        const dy = sceneY - gesture.startScene.y
+        const widthActive = handleResizesWidth(gesture.handle)
+        const heightActive = handleResizesHeight(gesture.handle)
+        const resolution = resolveSnapPoints(
+            resizeSnapPoints(gesture.startBox, gesture.handle, dx, dy),
+            this.snapAxesForGesture(gesture.path),
+            snapThresholdScene(this.store.ui.viewport.zoom),
+        )
+        const target = resizeBox(
+            gesture.startBox,
+            gesture.handle,
+            widthActive ? dx + resolution.dx : dx,
+            heightActive ? dy + resolution.dy : dy,
+        )
+        this.store.transact((draft) => {
+            const layer = resolveLayer(draft, gesture.path)
+            if (!layer) return
+            // 被拖轴写声明尺寸并清 auto 标志（采纳）；未被拖的轴零接触。
+            // draft 语义解除 readonly；字段形态由领域类型与可缩放面把关
+            const shape = layer.shape as {
+                width: number
+                height: number
+                autoWidth: boolean
+                autoHeight: boolean
+            }
+            if (widthActive) {
+                shape.width = target.width
+                shape.autoWidth = false
+            }
+            if (heightActive) {
+                shape.height = target.height
+                shape.autoHeight = false
+            }
+            // 解码不变量重断言 + 表格强同步（updateSpec 同门）：先同步再反解
+            // position——同步可能改写解析尺寸（格内容宽/行高）与父级盒（行高增长），
+            // 反解必须以最终形态为准
+            renormalizeAutoHeightInDraft(layer)
+            canonicalizeTableSyncInDraft(
+                draft,
+                gesture.path,
+                widthActive ? ['shape', 'width'] : ['shape', 'height'],
+                this.textPolicies,
+            )
+            const resolvedWidth = layerWidth(layer, this.textPolicies)
+            const resolvedHeight = layerHeight(layer, this.textPolicies)
+            const parent = this.parentDimsInDraft(draft, gesture.path)
+            const offset = anchorOffset(
+                layer.position.anchor,
+                parent.width,
+                parent.height,
+                resolvedWidth,
+                resolvedHeight,
+            )
+            // draft 语义解除 readonly；position = 目标盒坐标 − 锚点偏移（任意锚点下盒精确落位）
+            const position = layer.position as { x: number; y: number }
+            position.x = target.x - offset.x
+            position.y = target.y - offset.y
+        }, { mergeKey: RESIZE_MERGE_KEY })
+        this.store.setSnapAxes(resolution.axes)
+    }
+
+    /**
+     * 结束缩放：闭合合并事务（下一步历史定格），会话态与命中轴回显清空。
+     * 无会话空转（幂等，pointercancel 与 pointerup 双路同达）。
+     */
+    endResize(): void {
+        if (!this.store.ui.resize) return
+        this.store.setResize(null)
+        this.store.setSnapAxes([])
+        this.store.closeMerge(RESIZE_MERGE_KEY)
+    }
+
+    /**
+     * 草稿内求缩放目标的父级盒尺寸（position 反解的锚点偏移入参）：根层 = 画布
+     * 尺寸（resolveLayerBox 根层语义同参）；行/格取容器路径（rows/cells 段成对、
+     * content 单段），经 layerBoxByPath 在草稿内解析——同步完成后的父级盒（行高
+     * 增长等同步效应已含）。悬空回落画布尺寸（与根层同参，position 仍自洽）。
+     */
+    private parentDimsInDraft(draft: Draft<Canvas>, path: LayerPath): { width: number; height: number } {
+        if (isRootLayerPath(path)) return { width: draft.width, height: draft.height }
+        const parentPath =
+            path[path.length - 1] === 'content' ? path.slice(0, -1) : path.slice(0, -2)
+        const box = layerBoxByPath(draft, parentPath as LayerPath, this.textPolicies)
+        return box ?? { width: draft.width, height: draft.height }
     }
 
     /**
@@ -703,14 +893,14 @@ export class EditorSession {
      * 连续微调合并一条历史：mergeKey 含选中层路径、方向无关——同层连按（跨方向）
      * 并成一步，undo 一次回连按前；换层即换步（mergeKey 随路径变）；undo/redo
      * 走 store 既有断开规则（closeMerge）。断开是键控而非选择事件驱动：选择往返
-     * （A→B→A 中途无文档变更）会并回 A 的原串，机制既有规则同款。拖动会话进行中
-     * 空转（防插入事务拆分开放中的 drag 合并步）。
+     * （A→B→A 中途无文档变更）会并回 A 的原串，机制既有规则同款。拖动/缩放会话
+     * 进行中空转（防插入事务拆分开放中的合并步，工单 07 缩放同门）。
      * 守卫（canvas-web-layer-lock 工单 01 挂账兑现）：锁定子树空转（isLocked
      * 谓词同门——微调是变更类动作）。空转返回 false（executeShortcut 可用态口径）。
      */
     nudge(deltaX: number, deltaY: number): boolean {
         const path = this.store.ui.selection
-        if (path === null || this.store.ui.drag !== null) return false
+        if (path === null || this.store.ui.drag !== null || this.store.ui.resize !== null) return false
         if (this.isLocked(path)) return false
         const doc = this.store.doc
         if (!doc || resolveLayer(doc, path) === null) return false

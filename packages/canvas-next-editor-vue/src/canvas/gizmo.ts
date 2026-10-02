@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 
 /**
- * gizmo 覆盖层画笔（工单 06）：选择框 + hover 高亮。
+ * gizmo 覆盖层画笔（工单 06）：选择框 + hover 高亮 + 八柄（工单 07）。
  *
  * 只依赖 editor 内核（红线：editor-vue 不得 import browser-renderer/canvas-next），
  * 视口变换在此按同一公式施加（scale = dpr×zoom，平移 = -cam×scale，与后端的
@@ -12,12 +12,13 @@
  * 锁定锁样式（canvas-web-layer-lock 工单 02）：锁定的选中层**只画选中框**——
  * 「可定位、不可变换」的镜像（面板可选/属性可改，框照画）；锁定层上的 hover
  * 高亮不画（命中面已过滤锁定层，这里兜「先 hover 后锁定」的 ui 态残留，与
- * hidden 过滤同缝）。柄面：当前无八柄（resize feature 未立项），接入时柄随
- * 选中框按同一 locked 谓词折叠（工单 03 目验「有框无柄」；手势起点已有
- * beginDrag 的 isLocked 门，工单 01）。
+ * hidden 过滤同缝）。柄面（工单 07）：可用柄集合经内核 resizeHandlesAt（角色
+ * 权威过滤——行宽=表宽、格内容尺寸强同步面不出柄），锁定子树内核侧返回空集
+ * （有框无柄 = 不可变换的镜像），柄随选中框按同一 locked 谓词折叠；手势起点
+ * 另有 beginResize 的 isLocked 门（工单 01）。
  */
 import type { EditorSession, OverlayPaintArgs, OverlayPainter } from '@hankchen/canvas-next-editor'
-import { pathsEqual, rootLayerOf, type LayerPath } from '@hankchen/canvas-next-editor'
+import { pathsEqual, resizeHandlePoint, rootLayerOf, type LayerPath } from '@hankchen/canvas-next-editor'
 
 export interface GizmoOptions {
     /** 选中框颜色（缺省蓝 #2563eb） */
@@ -26,12 +27,18 @@ export interface GizmoOptions {
     hoverColor?: string
     /** 选中框线宽（css 像素，屏幕观感恒定；hover 恒取其一半） */
     selectionWidth?: number
+    /** 缩放柄边长（css 像素，屏幕观感恒定；命中面另计 resizeHandles.RESIZE_HANDLE_HIT_PX） */
+    handleSize?: number
+    /** 缩放柄填充色（缺省白，与选中框色描边形成对照） */
+    handleFill?: string
 }
 
 const DEFAULT_OPTIONS: Required<GizmoOptions> = {
     selectionColor: '#2563eb',
     hoverColor: 'rgba(37, 99, 235, 0.55)',
     selectionWidth: 2,
+    handleSize: 8,
+    handleFill: '#ffffff',
 }
 
 /**
@@ -72,7 +79,33 @@ export function drawSelectionGizmo(
             ctx.strokeStyle = opts.selectionColor
             ctx.lineWidth = opts.selectionWidth / args.viewport.zoom
             ctx.strokeRect(box.x, box.y, box.width, box.height)
+            // 八柄（工单 07）：白底 + 选中框色描边的方柄，屏幕观感恒定（尺寸/线宽
+            // /zoom）。可用集合经内核（角色过滤 + 锁定折叠），不可缩放面天然无柄
+            drawResizeHandles(ctx, editor, selection, box, args.viewport.zoom, opts)
         }
+    }
+}
+
+/** 选中框上的可用缩放柄（白底描边小方柄，中心 = 角点与边中点） */
+function drawResizeHandles(
+    ctx: CanvasRenderingContext2D,
+    editor: EditorSession,
+    selection: LayerPath,
+    box: { x: number; y: number; width: number; height: number },
+    zoom: number,
+    opts: Required<GizmoOptions>,
+): void {
+    const handles = editor.resizeHandlesAt(selection)
+    if (handles.length === 0) return
+    const size = opts.handleSize / zoom
+    const half = size / 2
+    ctx.fillStyle = opts.handleFill
+    ctx.strokeStyle = opts.selectionColor
+    ctx.lineWidth = opts.selectionWidth / zoom
+    for (const handle of handles) {
+        const point = resizeHandlePoint(box, handle)
+        ctx.fillRect(point.x - half, point.y - half, size, size)
+        ctx.strokeRect(point.x - half, point.y - half, size, size)
     }
 }
 

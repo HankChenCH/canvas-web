@@ -19,7 +19,7 @@ import { mount } from '@vue/test-utils'
 import { EditorSession, type FrameScheduler, type OverlayPainter } from '@hankchen/canvas-next-editor'
 
 import CanvasSurface from '../../src/canvas/CanvasSurface.vue'
-import { textLayer } from '../../../canvas-next-editor/tests/support/fixtures'
+import { cellLayer, rowLayer, tableLayer, textLayer } from '../../../canvas-next-editor/tests/support/fixtures'
 
 // ---- jsdom 环境桩 ----
 
@@ -281,6 +281,67 @@ describe('Alt+拖快速复制：altKey 读取传递（alt-drag-paste 工单 01�
         expect(editor.store.doc!.layers[0]!.position).toMatchObject({ x: 10, y: 10 }) // 源自己位移
 
         dispatchPointer('pointerup', { clientX: 60, clientY: 35 })
+        cleanup()
+    })
+})
+
+describe('八柄缩放接线（工单 07）：柄面优先于图层命中', () => {
+    // jsdom 无 PointerEvent/布局：MouseEvent 按类型直发；视口缺省 {0,0,1} →
+    // 场景点 == 客户端像素；文本层 fixture 定盒 (0,0,100,50)，se 柄中心 = (100,50)
+    const surfaceHost = () => document.querySelector('.cn-surface')!
+    const dispatchPointer = (type: string, init: MouseEventInit = {}) =>
+        surfaceHost().dispatchEvent(new MouseEvent(type, { bubbles: true, ...init }))
+
+    it('点 se 柄开缩放会话：位移写回宽高，抬手闭合且一步历史', () => {
+        const { editor, cleanup } = mountSurface()
+        editor.openDocument({ width: 800, height: 600, layers: [textLayer({ priority: 10 })] })
+        editor.setSelection(['layers', 0])
+
+        dispatchPointer('pointerdown', { button: 0, clientX: 100, clientY: 50 })
+        expect(editor.store.ui.resize?.handle).toBe('se')
+        expect(editor.store.ui.drag).toBeNull() // 不进拖动
+
+        dispatchPointer('pointermove', { clientX: 130, clientY: 80 }) // 位移 (30,30)
+        expect(editor.store.doc!.layers[0]!.shape).toMatchObject({ width: 130, height: 80 })
+
+        dispatchPointer('pointerup', { clientX: 130, clientY: 80 })
+        expect(editor.store.ui.resize).toBeNull()
+        expect(editor.store.history).toHaveLength(1) // 一次手势 = 一步历史
+        cleanup()
+    })
+
+    it('柄下叠着别的层：点柄缩放不改选（柄面优先），松手保持原选中', () => {
+        const { editor, cleanup } = mountSurface()
+        editor.openDocument({
+            width: 800,
+            height: 600,
+            layers: [
+                textLayer({ priority: 10 }),
+                textLayer({ priority: 20, position: { anchor: 'top-left', x: 90, y: 40 } }),
+            ],
+        })
+        editor.setSelection(['layers', 0])
+
+        // se 柄 (100,50) 落在 layer1（视觉更上）内：柄面优先 → 仍缩放 layer0
+        dispatchPointer('pointerdown', { button: 0, clientX: 100, clientY: 50 })
+        expect(editor.store.ui.resize?.path).toEqual(['layers', 0])
+        expect(editor.store.ui.selection).toEqual(['layers', 0])
+        dispatchPointer('pointerup', { clientX: 100, clientY: 50 })
+        cleanup()
+    })
+
+    it('行层（宽强同步）只有 n/s 柄：点原 se 柄位置不开缩放、照常改选', () => {
+        const { editor, cleanup } = mountSurface()
+        editor.openDocument({
+            width: 800,
+            height: 600,
+            layers: [tableLayer([rowLayer([cellLayer(textLayer())])])],
+        })
+        // 行 fixture 在 (0,0)——其 se 柄位不存在，点 (100,50) 命中表格（改选）
+        editor.setSelection(['layers', 0, 'rows', 0])
+        dispatchPointer('pointerdown', { button: 0, clientX: 100, clientY: 50 })
+        expect(editor.store.ui.resize).toBeNull()
+        dispatchPointer('pointerup', { clientX: 100, clientY: 50 })
         cleanup()
     })
 })

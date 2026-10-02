@@ -6,10 +6,11 @@
  *   重绘全部由 editor 会话内部合帧驱动（组件不订阅 store 驱动重绘）。
  * - 事件桥：wheel 三态语义（classifyWheel）→ 会话相机动作；中键/空格+左键/左键拖空白
  *   （全幅底图豁免后未命中，工票 16）拖拽平移；左键点选与拖动（selectAt/beginDrag/
- *   dragTo/endDrag）、hover 跟随、Escape 升级选择归属链——全部经内核意图级 API，
- *   组件只做坐标与指针状态翻译。Alt+拖快速复制（alt-drag-paste 工单 01）：
- *   pointerdown 读 altKey 且命中层可复制（canCopyLayerAt）→ beginDrag 携 copy
- *   标记，不可复制目标/未按 Alt 走现状路径。
+ *   dragTo/endDrag）、八柄缩放（工单 07：命中柄 beginResize/resizeTo/endResize，
+ *   柄面优先于图层命中——点柄不再改选）、hover 跟随、Escape 升级选择归属链——
+ *   全部经内核意图级 API，组件只做坐标与指针状态翻译。Alt+拖快速复制
+ *   （alt-drag-paste 工单 01）：pointerdown 读 altKey 且命中层可复制
+ *   （canCopyLayerAt）→ beginDrag 携 copy 标记，不可复制目标/未按 Alt 走现状路径。
  * - 文本编辑（工单 11）：宿主内挂 TextEditingOverlay，双击进入（命中 TextLayer）、
  *   编辑中点 textarea 外先提交再点选、textarea 内指针归编辑光标。
  * - 右键菜单（工单 14）：contextmenu → 场景命中即右键选中 → 视口坐标开菜单
@@ -29,10 +30,11 @@
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
-import { classifyWheel, type EditorSession } from '@hankchen/canvas-next-editor'
+import { classifyWheel, type EditorSession, type ResizeHandle } from '@hankchen/canvas-next-editor'
 
 import ContextMenu from './ContextMenu.vue'
 import FindBar from './FindBar.vue'
+import { RESIZE_HANDLE_CURSORS } from './resizeHandles'
 import { isEditableEventTarget } from '../shared/editableTarget'
 import TextEditingOverlay from './TextEditingOverlay.vue'
 import { uploadFileFromDom } from '../shared/uploadFile'
@@ -60,9 +62,19 @@ const findBarRef = ref<InstanceType<typeof FindBar> | null>(null)
 
 const spaceHeld = ref(false)
 const panning = ref(false)
+/**
+ * 八柄光标（工单 07）：悬停命中柄或抓柄拖拽中呈对应 resize 光标。拖拽中的光标
+ * 在 pointerdown 一次定死（快速拖出柄面不闪烁），pointerup 清除。
+ */
+const hoverHandle = ref<ResizeHandle | null>(null)
+const activeResizeHandle = ref<ResizeHandle | null>(null)
 const cursorClass = computed(() =>
     panning.value ? 'cn-surface--panning' : spaceHeld.value ? 'cn-surface--pannable' : '',
 )
+const cursorStyle = computed(() => {
+    const handle = activeResizeHandle.value ?? hoverHandle.value
+    return handle === null ? undefined : { cursor: RESIZE_HANDLE_CURSORS[handle] }
+})
 
 /** 拖文件悬停高亮（dragover 期间提示可松手，drop/离开即撤） */
 const dragActive = ref(false)
@@ -160,9 +172,9 @@ onMounted(() => {
     host.addEventListener('wheel', onWheel, { passive: false })
     teardown.push(() => host.removeEventListener('wheel', onWheel))
 
-    // 拖拽平移（中键/空格+左键）与选择/拖动图层（左键）共用一个活跃指针：
-    // mode 'pan' 抓取相机，'drag' 移动选中图层（内核侧记录会话与事务合并）
-    let active: { id: number; mode: 'pan' | 'drag' } | null = null
+    // 拖拽平移（中键/空格+左键）与选择/拖动/八柄缩放图层（左键）共用一个活跃指针：
+    // mode 'pan' 抓取相机，'drag' 移动选中图层，'resize' 八柄缩放（工单 07）
+    let active: { id: number; mode: 'pan' | 'drag' | 'resize' } | null = null
     let last: { x: number; y: number } = { x: 0, y: 0 }
 
     const sceneAt = (e: PointerEvent) => {
@@ -190,6 +202,17 @@ onMounted(() => {
             textEditRef.value.commitEditing()
         }
         e.preventDefault()
+        // 八柄缩放（工单 07）：选中框柄面优先于图层命中——点柄不再改选/开拖动；
+        // 命中即开缩放会话（内核校验可用柄与锁定），光标一次定死随抓取走
+        const sceneBeforeSelect = sceneAt(e)
+        const handle = editor.resizeHandleAt(sceneBeforeSelect.x, sceneBeforeSelect.y)
+        if (handle !== null && editor.beginResize(editor.store.ui.selection!, handle, sceneBeforeSelect.x, sceneBeforeSelect.y)) {
+            active = { id: e.pointerId, mode: 'resize' }
+            activeResizeHandle.value = handle
+            hoverHandle.value = null
+            host.setPointerCapture(e.pointerId)
+            return
+        }
         // 点选：命中即选中（画布与后续面板同源），命中层同时进入拖动会话；
         // 未命中（全幅底图已在内核 hitTest 豁免，工票 16）= 整段手势转平移——
         // 手势模式 pointerdown 一次性定死，配合 setPointerCapture 途中扫过图层不变异；
@@ -219,14 +242,24 @@ onMounted(() => {
                 // 抓取语义：内容跟随指针（拖向右 = 相机向左）
                 editor.panBy(e.clientX - last.x, e.clientY - last.y)
                 last = { x: e.clientX, y: e.clientY }
+            } else if (active.mode === 'resize') {
+                const scene = sceneAt(e)
+                editor.resizeTo(scene.x, scene.y)
             } else {
                 const scene = sceneAt(e)
                 editor.dragTo(scene.x, scene.y)
             }
             return
         }
-        // 无手势时悬停跟随（gizmo hover 高亮；值等短路在内核，移动中不重绘）
+        // 无手势时悬停跟随：柄面命中呈 resize 光标（hover 高亮让位——柄下 hover
+        // 框是噪声）；其余走图层 hover（值等短路在内核，移动中不重绘）
         const scene = sceneAt(e)
+        const handle = editor.resizeHandleAt(scene.x, scene.y)
+        hoverHandle.value = handle
+        if (handle !== null) {
+            editor.setHovered(null)
+            return
+        }
         editor.hoverAt(scene.x, scene.y)
     }
 
@@ -234,6 +267,9 @@ onMounted(() => {
         if (active === null || e.pointerId !== active.id) return
         if (active.mode === 'drag') {
             editor.endDrag() // 闭合 mergeKey 事务：一次拖动 = 一步历史
+        } else if (active.mode === 'resize') {
+            editor.endResize() // 闭合缩放事务：一次八柄手势 = 一步历史
+            activeResizeHandle.value = null
         } else {
             panning.value = false
         }
@@ -271,9 +307,12 @@ onMounted(() => {
         void contextMenuRef.value?.openAt(point.x, point.y)
     }
 
-    // 指针离场清 hover（拖动/平移中由抓取接管，无需处理）
+    // 指针离场清 hover 与柄光标（拖动/缩放/平移中由抓取接管，无需处理）
     const onPointerLeave = () => {
-        if (active === null) editor.setHovered(null)
+        if (active === null) {
+            editor.setHovered(null)
+            hoverHandle.value = null
+        }
     }
 
     host.addEventListener('pointerdown', onPointerDown)
@@ -433,7 +472,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <div ref="hostRef" class="cn-surface" :class="cursorClass">
+    <div ref="hostRef" class="cn-surface" :class="cursorClass" :style="cursorStyle">
         <canvas ref="contentRef" class="cn-surface__canvas"></canvas>
         <canvas ref="overlayRef" class="cn-surface__canvas cn-surface__canvas--overlay"></canvas>
         <TextEditingOverlay ref="textEditRef" :editor="editor" />

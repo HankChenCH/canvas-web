@@ -276,6 +276,10 @@ export function layerRoleAt(path: LayerPath): LayerRole {
  * - row：addRow 强制行宽 = 表宽并关 autoWidth；
  * - content：addContentLayer 强制内容宽 = 格宽；cell 固定高语义把内容高压平
  *   （解码后带内容的 cell 恒为固定高），宽高两族全部隐藏。
+ *
+ * 与内核八柄的角色可缩放面互为镜像（canvas-web 工单 07）：本表隐藏的尺寸字段
+ * ⇔ spatial/resize.resizableAxesAt 的 false 轴（柄同缝禁写）——两表语义同源
+ * （解码强同步不变量），改动任一侧须同步核对另一侧。
  */
 const ROLE_HIDDEN_KEYS: Record<LayerRole, readonly string[]> = {
     root: [],

@@ -1,5 +1,6 @@
 /**
- * 拖动吸附数学 + 参考线轴几何（ruler-guides-snap 工单 01，ADR 0012）。
+ * 吸附数学 + 参考线轴几何（ruler-guides-snap 工单 01，ADR 0012；工单 07 起缩放
+ * 手势共用同一条求位缝——拖动九点与缩放移动缘是 resolveSnapPoints 的两个特例）。
  *
  * 吸附（snap）语义（术语见根 CONTEXT.md）：拖动图层时其盒缘与中心（九点）自动
  * 对齐到吸附源的编辑器行为——源为其他可见根层盒的缘与中心、画布水平/垂直中轴、
@@ -128,6 +129,38 @@ function nearestAxisHit(
 }
 
 /**
+ * 按轴向分组的求位点集（resolveSnapPoints 入参）：拖动九点与缩放移动缘共用
+ * （工单 07——缩放只给移动缘位点，见 spatial/resize.resizeSnapPoints）。
+ */
+export interface SnapPoints {
+    readonly vertical: readonly number[]
+    readonly horizontal: readonly number[]
+}
+
+/**
+ * 任意位点集吸附求位：垂直位点对垂直轴、水平位点对水平轴各取最近命中（已对齐
+ * delta=0 也回显命中轴——吸附线呈现「已对齐」状态）；每轴至多一条命中轴，两轴
+ * 修正量由调用方并入本次几何写入（同一事务、同一历史步）。拖动盒九点吸附
+ * （resolveSnap）是本函数位点集的特例，缩放移动缘吸附（工单 07）是另一特例。
+ */
+export function resolveSnapPoints(
+    points: SnapPoints,
+    axes: readonly SnapAxis[],
+    threshold: number,
+): SnapResolution {
+    const vertical = nearestAxisHit(points.vertical, axes, 'vertical', threshold)
+    const horizontal = nearestAxisHit(points.horizontal, axes, 'horizontal', threshold)
+    return {
+        dx: vertical ? vertical.delta : 0,
+        dy: horizontal ? horizontal.delta : 0,
+        axes: [
+            ...(vertical ? [vertical.axis] : []),
+            ...(horizontal ? [horizontal.axis] : []),
+        ],
+    }
+}
+
+/**
  * 拖动盒九点吸附求位：盒左/中/右三点对垂直轴、上/中/下三点对水平轴各取最近
  * 命中（已对齐 delta=0 也回显命中轴——吸附线呈现「已对齐」状态）；返回的修正量
  * 由调用方并入本次拖动的 position 写入（同一事务、同一历史步）。
@@ -137,24 +170,12 @@ export function resolveSnap(
     axes: readonly SnapAxis[],
     threshold: number,
 ): SnapResolution {
-    const vertical = nearestAxisHit(
-        [box.x, box.x + box.width / 2, box.x + box.width],
+    return resolveSnapPoints(
+        {
+            vertical: [box.x, box.x + box.width / 2, box.x + box.width],
+            horizontal: [box.y, box.y + box.height / 2, box.y + box.height],
+        },
         axes,
-        'vertical',
         threshold,
     )
-    const horizontal = nearestAxisHit(
-        [box.y, box.y + box.height / 2, box.y + box.height],
-        axes,
-        'horizontal',
-        threshold,
-    )
-    return {
-        dx: vertical ? vertical.delta : 0,
-        dy: horizontal ? horizontal.delta : 0,
-        axes: [
-            ...(vertical ? [vertical.axis] : []),
-            ...(horizontal ? [horizontal.axis] : []),
-        ],
-    }
 }

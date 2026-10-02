@@ -10,9 +10,11 @@ const nullScheduler: FrameScheduler = () => () => {}
 function mockCtx() {
     const calls: string[] = []
     const lineWidths: number[] = []
+    const fills: string[] = []
     return {
         calls,
         lineWidths,
+        fills,
         canvas: { width: 600, height: 400 },
         setTransform(...args: number[]) {
             calls.push(`transform:${args.join(',')}`)
@@ -23,10 +25,14 @@ function mockCtx() {
         strokeRect(...args: number[]) {
             calls.push(`stroke:${args.join(',')}`)
         },
+        fillRect(...args: number[]) {
+            fills.push(`fill:${args.join(',')}`)
+            calls.push(`fill:${args.join(',')}`)
+        },
         set lineWidth(v: number) {
             lineWidths.push(v)
         },
-    } as unknown as CanvasRenderingContext2D & { calls: string[]; lineWidths: number[] }
+    } as unknown as CanvasRenderingContext2D & { calls: string[]; lineWidths: number[]; fills: string[] }
 }
 
 /** 双层最小文档：layer0 (100,200) 100×50、layer1 (300,200) 100×50 */
@@ -67,8 +73,37 @@ const args: OverlayPaintArgs = {
 
 const strokes = (ctx: { calls: string[] }) => ctx.calls.filter((c) => c.startsWith('stroke'))
 
-describe('createGizmoOverlayPainter（gizmo 覆盖层画笔：选择框 + hover）', () => {
-    it('清屏（设备空间）→ 施加与内容层一致的 dpr×zoom×相机变换 → 画选中盒', () => {
+/**
+ * 八柄绘制断言（工单 07）：盒 (100,200) 100×50 的柄中心 = 四角 + 四边中点
+ * （nw(100,200) n(150,200) ne(200,200) e(200,225) se(200,250) s(150,250)
+ * sw(100,250) w(100,225)），柄边长 = 8 css px / zoom 2 = 4 场景单位；
+ * strokes() 只含 strokeRect（fill 另断言），次序 = RESIZE_HANDLES 先 fill 后
+ * stroke，strokes[0] 恒为选中框。
+ */
+const HANDLES_ZOOM2 = [
+    'stroke:98,198,4,4', // nw (100,200)
+    'stroke:148,198,4,4', // n (150,200)
+    'stroke:198,198,4,4', // ne (200,200)
+    'stroke:198,223,4,4', // e (200,225)
+    'stroke:198,248,4,4', // se (200,250)
+    'stroke:148,248,4,4', // s (150,250)
+    'stroke:98,248,4,4', // sw (100,250)
+    'stroke:98,223,4,4', // w (100,225)
+] as const
+
+const FILLS_ZOOM2 = [
+    'fill:98,198,4,4',
+    'fill:148,198,4,4',
+    'fill:198,198,4,4',
+    'fill:198,223,4,4',
+    'fill:198,248,4,4',
+    'fill:148,248,4,4',
+    'fill:98,248,4,4',
+    'fill:98,223,4,4',
+] as const
+
+describe('createGizmoOverlayPainter（gizmo 覆盖层画笔：选择框 + hover + 八柄）', () => {
+    it('清屏（设备空间）→ 施加与内容层一致的 dpr×zoom×相机变换 → 画选中盒与八柄', () => {
         session.setSelection(['layers', 0])
         session.setHovered(null)
         const ctx = mockCtx()
@@ -78,25 +113,32 @@ describe('createGizmoOverlayPainter（gizmo 覆盖层画笔：选择框 + hover�
         expect(ctx.calls[1]).toBe('clear:0,0,600,400')
         // scale = dpr*zoom = 4；平移 = -cam*scale
         expect(ctx.calls[2]).toBe('transform:4,0,0,4,-40,-80')
-        expect(strokes(ctx)).toEqual(['stroke:100,200,100,50'])
-        expect(ctx.lineWidths).toEqual([1]) // 2 css px / zoom 2 = 1 场景单位
+        expect(strokes(ctx)).toEqual(['stroke:100,200,100,50', ...HANDLES_ZOOM2])
+        // 选中框 2 css px / zoom 2 = 1 场景单位；八柄线宽同式
+        // 选中框 2 css px / zoom 2 = 1 场景单位；八柄线宽循环外设一次（同值）
+        expect(ctx.lineWidths).toEqual([1, 1])
+        expect(ctx.fills).toEqual([...FILLS_ZOOM2])
     })
 
-    it('hover 高亮先画且更细，选中框后画压上', () => {
+    it('hover 高亮先画且更细，选中框后画压上，柄最后', () => {
         session.setSelection(['layers', 0])
         session.setHovered(['layers', 1])
         const ctx = mockCtx()
         createGizmoOverlayPainter(session, ctx)({ ...args })
-        expect(strokes(ctx)).toEqual(['stroke:300,200,100,50', 'stroke:100,200,100,50'])
-        expect(ctx.lineWidths).toEqual([0.5, 1]) // hover 1 css px、selection 2 css px（/zoom）
+        expect(strokes(ctx)).toEqual([
+            'stroke:300,200,100,50',
+            'stroke:100,200,100,50',
+            ...HANDLES_ZOOM2,
+        ])
+        expect(ctx.lineWidths).toEqual([0.5, 1, 1]) // hover 1 css px、selection/柄 2 css px（/zoom）
     })
 
-    it('hover 与选中同层时只画选中框', () => {
+    it('hover 与选中同层时只画选中框与柄', () => {
         session.setSelection(['layers', 0])
         session.setHovered(['layers', 0])
         const ctx = mockCtx()
         createGizmoOverlayPainter(session, ctx)({ ...args })
-        expect(strokes(ctx)).toEqual(['stroke:100,200,100,50'])
+        expect(strokes(ctx)).toEqual(['stroke:100,200,100,50', ...HANDLES_ZOOM2])
     })
 
     it('无选择/无悬停只清屏；无文档只清屏', () => {
@@ -105,6 +147,7 @@ describe('createGizmoOverlayPainter（gizmo 覆盖层画笔：选择框 + hover�
         const ctx = mockCtx()
         createGizmoOverlayPainter(session, ctx)({ ...args })
         expect(strokes(ctx)).toHaveLength(0)
+        expect(ctx.fills).toHaveLength(0)
         expect(ctx.calls[1]).toBe('clear:0,0,600,400')
 
         const ctx2 = mockCtx()
@@ -124,7 +167,7 @@ describe('createGizmoOverlayPainter（gizmo 覆盖层画笔：选择框 + hover�
         session.toggleLayerVisibility(['layers', 0])
         const ctx2 = mockCtx()
         createGizmoOverlayPainter(session, ctx2)({ ...args, doc: session.store.doc })
-        expect(strokes(ctx2)).toEqual(['stroke:100,200,100,50'])
+        expect(strokes(ctx2)).toEqual(['stroke:100,200,100,50', ...HANDLES_ZOOM2])
         session.setSelection(null)
     })
 
@@ -134,7 +177,7 @@ describe('createGizmoOverlayPainter（gizmo 覆盖层画笔：选择框 + hover�
         session.toggleLayerVisibility(['layers', 1])
         const ctx = mockCtx()
         createGizmoOverlayPainter(session, ctx)({ ...args, doc: session.store.doc })
-        expect(strokes(ctx)).toEqual(['stroke:100,200,100,50']) // 只剩选中框
+        expect(strokes(ctx)).toEqual(['stroke:100,200,100,50', ...HANDLES_ZOOM2]) // 只剩选中框与柄
         session.toggleLayerVisibility(['layers', 1])
         session.setSelection(null)
         session.setHovered(null)
@@ -146,9 +189,10 @@ describe('createGizmoOverlayPainter（gizmo 覆盖层画笔：选择框 + hover�
         session.toggleLayerLock(['layers', 0])
         const ctx = mockCtx()
         createGizmoOverlayPainter(session, ctx)({ ...args, doc: session.store.doc })
-        // 框照画（锁定 ≠ 隐藏——「可定位」的镜像；柄面随 resize feature 接入时按
-        // 同一 locked 折叠，工单 03 目验「有框无柄」）
+        // 框照画（锁定 ≠ 隐藏——「可定位」的镜像）；柄面折叠（内核 resizeHandlesAt
+        // 对锁定子树返回空集）——「不可变换」的镜像，工单 03 目验「有框无柄」
         expect(strokes(ctx)).toEqual(['stroke:100,200,100,50'])
+        expect(ctx.fills).toHaveLength(0)
         expect(ctx.lineWidths).toEqual([1]) // 选中框线宽语义不变
         session.toggleLayerLock(['layers', 0])
         session.setSelection(null)
@@ -160,7 +204,7 @@ describe('createGizmoOverlayPainter（gizmo 覆盖层画笔：选择框 + hover�
         session.toggleLayerLock(['layers', 1]) // hover 已设上再锁定——残留态
         const ctx = mockCtx()
         createGizmoOverlayPainter(session, ctx)({ ...args, doc: session.store.doc })
-        expect(strokes(ctx)).toEqual(['stroke:100,200,100,50']) // 只剩选中框
+        expect(strokes(ctx)).toEqual(['stroke:100,200,100,50', ...HANDLES_ZOOM2]) // 只剩选中框与柄
         session.toggleLayerLock(['layers', 1])
         session.setHovered(null)
         session.setSelection(null)
