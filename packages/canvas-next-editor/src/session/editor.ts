@@ -1079,6 +1079,17 @@ export class EditorSession {
         return true
     }
 
+    /**
+     * 清空全部参考线（工具栏「清空参考线」写入口，工单 03 消费）：ui 分支整体置空，
+     * 与 removeGuide 同型广播 guides 分支通知（覆盖层失效重绘）。会话级语义同门——
+     * 不进历史、不写 graph（ADR 0012），不可撤销；无文档或已空时空转（不产生通知）。
+     */
+    clearGuides(): void {
+        if (!this.store.doc) return
+        if (this.store.ui.guides.length === 0) return
+        this.store.setGuides([])
+    }
+
     /** 参考线列表（只读查询，呈现与吸附供轴同源） */
     listGuides(): readonly Guide[] {
         return this.store.ui.guides

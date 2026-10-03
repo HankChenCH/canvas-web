@@ -1,7 +1,7 @@
 /**
  * 参考线与标尺会话态（ruler-guides-snap 工单 01，ADR 0012）：
- * - 参考线 addGuide/removeGuide/listGuides 住 ui 分支——不进历史、不写 graph、
- *   openDocument 换文档重置（当次编辑会话语义）；
+ * - 参考线 addGuide/removeGuide/clearGuides/listGuides 住 ui 分支——不进历史、
+ *   不写 graph、openDocument 换文档重置（当次编辑会话语义）；
  * - 标尺显隐 toggleRulers：缺省常显，翻转不产生历史步。
  */
 import { describe, expect, it } from 'vitest'
@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest'
 import type { Canvas } from '@hankchen/canvas-next'
 
 import { EditorSession, type FrameScheduler } from '../../src/session/editor'
+import type { EditorChange } from '../../src/session/store'
 import { textLayer } from '../support/fixtures'
 
 const nullScheduler: FrameScheduler = () => () => {}
@@ -57,6 +58,33 @@ describe('参考线 API（addGuide/removeGuide/listGuides）', () => {
     })
 })
 
+describe('清空参考线（clearGuides，editor-top-toolbar 工单 01）', () => {
+    it('一键清空：listGuides 为空，发出与 removeGuide 同型的 guides 分支通知（覆盖层失效重绘）', () => {
+        const session = makeSession()
+        session.addGuide({ orientation: 'vertical', position: 205 })
+        session.addGuide({ orientation: 'horizontal', position: 721 })
+        const changes: EditorChange[] = []
+        session.subscribe((change) => changes.push(change))
+        session.clearGuides()
+        expect(session.listGuides()).toEqual([])
+        expect(changes).toEqual([{ scope: 'ui', branch: 'guides' }])
+    })
+
+    it('已空空转：不产生通知（无变化不惊动订阅方）', () => {
+        const session = makeSession()
+        const changes: EditorChange[] = []
+        session.subscribe((change) => changes.push(change))
+        session.clearGuides()
+        expect(changes).toEqual([])
+    })
+
+    it('无文档时空转不抛', () => {
+        const session = new EditorSession({ scheduleFrame: nullScheduler })
+        expect(() => session.clearGuides()).not.toThrow()
+        expect(session.listGuides()).toEqual([])
+    })
+})
+
 describe('历史隔离（ADR 0012：不进历史、不写 graph）', () => {
     it('参考线增删不产生历史步', () => {
         const session = makeSession()
@@ -93,6 +121,18 @@ describe('历史隔离（ADR 0012：不进历史、不写 graph）', () => {
         session.removeGuide(g.id)
         expect(session.store.doc).toBe(before)
         expect(session.store.doc!.layers.map((l) => l.priority)).toEqual([20, 10])
+    })
+
+    it('清空参考线（clearGuides）同门：不产生历史步、不写 graph', () => {
+        const session = makeSession()
+        session.addGuide({ orientation: 'vertical', position: 205 })
+        session.addGuide({ orientation: 'horizontal', position: 721 })
+        const before = session.store.doc
+        session.clearGuides()
+        expect(session.listGuides()).toEqual([])
+        expect(session.canUndo).toBe(false)
+        expect(session.store.history).toHaveLength(0)
+        expect(session.store.doc).toBe(before)
     })
 
     it('openDocument 换文档重置参考线（当次会话语义）', () => {
