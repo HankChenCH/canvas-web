@@ -355,14 +355,17 @@ describe('LayerPanel：V2 绑定面（工票 03）', () => {
         wrapper.unmount()
     })
 
-    it('新增菜单右对齐展开：右缘对齐 + 按钮向面板内侧打开——aside 是 overflow 滚动容器，左对齐形态菜单越出面板缘的部分被裁剪（选择框被遮挡；jsdom 无几何，锁机制类，几何回归由浏览器回路把守）', async () => {
+    it('新增菜单弹层走底座（issues/05）：菜单根是 DropdownMenu 壳（role=menu），aside overflow 滚动容器的裁切问题结构性消失——旧「absolute 右缘对齐 + 遮罩」手搓退役（jsdom 无几何，几何回归由浏览器回路把守）', async () => {
         const editor = makeEditor([])
         const wrapper = mount(LayerPanel, { props: { editor } })
 
+        expect(wrapper.find('[data-dropdown-menu]').exists()).toBe(false)
         await wrapper.find('[data-add-menu]').trigger('click')
-        const menu = wrapper.find('[data-add-layer]').element.parentElement as HTMLElement
-        expect(menu.className).toContain('right-0')
-        expect(menu.className).not.toContain('left-0')
+        const menu = wrapper.find('[data-dropdown-menu]')
+        expect(menu.exists()).toBe(true)
+        expect(menu.attributes('role')).toBe('menu')
+        // 旧遮罩（点击收菜单的透明垫层）已被底座容器包含判定的点外收取代
+        expect(wrapper.find('[data-add-backdrop]').exists()).toBe(false)
         wrapper.unmount()
     })
 })

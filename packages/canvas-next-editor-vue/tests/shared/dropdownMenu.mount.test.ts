@@ -11,7 +11,7 @@
  *   ↑↓ 循环跳置灰、Home/End 首尾、Enter/Space 显式激活（preventDefault 抑制
  *   原生 click 防双跑）、Esc/Tab 收起回焦触发钮、触发钮 ↓ 开菜单。
  */
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import type { DropdownMenuEntry } from '../../src/shared/useDropdownMenu'
@@ -300,6 +300,235 @@ describe('DropdownMenu：键盘导航（issues/04）', () => {
         await fireKey(menuRoot, 'Escape')
         expect(menuEl(wrapper)).toBeUndefined()
         expect(document.activeElement).toBe(triggerEl(wrapper))
+        wrapper.unmount()
+    })
+})
+
+// ---- 底座扩展（issues/05 旧菜单迁移）：两处旧手搓菜单的消费面 ----
+
+/** 缩放菜单 fixture（状态栏迁移同型：无 shortcut、dataAttrs 稳定钩子） */
+const ZOOM_ITEMS: DropdownMenuEntry[] = [
+    { label: '100%', dataAttrs: { 'data-zoom-100': '' }, run: () => void runs.push('reset') },
+    { label: '放大', title: '放大（以视口中心为锚）', dataAttrs: { 'data-zoom-in': '' }, run: () => void runs.push('in') },
+]
+
+describe('DropdownMenu：direction="up"（issues/05 状态栏缩放菜单迁移）', () => {
+    it('向上弹出：bottom 锚定位（视口高 − 触发钮上缘 + 间隙 6），不写 top 内联样式', async () => {
+        const wrapper = mount(DropdownMenu, {
+            props: { label: '缩放', items: ZOOM_ITEMS, direction: 'up' },
+            attachTo: document.body,
+        })
+        // jsdom 无布局：mock 触发钮上缘 738（视口 768 − 状态栏 30 的落位）
+        vi.spyOn(triggerEl(wrapper), 'getBoundingClientRect').mockReturnValue({ top: 738, bottom: 768, left: 10 } as DOMRect)
+        await wrapper.find('[data-dropdown-trigger]').trigger('click')
+        await flushPromises()
+        await nextTick()
+        const menu = menuEl(wrapper)
+        expect(menu).toBeDefined()
+        // bottom = 768 − 738 + 6 = 36（菜单底缘在触发钮上缘上方 6px）；left 原样（钳位不触发）
+        expect(menu?.style.top).toBe('')
+        expect(menu?.style.bottom).toBe('36px')
+        expect(menu?.style.left).toBe('10px')
+        wrapper.unmount()
+    })
+
+    it('缺省 direction="down"：保持 top 锚（工具栏三下拉语义不变）', async () => {
+        const wrapper = mountMenu()
+        await wrapper.find('[data-dropdown-trigger]').trigger('click')
+        await flushPromises()
+        expect(menuEl(wrapper)?.style.top).not.toBe('')
+        expect(menuEl(wrapper)?.style.bottom).toBe('')
+        wrapper.unmount()
+    })
+})
+
+describe('DropdownMenu：菜单项扩展契约（issues/05）', () => {
+    it('dataAttrs：项透传 data-* 目验钩子（状态栏 data-zoom-* / 面板 data-add-layer 同缝）', async () => {
+        const wrapper = mountMenu()
+        await wrapper.find('[data-dropdown-trigger]').trigger('click')
+        expect(wrapper.find('[data-zoom-100]').exists()).toBe(false)
+
+        const zoomed = mount(DropdownMenu, { props: { label: '缩放', items: ZOOM_ITEMS } })
+        await zoomed.find('[data-dropdown-trigger]').trigger('click')
+        expect(zoomed.find('[data-zoom-100]').exists()).toBe(true)
+        expect(zoomed.find('[data-zoom-in]').exists()).toBe(true)
+        zoomed.unmount()
+        wrapper.unmount()
+    })
+
+    it('keepsOpen：项分发执行 run 但菜单不收（面板＋模板表表单交换特例）', async () => {
+        const wrapper = mount(DropdownMenu, {
+            props: { label: '新增', items: [{ label: '模板表', keepsOpen: true, run: () => void runs.push('form') }] },
+        })
+        await wrapper.find('[data-dropdown-trigger]').trigger('click')
+        ;(itemEls(wrapper)[0] as HTMLElement).click()
+        await nextTick()
+        expect(runs).toEqual(['form'])
+        expect(menuEl(wrapper)).toBeDefined()
+        wrapper.unmount()
+    })
+})
+
+describe('DropdownMenu：自定义触发钮插槽（issues/05 状态栏/面板＋迁移）', () => {
+    const CUSTOM_TRIGGER_SLOT = `<template #trigger="{ open, toggle, triggerRef, onKeydown }">
+        <button :ref="triggerRef" type="button" data-custom-trigger aria-haspopup="menu" :aria-expanded="open" @click="toggle" @keydown="onKeydown">100%</button>
+    </template>`
+
+    it('触发钮由插槽呈现（内建钮不在场）：a11y/开合/Esc 回焦经受控 props 同契约', async () => {
+        const wrapper = mount(DropdownMenu, {
+            props: { label: '缩放', items: ZOOM_ITEMS },
+            slots: { trigger: CUSTOM_TRIGGER_SLOT },
+            attachTo: document.body,
+        })
+        const trigger = wrapper.find('[data-custom-trigger]')
+        expect(trigger.exists()).toBe(true)
+        expect(wrapper.find('[data-dropdown-trigger]').exists()).toBe(false)
+        expect(trigger.attributes('aria-haspopup')).toBe('menu')
+        expect(trigger.attributes('aria-expanded')).toBe('false')
+
+        await trigger.trigger('click')
+        expect(menuEl(wrapper)).toBeDefined()
+        expect(trigger.attributes('aria-expanded')).toBe('true')
+
+        // Esc 收起回焦自定义触发钮（triggerRef 接线生效；菜单根路径——window 路径不回焦）
+        ;(menuEl(wrapper) as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+        await nextTick()
+        expect(menuEl(wrapper)).toBeUndefined()
+        expect(document.activeElement).toBe(trigger.element)
+        wrapper.unmount()
+    })
+
+    it('自定义触发钮 ↓ 开菜单（onKeydown 接线）', async () => {
+        const wrapper = mount(DropdownMenu, {
+            props: { label: '缩放', items: ZOOM_ITEMS },
+            slots: { trigger: CUSTOM_TRIGGER_SLOT },
+            attachTo: document.body,
+        })
+        await wrapper.find('[data-custom-trigger]').trigger('keydown', { key: 'ArrowDown' })
+        await flushPromises()
+        expect(menuEl(wrapper)).toBeDefined()
+        expect(document.activeElement).toBe(itemEls(wrapper)[0])
+        wrapper.unmount()
+    })
+
+    it('弹层定位按自定义触发钮 rect', async () => {
+        const wrapper = mount(DropdownMenu, {
+            props: { label: '缩放', items: ZOOM_ITEMS },
+            slots: { trigger: CUSTOM_TRIGGER_SLOT },
+            attachTo: document.body,
+        })
+        vi.spyOn(wrapper.find('[data-custom-trigger]').element as HTMLElement, 'getBoundingClientRect').mockReturnValue({
+            top: 100,
+            bottom: 124,
+            left: 12,
+        } as DOMRect)
+        await wrapper.find('[data-custom-trigger]').trigger('click')
+        await flushPromises()
+        await nextTick()
+        // top = 触发钮下缘 124 + 间隙 6 = 130；left = 12
+        expect(menuEl(wrapper)?.style.top).toBe('130px')
+        expect(menuEl(wrapper)?.style.left).toBe('12px')
+        wrapper.unmount()
+    })
+})
+
+describe('DropdownMenu：body 受控插槽（issues/05 面板＋ rowsPath 表单）', () => {
+    const BODY_SLOT = `<template #body="{ closeMenu }">
+        <input data-body-input />
+        <button type="button" data-body-close @click="closeMenu">取消</button>
+    </template>`
+
+    it('插槽内容随菜单渲染；内容在容器内——点击不收；closeMenu 受控可关', async () => {
+        const wrapper = mount(DropdownMenu, {
+            props: { label: '新增', items: [] },
+            slots: { body: BODY_SLOT },
+        })
+        await wrapper.find('[data-dropdown-trigger]').trigger('click')
+        expect(wrapper.find('[data-body-input]').exists()).toBe(true)
+
+        // 插槽内容点击不收（容器包含判定覆盖 body）
+        wrapper.find('[data-body-input]').element.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
+        await nextTick()
+        expect(menuEl(wrapper)).toBeDefined()
+
+        await wrapper.find('[data-body-close]').trigger('click')
+        expect(menuEl(wrapper)).toBeUndefined()
+        wrapper.unmount()
+    })
+
+    it('body 内输入框方向键不被菜单劫持（可编辑目标守卫）：不 preventDefault、焦点不迁移', async () => {
+        const wrapper = mount(DropdownMenu, {
+            props: { label: '新增', items: [{ label: '文本层', run: () => {} }] },
+            slots: { body: `<template #body><input data-body-input /></template>` },
+            attachTo: document.body,
+        })
+        await wrapper.find('[data-dropdown-trigger]').trigger('click')
+        await flushPromises()
+        const input = wrapper.find('[data-body-input]')
+        ;(input.element as HTMLElement).focus()
+        const event = new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true })
+        input.element.dispatchEvent(event)
+        await flushPromises()
+        expect(event.defaultPrevented).toBe(false)
+        expect(document.activeElement).toBe(input.element)
+        wrapper.unmount()
+    })
+
+    it('body 内可编辑目标 Tab 让路不收菜单（表单移焦序保留，issues/05 review）；菜单项 Tab 照常收', async () => {
+        const wrapper = mount(DropdownMenu, {
+            props: { label: '新增', items: [{ label: '文本层', run: () => {} }] },
+            slots: { body: `<template #body><input data-body-input /><button type="button" data-body-ok>创建</button></template>` },
+            attachTo: document.body,
+        })
+        await wrapper.find('[data-dropdown-trigger]').trigger('click')
+        await flushPromises()
+
+        // 输入框上 Tab：不 preventDefault（原生移焦走表单序，jsdom 不实现默认移焦）、菜单不收
+        const input = wrapper.find('[data-body-input]')
+        ;(input.element as HTMLElement).focus()
+        const tabInInput = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+        input.element.dispatchEvent(tabInInput)
+        await flushPromises()
+        expect(tabInInput.defaultPrevented).toBe(false)
+        expect(menuEl(wrapper)).toBeDefined()
+
+        // body 内按钮（isEditableEventTarget 命中）上 Tab 同样让路
+        const ok = wrapper.find('[data-body-ok]')
+        ;(ok.element as HTMLElement).focus()
+        const tabOnButton = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+        ok.element.dispatchEvent(tabOnButton)
+        await flushPromises()
+        expect(tabOnButton.defaultPrevented).toBe(false)
+        expect(menuEl(wrapper)).toBeDefined()
+
+        // 菜单项（data-dropdown-item）上 Tab 照常收起回焦触发钮
+        const item = itemEls(wrapper)[0] as HTMLElement
+        item.focus()
+        item.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }))
+        await flushPromises()
+        expect(menuEl(wrapper)).toBeUndefined()
+        expect(document.activeElement).toBe(triggerEl(wrapper))
+        wrapper.unmount()
+    })
+})
+
+describe('DropdownMenu：closed 事件（issues/05 面板＋表单态随收重置）', () => {
+    it('开→收发出一次（Esc/点外/分发各路），收→开不发', async () => {
+        const closed = vi.fn()
+        const wrapper = mount(DropdownMenu, { props: { label: '排列', items: ARRANGE_ITEMS, onClosed: closed } })
+        await wrapper.find('[data-dropdown-trigger]').trigger('click')
+        expect(closed).not.toHaveBeenCalled()
+
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+        await nextTick()
+        expect(closed).toHaveBeenCalledTimes(1)
+
+        // 收→开不发；分发即收再发一次
+        await wrapper.find('[data-dropdown-trigger]').trigger('click')
+        expect(closed).toHaveBeenCalledTimes(1)
+        ;(itemEls(wrapper)[0] as HTMLElement).click()
+        await nextTick()
+        expect(closed).toHaveBeenCalledTimes(2)
         wrapper.unmount()
     })
 })

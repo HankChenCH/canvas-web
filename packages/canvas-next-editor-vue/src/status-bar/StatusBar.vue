@@ -6,7 +6,11 @@
  * - 缩放百分比：ui.viewport 分支通知驱动（useViewport 切片桥）——kbd-nav 工单 04
  *   起只读 % 段升级为交互控件：点击弹出五项菜单（100% 复位/适应画布/适应选区/
  *   放大/缩小，步进 = zoomAt 视口中心 ×/÷1.25 的 playground 浮条先例收编；不做
- *   数值输入框），分发即收、点外/Esc 收；data-zoom-* 目验钩子沿浮条命名迁入；
+ *   数值输入框），分发即收、点外/Esc 收。editor-top-toolbar 工单 05 起菜单迁
+ *   editor-vue/shared 下拉底座（DropdownMenu #trigger 自绘 % 读数触发钮 +
+ *   direction="up" 贴视口底缘向上弹层；开合/点外/Esc 收、a11y、键盘导航全归
+ *   底座，本组件只持菜单项数据面；data-zoom-* 目验钩子沿浮条命名经 item
+ *   dataAttrs 透传）；
  * - 选中图层路径：ui.selection 分支驱动（useSelection）+ formatLayerPath；
  * - 物化进行数：宿主注入 prop（Materializer 住 browser-renderer，红线禁止
  *   editor-vue 直连——宿主订阅物化状态后在途计数传入），0 时该段隐藏；
@@ -27,13 +31,15 @@
  * 路径格式化 formatLayerPath（纯函数另有单测）/ 坐标格式化 formatLayerGeometry
  * （经本组件 mount 测试覆盖格式与取整）。
  */
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed } from 'vue'
 
 import type { EditorSession } from '@hankchen/canvas-next-editor'
 import { resolveLayer } from '@hankchen/canvas-next-editor'
 
+import DropdownMenu from '../shared/DropdownMenu.vue'
 import { formatLayerPath } from './layerPathLabel'
 import { formatLayerGeometry } from './layerGeometryLabel'
+import type { DropdownMenuEntry } from '../shared/useDropdownMenu'
 import { useDataSourceSchema } from './useDataSourceSchema'
 import { useDoc } from './useDoc'
 import { detectShortcutPlatform, shortcutActionLabel } from '../shared/shortcutsHelp'
@@ -88,9 +94,7 @@ const schemaLabel = computed(() => {
     return schema === null ? 'schema 无候选' : `schema 已注入顶层 ${schema.properties?.size ?? 0} 键`
 })
 
-// ---- 缩放控件（kbd-nav 工单 04）：只读 % 段升级弹层菜单 ----
-
-const zoomMenuOpen = ref(false)
+// ---- 缩放控件（kbd-nav 工单 04）：只读 % 段升级弹层菜单；工单 05 迁 shared 底座 ----
 
 /** 帮助面板单例开合（「快捷键」段按钮；⌘/ 走 useShortcuts 桥共享同一 open 态） */
 const { toggle: toggleHelp } = useShortcutsHelp()
@@ -111,70 +115,41 @@ function zoomBy(factor: number): void {
     props.editor.zoomAt(width / 2, height / 2, viewport.value.zoom * factor)
 }
 
-/** 弹层菜单分发：执行即收（ContextMenu 动作即关同款） */
-function runZoom(run: () => void): void {
-    run()
-    zoomMenuOpen.value = false
-}
-
-// 开启期间点外/Esc 收菜单：监听随开合挂卸；触发钮 pointerdown.stop 免二次翻转
-// （pointerdown 先于 click——不拦则点触发钮收了又被 click 重开）
-function onWindowPointerDown(): void {
-    zoomMenuOpen.value = false
-}
-
-function onWindowKeydown(event: KeyboardEvent): void {
-    if (event.key === 'Escape') zoomMenuOpen.value = false
-}
-
-watch(zoomMenuOpen, (isOpen) => {
-    if (isOpen) {
-        window.addEventListener('pointerdown', onWindowPointerDown)
-        window.addEventListener('keydown', onWindowKeydown)
-    } else {
-        window.removeEventListener('pointerdown', onWindowPointerDown)
-        window.removeEventListener('keydown', onWindowKeydown)
-    }
-})
-onBeforeUnmount(() => {
-    window.removeEventListener('pointerdown', onWindowPointerDown)
-    window.removeEventListener('keydown', onWindowKeydown)
-})
+/** 缩放菜单项：五项动作与迁移前逐项一致（100% 复位/适应画布/适应选区/放大/
+ *  缩小）；data-zoom-* 目验钩子沿浮条命名经 dataAttrs 透传，放大/缩小 title
+ *  承载中心锚说明。开合/点外/Esc 收/分发即收/键盘导航归 DropdownMenu 底座
+ *  （返回注解：dataAttrs 字面量联合归一化会吞掉 computed 泛型的上下文类型） */
+const zoomItems = computed<DropdownMenuEntry[]>((): DropdownMenuEntry[] => [
+    { label: '100%', dataAttrs: { 'data-zoom-100': '' }, run: () => props.editor.resetZoom() },
+    { label: '适应画布', dataAttrs: { 'data-zoom-fit': '' }, run: () => props.editor.fitToSurface() },
+    { label: '适应选区', dataAttrs: { 'data-zoom-fit-selection': '' }, run: () => props.editor.fitToSelection() },
+    { label: '放大', title: '放大（以视口中心为锚）', dataAttrs: { 'data-zoom-in': '' }, run: () => zoomBy(1.25) },
+    { label: '缩小', title: '缩小（以视口中心为锚）', dataAttrs: { 'data-zoom-out': '' }, run: () => zoomBy(1 / 1.25) },
+])
 </script>
 
 <template>
     <footer class="cn-statusbar" role="status" aria-label="编辑器状态栏">
-        <div class="cn-statusbar__zoom">
-            <button
-                type="button"
-                class="cn-statusbar__segment cn-statusbar__zoom-trigger"
-                data-zoom
-                aria-haspopup="menu"
-                :aria-expanded="zoomMenuOpen"
-                title="缩放"
-                @pointerdown.stop
-                @click="zoomMenuOpen = !zoomMenuOpen"
-            >
-                {{ zoomPercent }}%
-            </button>
-            <div v-if="zoomMenuOpen" class="cn-statusbar__zoom-menu" role="menu" aria-label="缩放" data-zoom-menu @pointerdown.stop>
-                <button type="button" role="menuitem" class="cn-statusbar__zoom-item" data-zoom-100 @click="runZoom(() => props.editor.resetZoom())">
-                    100%
+        <!-- 缩放控件（kbd-nav 工单 04 弹层菜单；工单 05 迁 DropdownMenu 底座）：
+             #trigger 自绘 % 读数触发钮（观感沿状态栏段），direction="up" 贴视口
+             底缘向上弹层；点外/Esc 收与键盘导航归底座 -->
+        <DropdownMenu label="缩放" direction="up" :items="zoomItems">
+            <template #trigger="{ open, toggle, triggerRef, onKeydown }">
+                <button
+                    :ref="triggerRef"
+                    type="button"
+                    class="cn-statusbar__segment cn-statusbar__zoom-trigger"
+                    data-zoom
+                    aria-haspopup="menu"
+                    :aria-expanded="open"
+                    title="缩放"
+                    @click="toggle"
+                    @keydown="onKeydown"
+                >
+                    {{ zoomPercent }}%
                 </button>
-                <button type="button" role="menuitem" class="cn-statusbar__zoom-item" data-zoom-fit @click="runZoom(() => props.editor.fitToSurface())">
-                    适应画布
-                </button>
-                <button type="button" role="menuitem" class="cn-statusbar__zoom-item" data-zoom-fit-selection @click="runZoom(() => props.editor.fitToSelection())">
-                    适应选区
-                </button>
-                <button type="button" role="menuitem" class="cn-statusbar__zoom-item" data-zoom-in title="放大（以视口中心为锚）" @click="runZoom(() => zoomBy(1.25))">
-                    放大
-                </button>
-                <button type="button" role="menuitem" class="cn-statusbar__zoom-item" data-zoom-out title="缩小（以视口中心为锚）" @click="runZoom(() => zoomBy(1 / 1.25))">
-                    缩小
-                </button>
-            </div>
-        </div>
+            </template>
+        </DropdownMenu>
         <span class="cn-statusbar__divider" aria-hidden="true"></span>
         <span class="cn-statusbar__segment" data-selection>{{ selectionLabel }}</span>
         <template v-if="props.pendingCount > 0">
@@ -243,11 +218,8 @@ onBeforeUnmount(() => {
     white-space: nowrap;
 }
 
-/* 缩放控件（kbd-nav 工单 04）：触发钮沿用读数观感，弹层菜单向上弹出 */
-.cn-statusbar__zoom {
-    position: relative;
-}
-
+/* 缩放控件（kbd-nav 工单 04）：触发钮沿用读数观感；弹层菜单（工单 05 起归
+   DropdownMenu 底座，fixed 向上弹层，壳/项/悬停样式自带） */
 .cn-statusbar__zoom-trigger {
     padding: 0;
     border: 0;
@@ -259,40 +231,6 @@ onBeforeUnmount(() => {
 }
 
 .cn-statusbar__zoom-trigger:hover {
-    color: var(--cn-accent);
-}
-
-.cn-statusbar__zoom-menu {
-    position: absolute;
-    bottom: calc(100% + 6px);
-    left: 0;
-    z-index: 40;
-    min-width: 108px;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 4px;
-    background: var(--cn-bg-elevated);
-    border: 1px solid var(--cn-line);
-    border-radius: 10px;
-    box-shadow: 0 12px 32px rgba(2, 6, 23, 0.55);
-}
-
-.cn-statusbar__zoom-item {
-    padding: 6px 12px;
-    border: 0;
-    border-radius: 6px;
-    background: transparent;
-    color: var(--cn-fg);
-    font-size: 12px;
-    line-height: 1.4;
-    text-align: left;
-    white-space: nowrap;
-    cursor: pointer;
-}
-
-.cn-statusbar__zoom-item:hover {
-    background: rgba(56, 189, 248, 0.12);
     color: var(--cn-accent);
 }
 

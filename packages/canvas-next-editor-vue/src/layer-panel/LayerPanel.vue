@@ -10,6 +10,10 @@
  * 新增菜单画拉建层（drag-create 工单 03）：四类图层项点击 = 武装一次画拉
  * （armLayerCreate，落位与尺寸归画布拉出的橡皮筋），状态栏瞬时提示操作方式；
  * 模板表项保持表单直建不变（rowsPath 必填校验就地拦）。
+ * 新增菜单走 shared 下拉底座（editor-top-toolbar 工单 05）：#trigger 自绘＋方钮、
+ * #body 受控插槽承载 rowsPath 表单（模板表项 keepsOpen 交换出表单体），开合/
+ * 点外收/Esc 收/a11y/键盘导航全归底座；aside 是 overflow 滚动容器——底座弹层
+ * fixed 定位天然逃出裁切（工具栏同款），旧「右缘对齐 + 遮罩」手搓随之退役。
  * 视觉沿用 .cn-props 主题命名空间（与属性面板同一套设计令牌）；行卡片化 +
  * 根层拖拽把手见 panel-theme.css 的 cn-layers 区块（工单 08）。
  *
@@ -33,9 +37,11 @@ import {
 } from '@hankchen/canvas-next-editor'
 
 import PanelIcon from '../shared/PanelIcon.vue'
+import DropdownMenu from '../shared/DropdownMenu.vue'
+import type { DropdownMenuEntry } from '../shared/useDropdownMenu'
 import { ARM_LAYER_CREATE_HINT, detectShortcutPlatform, shortcutActionLabel } from '../shared/shortcutsHelp'
 import { useTransientFeedback } from '../shared/useTransientFeedback'
-import { ADD_MENU, type AddMenuKind } from './addMenu'
+import { ADD_MENU } from './addMenu'
 import { isUpperHalf, useLayerPanel } from './useLayerPanel'
 const props = defineProps<{ editor: EditorSession }>()
 
@@ -61,49 +67,72 @@ interface FlatRow {
     draggable: boolean
 }
 
-/** 新增菜单态：菜单开合 + 模板表 rowsPath 表单（必填校验就地拦，spec §2.1 N1）。
- *  菜单数据面（ADD_MENU/类型）在 ./addMenu——工具栏「＋插入▾」同源消费（工单 03） */
-const addMenuOpen = ref(false)
+/** 新增菜单（工单 05 迁 DropdownMenu 底座）：本组件持菜单项数据面 + rowsPath
+ *  表单态（#body 受控插槽承载表单视图——issues/05 拍板受控插槽方案，表单留场
+ *  菜单内不变）；开合/点外收/Esc 收/键盘导航归底座。菜单数据面（ADD_MENU/类型）
+ *  在 ./addMenu——工具栏「＋插入▾」同源消费（工单 03） */
 const templateFormOpen = ref(false)
 const templateRowsPath = ref('')
 const templateRowsPathInvalid = ref(false)
 
-function toggleAddMenu(): void {
-    if (addMenuOpen.value) {
-        resetAddMenu()
-        return
-    }
-    addMenuOpen.value = true
-}
-
-function resetAddMenu(): void {
-    addMenuOpen.value = false
+/** 表单态重置（创建成功/取消/随收三路共用）：菜单每次打开都是干净的列表态 */
+function resetTemplateForm(): void {
     templateFormOpen.value = false
     templateRowsPath.value = ''
     templateRowsPathInvalid.value = false
 }
 
-function addLayer(kind: AddMenuKind): void {
-    if (kind.kind === 'template-table') {
-        templateFormOpen.value = true
-        return
-    }
-    // 画拉建层（drag-create 工单 03）：新增项点击 = 武装一次画拉（不再直建落
-    // (0,0)——落点从原点变点击处本身是改进，spec 决策 1）；落库归画拉 endCreate。
-    // 武装态操作方式走状态栏瞬时提示（与快捷键入口同句），菜单即收不留场
-    props.editor.armLayerCreate(kind.type)
-    useTransientFeedback().show(ARM_LAYER_CREATE_HINT)
-    resetAddMenu()
-}
+/** 菜单项：模板表项 keepsOpen 交换出表单体（items 清空、菜单留场），图层四项
+ *  武装画拉（drag-create 工单 03：点击 = 武装一次画拉，落库归画拉 endCreate）
+ *  + 状态栏瞬时提示（与快捷键入口同句），分发即收归底座 */
+const addMenuItems = computed<DropdownMenuEntry[]>(() =>
+    templateFormOpen.value
+        ? []
+        : ADD_MENU.map((kind): DropdownMenuEntry =>
+              kind.kind === 'layer'
+                  ? {
+                        label: kind.label,
+                        title: kind.title,
+                        dataAttrs: { 'data-add-layer': kind.type },
+                        run: () => {
+                            props.editor.armLayerCreate(kind.type)
+                            useTransientFeedback().show(ARM_LAYER_CREATE_HINT)
+                        },
+                    }
+                  : {
+                        label: kind.label,
+                        title: kind.title,
+                        dataAttrs: { 'data-add-layer': 'template-table' },
+                        keepsOpen: true,
+                        run: () => {
+                            templateFormOpen.value = true
+                        },
+                    },
+          ),
+)
 
-function addTemplateTable(): void {
+/** 表单创建（rowsPath 必填校验就地拦，spec §2.1 N1）：空串标错不留场，成功建表
+ *  （内核 addTemplateTable，自动选中）后重置 + 收菜单 */
+function addTemplateTable(closeMenu: () => void): void {
     const rowsPath = templateRowsPath.value.trim()
     if (rowsPath === '') {
         templateRowsPathInvalid.value = true
         return
     }
     props.editor.addTemplateTable(rowsPath)
-    resetAddMenu()
+    resetTemplateForm()
+    closeMenu()
+}
+
+/** 表单取消：重置 + 收菜单（净效果 = 菜单与表单态全部归零） */
+function cancelTemplateForm(closeMenu: () => void): void {
+    resetTemplateForm()
+    closeMenu()
+}
+
+/** 菜单随收清理（底座 closed 事件，Esc/点外/触发钮点收各路）：表单态不跨开合残留 */
+function onAddMenuClosed(): void {
+    resetTemplateForm()
 }
 
 /**
@@ -387,47 +416,34 @@ watch(panel.renaming, async (path) => {
 
 <template>
     <aside class="cn-props flex w-[232px] shrink-0 flex-col overflow-y-auto rounded-xl border border-cn-line bg-cn-bg text-cn-fg shadow-[0_16px_40px_-12px_rgba(2,6,23,0.55)]">
-        <header class="sticky top-0 z-10 flex items-center justify-between border-b border-cn-line bg-cn-bg-elevated/95 px-3.5 py-2.5 backdrop-blur-sm">
+        <header class="sticky top-0 z-10 flex items-center justify-between border-b border-cn-line bg-cn-bg-elevated/95 px-3.5 py-2.5">
+            <!-- 无 backdrop-blur：下拉底座弹层 fixed 定位的前提是祖先无 filter/
+                 transform/backdrop-filter（劫持包含块 → 弹层错位 + 被 aside 裁切，
+                 issues/05 目验实录）；header bg 95% 不透明，blur 本就不可见 -->
             <span class="text-[12px] font-medium tracking-wide text-cn-fg/90">图层</span>
             <div class="flex items-center gap-1">
-                <!-- 点击遮罩收菜单（透明层垫在弹层下） -->
-                <div
-                    v-if="addMenuOpen"
-                    class="fixed inset-0 z-10"
-                    data-add-backdrop
-                    @pointerdown="resetAddMenu"
-                ></div>
-                <div class="relative z-20">
-                    <button
-                        type="button"
-                        data-add-menu
-                        :aria-expanded="addMenuOpen"
-                        title="新增图层"
-                        class="flex size-6 items-center justify-center rounded border border-cn-field-line bg-cn-field text-[13px] leading-none text-cn-fg/80 hover:border-cn-accent/40 hover:text-cn-accent"
-                        @click="toggleAddMenu"
-                    >
-                        +
-                    </button>
-                    <!-- 右对齐展开：aside 是 overflow 滚动容器，菜单越出面板缘的部分会被
-                         裁剪（选择框被遮挡）——右缘对齐 + 按钮向面板内侧打开（w-40 < 面板宽） -->
-                    <div
-                        v-if="addMenuOpen"
-                        class="absolute right-0 top-7 flex w-40 flex-col rounded-lg border border-cn-line bg-cn-bg-elevated p-1 shadow-[0_12px_32px_rgba(2,6,23,0.55)]"
-                    >
-                        <template v-if="!templateFormOpen">
-                            <button
-                                v-for="kind in ADD_MENU"
-                                :key="kind.label"
-                                type="button"
-                                :data-add-layer="kind.kind === 'layer' ? kind.type : 'template-table'"
-                                :title="kind.title"
-                                class="rounded px-2 py-1.5 text-left text-[12px] text-cn-fg/90 hover:bg-cn-accent/15 hover:text-cn-accent"
-                                @click="addLayer(kind)"
-                            >
-                                {{ kind.label }}
-                            </button>
-                        </template>
-                        <template v-else>
+                <!-- 新增菜单（工单 05 迁 DropdownMenu 底座）：#trigger 自绘＋方钮（观感
+                     沿旧钮），#body 承载 rowsPath 表单（模板表项 keepsOpen 交换出表单
+                     体，表单留场菜单内）。aside 是 overflow 滚动容器——底座弹层 fixed
+                     定位天然逃出裁切（工具栏同款），旧「右缘对齐 + 遮罩」手搓退役 -->
+                <DropdownMenu label="新增图层" :items="addMenuItems" @closed="onAddMenuClosed">
+                    <template #trigger="{ open, toggle, triggerRef, onKeydown }">
+                        <button
+                            :ref="triggerRef"
+                            type="button"
+                            data-add-menu
+                            :aria-expanded="open"
+                            aria-haspopup="menu"
+                            title="新增图层"
+                            class="flex size-6 items-center justify-center rounded border border-cn-field-line bg-cn-field text-[13px] leading-none text-cn-fg/80 hover:border-cn-accent/40 hover:text-cn-accent"
+                            @click="toggle"
+                            @keydown="onKeydown"
+                        >
+                            +
+                        </button>
+                    </template>
+                    <template #body="{ closeMenu }">
+                        <template v-if="templateFormOpen">
                             <p class="px-2 pt-1 text-[11px] leading-4 text-cn-muted">模板行按数据行路径展开成表</p>
                             <input
                                 v-model="templateRowsPath"
@@ -436,7 +452,7 @@ watch(panel.renaming, async (path) => {
                                 placeholder="如 order.items"
                                 class="mx-1 my-1 w-[calc(100%-8px)] rounded border bg-cn-field px-2 py-1 text-[12px] text-cn-fg outline-none focus:border-cn-accent/60"
                                 :class="templateRowsPathInvalid ? 'border-cn-danger' : 'border-cn-field-line'"
-                                @keydown.enter.prevent="addTemplateTable"
+                                @keydown.enter.prevent="addTemplateTable(closeMenu)"
                             />
                             <p v-if="templateRowsPathInvalid" class="px-2 pb-1 text-[11px] text-cn-danger">rowsPath 必填</p>
                             <div class="flex gap-1 p-1">
@@ -444,21 +460,21 @@ watch(panel.renaming, async (path) => {
                                     type="button"
                                     data-template-confirm
                                     class="flex-1 rounded bg-cn-accent/20 px-2 py-1 text-[12px] text-cn-accent hover:bg-cn-accent/30"
-                                    @click="addTemplateTable"
+                                    @click="addTemplateTable(closeMenu)"
                                 >
                                     创建
                                 </button>
                                 <button
                                     type="button"
                                     class="flex-1 rounded px-2 py-1 text-[12px] text-cn-muted hover:text-cn-fg"
-                                    @click="resetAddMenu"
+                                    @click="cancelTemplateForm(closeMenu)"
                                 >
                                     取消
                                 </button>
                             </div>
                         </template>
-                    </div>
-                </div>
+                    </template>
+                </DropdownMenu>
             </div>
         </header>
 

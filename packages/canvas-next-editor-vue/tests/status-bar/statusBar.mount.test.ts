@@ -226,7 +226,7 @@ describe('StatusBar：schema 声明态段（组件直读 ui 分支）', () => {
     })
 })
 
-describe('StatusBar：缩放控件（kbd-nav 工单 04，只读 % 段升级弹层菜单）', () => {
+describe('StatusBar：缩放控件（kbd-nav 工单 04 弹层菜单；editor-top-toolbar 工单 05 迁 DropdownMenu 底座）', () => {
     beforeEach(() => {
         useShortcutsHelp().close()
     })
@@ -239,14 +239,15 @@ describe('StatusBar：缩放控件（kbd-nav 工单 04，只读 % 段升级弹�
         return wrapper
     }
 
-    it('% 段可点击：弹层菜单五项齐现（data-zoom-* 钩子沿浮条命名迁入）', async () => {
+    it('% 段可点击：弹层菜单五项齐现（role=menu 归底座；data-zoom-* 钩子沿浮条命名经 item dataAttrs 透传）', async () => {
         const editor = makeEditor()
         const wrapper = mountBar(editor)
-        expect(wrapper.find('[data-zoom-menu]').exists()).toBe(false)
+        expect(wrapper.find('[data-dropdown-menu]').exists()).toBe(false)
 
         await wrapper.find('[data-zoom]').trigger('click')
-        const menu = wrapper.find('[data-zoom-menu]')
+        const menu = wrapper.find('[data-dropdown-menu]')
         expect(menu.exists()).toBe(true)
+        expect(menu.attributes('role')).toBe('menu')
         expect(wrapper.find('[data-zoom]').attributes('aria-expanded')).toBe('true')
         for (const hook of ['data-zoom-100', 'data-zoom-fit', 'data-zoom-fit-selection', 'data-zoom-in', 'data-zoom-out']) {
             expect(wrapper.find(`[${hook}]`).exists()).toBe(true)
@@ -304,24 +305,24 @@ describe('StatusBar：缩放控件（kbd-nav 工单 04，只读 % 段升级弹�
     it('收菜单：点项即收；点外收；Escape 收', async () => {
         const editor = makeEditor()
         const wrapper = await mountWithMenu(editor)
-        expect(wrapper.find('[data-zoom-menu]').exists()).toBe(true)
+        expect(wrapper.find('[data-dropdown-menu]').exists()).toBe(true)
 
         // 点外（window pointerdown）收
         document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
         await wrapper.vm.$nextTick()
-        expect(wrapper.find('[data-zoom-menu]').exists()).toBe(false)
+        expect(wrapper.find('[data-dropdown-menu]').exists()).toBe(false)
 
         // 重开后 Escape 收
         await wrapper.find('[data-zoom]').trigger('click')
-        expect(wrapper.find('[data-zoom-menu]').exists()).toBe(true)
+        expect(wrapper.find('[data-dropdown-menu]').exists()).toBe(true)
         window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
         await wrapper.vm.$nextTick()
-        expect(wrapper.find('[data-zoom-menu]').exists()).toBe(false)
+        expect(wrapper.find('[data-dropdown-menu]').exists()).toBe(false)
 
         // 重开后点项分发即收
         await wrapper.find('[data-zoom]').trigger('click')
         await wrapper.find('[data-zoom-in]').trigger('click')
-        expect(wrapper.find('[data-zoom-menu]').exists()).toBe(false)
+        expect(wrapper.find('[data-dropdown-menu]').exists()).toBe(false)
         wrapper.unmount()
     })
 
@@ -330,7 +331,7 @@ describe('StatusBar：缩放控件（kbd-nav 工单 04，只读 % 段升级弹�
         const wrapper = mountBar(editor)
         window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
         await wrapper.vm.$nextTick()
-        expect(wrapper.find('[data-zoom-menu]').exists()).toBe(false)
+        expect(wrapper.find('[data-dropdown-menu]').exists()).toBe(false)
         wrapper.unmount()
     })
 })

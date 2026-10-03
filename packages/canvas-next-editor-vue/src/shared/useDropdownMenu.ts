@@ -9,20 +9,27 @@
  *
  * 键盘导航（issues/04）的落点计算在本文 nextEnabledItemIndex 纯函数（有单测
  * 钉住）；焦点编排（开时入菜单/收起回触发钮/菜单内按键路由）在呈现件
- * DropdownMenu.vue。keepsOpen 语义不做（spec Q12）。
+ * DropdownMenu.vue。keepsOpen 语义本票（02）不做（spec Q12），issues/05 迁移
+ * 模板表表单交换时按需加入（仅 keepsOpen 项分发留场，见 DropdownMenuItem）。
  *
- * 呈现件 DropdownMenu.vue 消费本 composable；工具栏三下拉（issues/03）经组件
- * 使用，面板＋/缩放菜单的迁移是后续票（issues/05）。
+ * 呈现件 DropdownMenu.vue 消费本 composable；工具栏三下拉（issues/03）经内建
+ * 触发钮使用，状态栏缩放菜单与面板＋（issues/05）经 #trigger/#body 受控插槽
+ * 消费（自绘触发钮观感、rowsPath 表单体，见 DropdownMenuSlotProps）。
  */
-import { onScopeDispose, ref, watch, type Ref } from 'vue'
+import { onScopeDispose, ref, watch, type ComponentPublicInstance, type Ref } from 'vue'
 
 /** 菜单项：shortcut 为纯展示键位后缀（右侧灰字，字符串由调用方传入，底座不做
- *  平台检测）；title 承载置灰原因（壳内「置灰 + title」统一先例，ContextMenu.vue） */
+ *  平台检测）；title 承载置灰原因（壳内「置灰 + title」统一先例，ContextMenu.vue）；
+ *  keepsOpen 项分发后菜单留场（面板＋模板表表单交换特例，issues/05 拍板推翻
+ *  spec Q12 的「勿加」——迁移需要，且仅此一形态）；dataAttrs 透传 data-* 目验/
+ *  测试钩子（状态栏 data-zoom-*、面板 data-add-layer 同缝） */
 export interface DropdownMenuItem {
     label: string
     title?: string
     disabled?: boolean
     shortcut?: string
+    keepsOpen?: boolean
+    dataAttrs?: Readonly<Record<string, string>>
     run: () => void
 }
 
@@ -35,6 +42,21 @@ export interface DropdownMenuController {
     toggle(): void
     openMenu(): void
     closeMenu(): void
+}
+
+/**
+ * #trigger / #body 两插槽的受控 props（issues/05）：自绘触发钮消费 open（驱动
+ * aria-expanded）/toggle（点击开合，内含定位与焦点编排）/triggerRef（元素记录，
+ * 定位与回焦的前提）/onKeydown（↓ 开菜单）；菜单体消费 closeMenu（表单创建/
+ * 取消自管收起）。a11y 两属性 aria-haspopup="menu"/:aria-expanded 由消费方写在
+ * 自绘钮上——底座保留 role="menu"/role="menuitem" 与菜单 aria-label。
+ */
+export interface DropdownMenuSlotProps {
+    open: boolean
+    toggle(): void
+    closeMenu(): void
+    triggerRef(el: Element | ComponentPublicInstance | null): void
+    onKeydown(event: KeyboardEvent): void
 }
 
 export function useDropdownMenu(options: { container: Ref<HTMLElement | null> }): DropdownMenuController {
