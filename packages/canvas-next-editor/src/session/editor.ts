@@ -2232,6 +2232,21 @@ export class EditorSession {
         this.requestFrame()
     }
 
+    /**
+     * 挂起帧同步排空（canvas-web-render-perf 工单 01）：绑定层在「物理缓冲已被清空、
+     * 需要背靠背补绘」的时机调用（CanvasSurface 的 resizeBuffers 赋 canvas.width 清屏
+     * 后——ResizeObserver 回调在本帧 rAF 之后，等下帧重绘必现一帧空白）。有挂起帧即
+     * 取消排定并按当前脏标立即 flush；无挂起帧空转幂等。内核保持无 DOM：只操作既有
+     * cancelFrame/flush，不感知帧源（rAF 语义归绑定层注入的调度器）。
+     */
+    flushPendingFrames(): void {
+        if (!this.frameQueued) return
+        // 先摘排定再同步 flush（被取消的帧回调不得在排空后再次触发）；标志复位
+        // 归 flush()，此处不重置
+        this.cancelFrame?.()
+        this.flush()
+    }
+
     /** 取消挂起帧、退订 store、解绑绘制面 */
     dispose(): void {
         if (this.cancelFrame) this.cancelFrame()

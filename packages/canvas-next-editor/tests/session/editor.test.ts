@@ -160,6 +160,70 @@ describe('合帧（rAF 语义由注入调度器承接）', () => {
     })
 })
 
+describe('挂起帧同步排空（flushPendingFrames，canvas-web-render-perf 工单 01）', () => {
+    it('有挂起帧：同步执行重绘（不经调度器 flush），挂起标记复位', () => {
+        const { session, scheduler } = makeSession()
+        const backend = recordingBackend()
+        const painter = vi.fn<OverlayPainter>()
+        session.attachContentBackend(backend)
+        session.setOverlayPainter(painter)
+        session.openDocument(doc())
+
+        session.invalidate('both')
+        expect(scheduler.pending()).toBe(1)
+        session.flushPendingFrames()
+        expect(backend.beginCount()).toBe(1)
+        expect(painter).toHaveBeenCalledTimes(1)
+        expect(scheduler.pending()).toBe(0)
+    })
+
+    it('幂等：连排两次只绘一次；无挂起帧空转', () => {
+        const { session } = makeSession()
+        const backend = recordingBackend()
+        session.attachContentBackend(backend)
+        session.openDocument(doc())
+
+        session.invalidate('content')
+        session.flushPendingFrames()
+        session.flushPendingFrames() // 第二次无挂起：空转
+        expect(backend.beginCount()).toBe(1)
+
+        session.flushPendingFrames() // 从未排定：同样空转不抛
+        expect(backend.beginCount()).toBe(1)
+    })
+
+    it('排空走分层脏标：只脏覆盖层时不触内容层', () => {
+        const { session } = makeSession()
+        const backend = recordingBackend()
+        const painter = vi.fn<OverlayPainter>()
+        session.attachContentBackend(backend)
+        session.setOverlayPainter(painter)
+        session.openDocument(doc())
+        session.flushPendingFrames() // 组装期脏标先落一帧
+        backend.resetBeginCount()
+        painter.mockClear()
+
+        session.invalidate('overlay')
+        session.flushPendingFrames()
+        expect(backend.beginCount()).toBe(0)
+        expect(painter).toHaveBeenCalledTimes(1)
+    })
+
+    it('排空后新 invalidate 正常再排一帧（不丢帧、不双绘）', () => {
+        const { session, scheduler } = makeSession()
+        const backend = recordingBackend()
+        session.attachContentBackend(backend)
+        session.openDocument(doc())
+
+        session.invalidate('content')
+        session.flushPendingFrames()
+        session.invalidate('content')
+        expect(scheduler.pending()).toBe(1)
+        scheduler.flush()
+        expect(backend.beginCount()).toBe(2)
+    })
+})
+
 describe('store 变更 → 分层脏标映射', () => {
     it('打开文档 → 内容层重绘', () => {
         const { session, scheduler } = makeSession()

@@ -135,10 +135,15 @@ onMounted(() => {
         const width = Math.max(1, Math.round(host.clientWidth * dpr))
         const height = Math.max(1, Math.round(host.clientHeight * dpr))
         for (const canvas of [content, overlay]) {
-            // 重设尺寸会清空缓冲，随后由会话的合帧重绘补上
+            // 赋 width/height 会同步清空物理缓冲（MDN：赋同值也 reset）
             if (canvas.width !== width) canvas.width = width
             if (canvas.height !== height) canvas.height = height
         }
+        // 清空与补绘背靠背（canvas-web-render-perf 工单 01）：ResizeObserver 回调在
+        // 帧生命周期中晚于 rAF 回调、先于 paint——若等下一帧才重绘，清空的缓冲必然
+        // 可见一帧空白。此处同步排空挂起帧补绘；常态下此刻无挂起（排空空转），
+        // 恰有无关挂起重绘时提前兑现也无损——绘的本就是 rAF 要绘的同一表面
+        editor.flushPendingFrames()
     }
 
     const applySurfaceSize = () => {

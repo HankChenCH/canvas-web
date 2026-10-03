@@ -206,16 +206,17 @@ describe('DPR/屏幕变更即时适配（工单 15）', () => {
         cleanup()
     })
 
-    it('同帧合帧：未 flush 前连续两次 dpr 变更合并为一帧重绘（终值生效）', () => {
-        const { scheduler, overlayDprs, cleanup } = mountSurface()
+    it('dpr 变更背靠背补绘（canvas-web-render-perf 工单 01）：每次变更同步排空挂起帧，清屏后无空白窗口期', () => {
+        const { overlayDprs, cleanup } = mountSurface()
 
+        // resizeBuffers 清空物理缓冲后同步排空（不等 rAF）——ResizeObserver/dpr 回调
+        // 在帧生命周期中晚于 rAF，等下一帧重绘必现一帧空白
         setDevicePixelRatio(2)
         fireDprChange()
+        expect(overlayDprs).toEqual([2])
         setDevicePixelRatio(3)
         fireDprChange()
-        scheduler.flush()
-
-        expect(overlayDprs).toEqual([3])
+        expect(overlayDprs).toEqual([2, 3])
         cleanup()
     })
 })
