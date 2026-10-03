@@ -5,12 +5,23 @@
  *
  * - 开合与收起逻辑在 useDropdownMenu（另有单测）：触发钮点击开合；开时点外收
  *   （容器包含判定）、Esc 收（window keydown，开态才挂监听）；
- * - a11y 对齐状态栏缩放菜单既有先例（StatusBar.vue）：触发钮 aria-haspopup=
+ * - a11y 对齐状态栏缩放菜单先例（StatusBar.vue）：触发钮 aria-haspopup=
  *   "menu" + :aria-expanded，菜单 role="menu" + 项 role="menuitem"；
  * - 菜单项契约见 DropdownMenuItem：shortcut 为纯展示键位后缀（右侧灰字，平台
  *   文案由调用方传入）；title 承载置灰原因（「置灰 + title」统一先例
  *   ContextMenu.vue）；'separator' 条目渲染分段分隔线（排列▾/视图▾ 各需一段）；
- * - 分发即收（选中动作后菜单收）；keepsOpen 语义本期不做（spec Q12）。
+ * - 分发即收（选中动作后菜单收 + 回焦触发钮，APG menu button 惯例）；keepsOpen
+ *   语义不做（spec Q12）。
+ * - 键盘导航（issues/04）：开时焦点入菜单（首个启用项，全置灰兜底落菜单根
+ *   tabindex=-1）；菜单内 ↑↓ 循环移动、Home/End 首尾，**跳过置灰项**（原生
+ *   disabled 不可聚焦，拍板记 issues/04 Comments）；Enter/Space 显式激活
+ *   （preventDefault 抑制原生 click——Space 的 keyup click / Enter 的 keydown
+ *   click——防双跑，且路径可被 jsdom 钉住）；Esc 收起回焦触发钮；Tab 关闭并
+ *   移焦回触发钮（不 preventDefault，浏览器原生 Tab 自触发钮继续自然移焦）。
+ *   菜单根 @keydown.stop：焦点在菜单内时按键不再到 window——画布手势/微调不
+ *   感知（与 useShortcuts 让路规则双保险：焦点在钮上分类器本就 yield）；
+ *   typeahead 不做（issues/04 拍板可选）。触发钮 ↓ 开菜单（Enter/Space 走
+ *   原生钮激活语义经 click 开合，底座不另拦）。
  * - 弹层 fixed 定位（issues/03 集成）：宿主工具栏是 overflow-x:auto 内滚容器，
  *   absolute 弹层会被其裁切——fixed 后代不受 overflow 祖先影响（壳内无
  *   transform/filter 祖先，无 containing block 例外）。打开时按触发钮 rect 取
@@ -25,7 +36,7 @@
  */
 import { nextTick, ref } from 'vue'
 
-import { useDropdownMenu, type DropdownMenuEntry, type DropdownMenuItem } from './useDropdownMenu'
+import { nextEnabledItemIndex, useDropdownMenu, type DropdownMenuEntry, type DropdownMenuItem, type MenuFocusKey } from './useDropdownMenu'
 
 const props = defineProps<{
     /** 触发钮文案（▾ 收合指示组件自带）+ 菜单 aria-label */
@@ -48,20 +59,110 @@ const { open, toggle, closeMenu } = useDropdownMenu({ container })
 /** 弹层视口坐标（fixed 内联 style，开态首帧即落位） */
 const menuPosition = ref({ left: 0, top: 0 })
 
-/** 分发即收（ContextMenu 动作即关同款；keepsOpen 本期不做） */
+/** 收起回焦触发钮：点外收（composable window 监听路径）不回焦——焦点归用户
+ *  点击落点；其余组件内发起的收起（激活/Esc/Tab/触发钮点收）都回焦 */
+function focusTrigger(): void {
+    triggerEl.value?.focus()
+}
+
+/** 开时焦点入菜单：首个启用项，全置灰兜底落菜单根（tabindex=-1 可编程聚焦）；
+ *  等待期间已被收起的竞态兜底不落焦 */
+async function focusIntoMenu(): Promise<void> {
+    await nextTick()
+    if (!open.value) return
+    const menu = menuEl.value
+    if (menu === null) return
+    const first = menu.querySelector<HTMLElement>('[data-dropdown-item]:not([disabled])')
+    ;(first ?? menu).focus()
+}
+
+/** 非 separator 条目（DOM 项序与过滤序一致，激活分发与导航同源） */
+function itemEntries(): DropdownMenuItem[] {
+    return props.items.filter((entry): entry is DropdownMenuItem => entry !== 'separator')
+}
+
+/** 分发即收（ContextMenu 动作即关同款；keepsOpen 本期不做）+ 回焦触发钮 */
 function run(item: DropdownMenuItem): void {
     item.run()
     closeMenu()
+    focusTrigger()
 }
 
-/** 点击开合 + 打开时定位：同步取触发钮 rect 落首帧坐标，渲染后按实际尺寸钳位 */
+/** 菜单内导航（↑↓/Home/End）：落点计算在 nextEnabledItemIndex 纯函数（有单测），
+ *  全置灰返回 -1 时焦点回菜单根 */
+function moveMenuFocus(key: MenuFocusKey): void {
+    const menu = menuEl.value
+    if (menu === null) return
+    const els = Array.from(menu.querySelectorAll<HTMLElement>('[data-dropdown-item]'))
+    const enabled = els.map((el) => !el.hasAttribute('disabled'))
+    const current = document.activeElement instanceof HTMLElement ? els.indexOf(document.activeElement) : -1
+    const next = nextEnabledItemIndex(enabled, current, key)
+    if (next === -1) {
+        menu.focus()
+        return
+    }
+    els[next]?.focus()
+}
+
+/** 键盘激活焦点项：run（内含收起 + 回焦）；置灰项不可聚焦，防御性再判 */
+function activateItem(target: HTMLElement): void {
+    const els = Array.from(menuEl.value?.querySelectorAll<HTMLElement>('[data-dropdown-item]') ?? [])
+    const entry = itemEntries()[els.indexOf(target)]
+    if (entry !== undefined && !entry.disabled) run(entry)
+}
+
+/** 菜单根按键路由（@keydown.stop：菜单内按键模态化，不到 window）。Enter/Space
+ *  显式激活并 preventDefault——抑制原生钮激活（Space keyup click / Enter keydown
+ *  click）防双跑；Tab 关闭回焦但不 preventDefault，原生 Tab 自触发钮继续移焦 */
+function onMenuKeydown(event: KeyboardEvent): void {
+    const key = event.key
+    if (key === 'Escape') {
+        closeMenu()
+        focusTrigger()
+        return
+    }
+    if (key === 'Tab') {
+        closeMenu()
+        focusTrigger()
+        return
+    }
+    if (key === 'Enter' || key === ' ') {
+        const target = event.target
+        if (target instanceof HTMLElement && target.matches('[data-dropdown-item]')) {
+            event.preventDefault()
+            activateItem(target)
+        }
+        return
+    }
+    if (key === 'ArrowDown' || key === 'ArrowUp' || key === 'Home' || key === 'End') {
+        event.preventDefault()
+        moveMenuFocus(key)
+    }
+    // 其余按键吞掉（.stop 已阻断到 window）：焦点态菜单的模态键盘语义
+}
+
+/** 触发钮 ↓ 开菜单（键盘开菜单入口）；已开（指针开菜单后焦点仍在触发钮的
+ *  环境）直接把焦点送入菜单 */
+function onTriggerArrowDown(): void {
+    if (!open.value) {
+        void onToggle()
+        return
+    }
+    void focusIntoMenu()
+}
+
+/** 点击开合 + 打开时定位：同步取触发钮 rect 落首帧坐标，渲染后按实际尺寸钳位；
+ *  开时焦点入菜单，收起回焦触发钮 */
 async function onToggle(): Promise<void> {
     if (!open.value) {
         const rect = triggerEl.value?.getBoundingClientRect()
         if (rect) menuPosition.value = { left: rect.left, top: rect.bottom + MENU_GAP_PX }
     }
     toggle()
-    if (!open.value) return
+    if (!open.value) {
+        focusTrigger()
+        return
+    }
     await nextTick()
     const rect = menuEl.value?.getBoundingClientRect()
     if (!rect) return
@@ -69,6 +170,7 @@ async function onToggle(): Promise<void> {
         left: Math.max(VIEWPORT_MARGIN_PX, Math.min(menuPosition.value.left, window.innerWidth - rect.width - VIEWPORT_MARGIN_PX)),
         top: Math.max(VIEWPORT_MARGIN_PX, Math.min(menuPosition.value.top, window.innerHeight - rect.height - VIEWPORT_MARGIN_PX)),
     }
+    void focusIntoMenu()
 }
 </script>
 
@@ -83,6 +185,7 @@ async function onToggle(): Promise<void> {
             :aria-expanded="open"
             :title="title ?? label"
             @click="onToggle()"
+            @keydown.down.prevent="onTriggerArrowDown()"
         >
             {{ label }}
             <span class="cn-dropdown__caret" aria-hidden="true">▾</span>
@@ -94,7 +197,9 @@ async function onToggle(): Promise<void> {
             role="menu"
             :aria-label="label"
             data-dropdown-menu
+            tabindex="-1"
             :style="{ left: `${menuPosition.left}px`, top: `${menuPosition.top}px` }"
+            @keydown.stop="onMenuKeydown($event)"
         >
             <template v-for="(entry, index) in items" :key="index">
                 <div
@@ -110,6 +215,7 @@ async function onToggle(): Promise<void> {
                     role="menuitem"
                     class="cn-dropdown__item"
                     data-dropdown-item
+                    tabindex="-1"
                     :disabled="entry.disabled"
                     :title="entry.title"
                     @click="run(entry)"
