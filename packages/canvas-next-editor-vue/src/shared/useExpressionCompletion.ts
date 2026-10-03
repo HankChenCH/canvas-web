@@ -85,6 +85,12 @@ export function useExpressionCompletion(options: {
      * enabled，调用方未分门时跟随浮层开关。
      */
     pairing?: MaybeRefOrGetter<boolean>
+    /**
+     * 锚点测量缩放（表达式就地编辑工单 03，可选）：宿主整体在 CSS transform
+     * scale 系时传呈现缩放（画布 textarea = zoom），mirror 布局偏移按其折算；
+     * 缺省 1（面板侧宿主无变换，行为不变）。
+     */
+    scale?: MaybeRefOrGetter<number>
 }): {
     /** 呈现态（reactive），传给浮层组件 */
     popup: ExpressionCompletionState
@@ -115,7 +121,9 @@ export function useExpressionCompletion(options: {
 
     function reposition(): void {
         if (!popup.open || !el) return
-        const anchor = measureCursorAnchor(el)
+        // scale 折算（工单 03）：画布 textarea 整体在 transform: scale(zoom) 系，
+        // mirror 布局偏移按缩放折算；缺省 1（面板宿主无变换）恒等
+        const anchor = measureCursorAnchor(el, toValue(options.scale ?? 1))
         popup.top = anchor.bottom + ANCHOR_GAP
         popup.left = clampToViewport(anchor.left)
     }

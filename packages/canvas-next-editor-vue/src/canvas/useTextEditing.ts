@@ -1,13 +1,16 @@
 /**
- * useTextEditing：文本编辑会话的响应式桥（工单 11）。
+ * useTextEditing：文本编辑会话的响应式桥（工单 11；内容类型 pill/补全消费面
+ * canvas-web-expression-editing 工单 03）。
  *
- * - 会话状态：ui.editing（路径身份）的 shallowRef 桥 + 内核 textEditLayout 布局查询
- *   （与绘制/命中同一套布局策略，overlay 与内容层几何不漂移）；
+ * - 会话状态：ui.editing（会话对象身份，pill 切换原位换新即驱动 layout 重算）
+ *   的 shallowRef 桥 + 内核 textEditLayout 布局查询（与绘制/命中同一套布局策略，
+ *   overlay 与内容层几何不漂移）；
  * - 呈现换算：textarea 以「场景字号/盒尺寸占位 + CSS transform scale(zoom)」定位
  *   ——字号视觉恒定（excalidraw textWysiwyg 同款，impl 研究 §2.4），缩放中元素
  *   不重建、光标不丢；对位用与内容层同一呈现视口（snapViewportToPhysicalPixels，
  *   相机/物理像素对齐）；纵向按 CSS 行盒模型折算内核的首行绘制锚点（锚点语义随
  *   verticalAlign = 字形盒顶/心/底，与渲染端基线消化同源），enter/exit 不跳变；
+ *   pillStyle 同换算系把内容类型 pill 锚到图层框上边框居中（工单 03）；
  * - 提交漏斗：四条退出路径（Esc / Ctrl+Enter / blur / 点画布他处）全部收拢到
  *   commitNow → 内核 commitTextEdit（先清会话保证幂等，一次退出恰一步历史）；
  * - IME 守卫全分支：键盘分支由绑定层按 isComposing/keyCode 229 拦截；blur 与
@@ -15,7 +18,10 @@
  *   （候选窗里的 Esc 只取消候选——无暂存意图的 compositionend 不提交）；
  * - blur 走延迟提交：外部指针交互（属性面板/工具栏）引发的 blur 被豁免（excalidraw
  *   temporarilyDisableSubmit 同款语义——点面板调样式不误提交），焦点落回 textarea
- *   则取消（窗口捕获阶段 pointerdown 标记豁免、pointerup 恢复）。
+ *   则取消（窗口捕获阶段 pointerdown 标记豁免、pointerup 恢复）；
+ * - 豁免集（工单 03）：ownsEventTarget 收 textarea + 内容类型 pill 两目标——
+ *   表面组件 pointerdown 对两者的指针不提交不点选不拖动；setExpressionMode
+ *   仅翻会话标志（零文档变更零历史步）。
  */
 import { computed, onScopeDispose, shallowRef, type CSSProperties, type ComputedRef } from 'vue'
 
@@ -25,6 +31,7 @@ import {
     type EditorSession,
     type LayerPath,
     type TextEditLayout,
+    type TextEditingSession,
 } from '@hankchen/canvas-next-editor'
 
 import { useDpr } from './useDpr'
@@ -35,6 +42,11 @@ export interface TextEditingHosts {
     getTextarea: () => HTMLTextAreaElement | null
     /** 画布表面宿主元素（区分「画布内点按」与「面板/工具栏等外部交互」） */
     getHost: () => HTMLElement | null
+    /**
+     * 内容类型 pill 根元素（可选，工单 03）：与 textarea 同入豁免集——pill 点击
+     * 不得触发表面组件 pointerdown 的 commitNow/点选/拖动路径
+     */
+    getPill?: () => HTMLElement | null
 }
 
 export interface TextEditingBinding {
@@ -44,6 +56,17 @@ export interface TextEditingBinding {
     layout: ComputedRef<TextEditLayout | null>
     /** textarea 内联样式（随相机/dpr 实时跟随；字号视觉恒定） */
     style: ComputedRef<CSSProperties | null>
+    /**
+     * 内容类型 pill 内联样式（工单 03）：图层框上边框居中的锚点换算——与 textarea
+     * 同一换算系（场景定位 + CSS transform scale，相机/dpr 跟随复用），尾部
+     * translate(-50%, -100%) 把 pill 自身底边中点对到锚点；null = 非编辑态
+     */
+    pillStyle: ComputedRef<CSSProperties | null>
+    /**
+     * 呈现缩放（snapViewportToPhysicalPixels 后的 zoom）：补全锚点测量的 scale
+     * 消费面——画布 textarea 整体在 transform: scale(zoom) 系（工单 03 补全绑定）
+     */
+    scale: ComputedRef<number>
     /** 输入法合成中（compositionstart→end）；绑定层经 setComposing 汇报 */
     composing: ComputedRef<boolean>
     /** 合成状态汇报（textarea 的 compositionstart/end 转发进来） */
@@ -55,9 +78,14 @@ export interface TextEditingBinding {
     beginTextEdit(path: LayerPath): boolean
     /** 立即提交（Esc / Ctrl+Enter / 画布点按路径）；合成中暂存到 compositionend */
     commitNow(): void
+    /**
+     * 内容类型切换（工单 03）：仅翻会话标志（ui.editing.expression 原位翻转，
+     * 零文档变更零历史步）；非编辑态或目标即现态零操作
+     */
+    setExpressionMode(expression: boolean): void
     /** blur 延迟提交：外部指针交互豁免、焦点落回取消（语义见模块头注释） */
     armBlurCommit(): void
-    /** 编辑态查询：目标是否属于编辑中的 textarea（表面组件的指针分流用） */
+    /** 编辑态查询：目标是否属于编辑中的 textarea 或内容类型 pill（表面组件的指针分流用） */
     ownsEventTarget(target: EventTarget | null): boolean
 }
 
@@ -92,30 +120,42 @@ function fontBoxHeight(font: string, fontSize: number): number {
 }
 
 export function useTextEditing(editor: EditorSession, hosts: TextEditingHosts): TextEditingBinding {
-    const editing = shallowRef<LayerPath | null>(editor.store.ui.editing?.path ?? null)
+    // 镜像整个会话对象（不只 path）：pill 切换 = setEditing 原位换新对象（path 不
+    // 变），shallowRef 以对象身份为反应锚——layout/expressionMode 随翻转立即重算
+    // （工单 03 pill 激活态与补全 enabled 的消费面）
+    const session = shallowRef<TextEditingSession | null>(editor.store.ui.editing)
     const unsubscribe = editor.subscribe((change) => {
         if (change.scope === 'doc' || (change.scope === 'ui' && change.branch === 'editing')) {
-            editing.value = editor.store.ui.editing?.path ?? null
+            session.value = editor.store.ui.editing
         }
     })
     // failSilently：测试可在无 effect scope 的环境调用
     onScopeDispose(unsubscribe, true)
 
+    const editing = computed<LayerPath | null>(() => session.value?.path ?? null)
+
     const dpr = useDpr()
     const viewport = useViewport(editor)
 
-    const layout = computed(() => (editing.value ? editor.textEditLayout(editing.value) : null))
+    const layout = computed(() => {
+        const current = session.value
+        return current ? editor.textEditLayout(current.path) : null
+    })
     const presented = computed(() => snapViewportToPhysicalPixels(viewport.value, dpr.value))
+
+    /** 场景点 → 呈现屏幕像素（screen = (scene − cam) × zoom，呈现视口口径）：style 与 pillStyle 共用 */
+    function sceneToScreen(sceneX: number, sceneY: number): { left: number; top: number; zoom: number } {
+        const { x: camX, y: camY, zoom } = presented.value
+        return { left: (sceneX - camX) * zoom, top: (sceneY - camY) * zoom, zoom }
+    }
 
     const style = computed<CSSProperties | null>(() => {
         const l = layout.value
         if (!l) return null
-        // screen = (scene − cam) × zoom：translate 折算屏幕像素（呈现视口口径），
-        // scale 补缩放（transform-origin 0 0）；盒尺寸/字号/行高/内边距保持场景像素，
-        // 随 transform 一起缩放——缩放中字号视觉恒定，只有 transform 在变
-        const { x: camX, y: camY, zoom } = presented.value
-        const left = (l.box.x - camX) * zoom
-        const top = (l.box.y - camY) * zoom
+        // translate 折算屏幕像素（呈现视口口径），scale 补缩放（transform-origin 0 0）；
+        // 盒尺寸/字号/行高/内边距保持场景像素，随 transform 一起缩放——缩放中字号
+        // 视觉恒定，只有 transform 在变
+        const { left, top, zoom } = sceneToScreen(l.box.x, l.box.y)
         return {
             transform: `translate(${left}px, ${top}px) scale(${zoom})`,
             transformOrigin: '0 0',
@@ -129,6 +169,23 @@ export function useTextEditing(editor: EditorSession, hosts: TextEditingHosts): 
             textAlign: l.horizontalAlign,
             // autowrap = 浏览器软换行（断行允许与预览不同，决策 A）；否则单行 pre
             whiteSpace: l.autowrap ? 'pre-wrap' : 'pre',
+        }
+    })
+
+    /**
+     * pill 锚点换算（工单 03）：与 textarea 同一换算系——上边框中点折算屏幕像素后
+     * translate 定位，scale 补缩放（transform-origin 0 0），尾部 translate(-50%,
+     * -100%) 在缩放系内把 pill 自身底边中点对到锚点（百分比基于布局尺寸，随 scale
+     * 一起折算——zoom ≠ 1 贴边不漂）。pill 尺寸用场景像素，视觉随画布缩放与图层框
+     * 保持同刻度。
+     */
+    const pillStyle = computed<CSSProperties | null>(() => {
+        const l = layout.value
+        if (!l) return null
+        const { left, top, zoom } = sceneToScreen(l.box.x + l.box.width / 2, l.box.y)
+        return {
+            transform: `translate(${left}px, ${top}px) scale(${zoom}) translate(-50%, -100%)`,
+            transformOrigin: '0 0',
         }
     })
 
@@ -164,6 +221,17 @@ export function useTextEditing(editor: EditorSession, hosts: TextEditingHosts): 
     }
 
     const beginTextEdit = (path: LayerPath): boolean => editor.beginTextEdit(path)
+
+    /**
+     * 内容类型切换（工单 03）：pill 点击仅翻会话标志——setEditing 原位换新对象
+     * （path 不变，会话快照语义），零文档变更零历史步；非编辑态零操作（按钮只在
+     * 编辑会话期在场，防御同门）。
+     */
+    const setExpressionMode = (expression: boolean): void => {
+        const current = editor.store.ui.editing
+        if (!current || current.expression === expression) return
+        editor.store.setEditing({ path: current.path, expression })
+    }
 
     // ---- 提交漏斗与 blur 延迟提交 ----
 
@@ -227,8 +295,13 @@ export function useTextEditing(editor: EditorSession, hosts: TextEditingHosts): 
     }
 
     const ownsEventTarget = (target: EventTarget | null): boolean => {
+        if (!(target instanceof Node)) return false
+        // pill 与 textarea 同豁免（工单 03）：pill 点击不得触发表面组件的
+        // commitNow/点选/拖动路径
+        const pill = hosts.getPill?.() ?? null
+        if (pill !== null && pill.contains(target)) return true
         const el = hosts.getTextarea()
-        return el !== null && target instanceof Node && el.contains(target)
+        return el !== null && el.contains(target)
     }
 
     // 窗口捕获阶段的指针桥：编辑中在画布外按下（属性面板/工具栏/页面其他处）
@@ -252,14 +325,17 @@ export function useTextEditing(editor: EditorSession, hosts: TextEditingHosts): 
     }, true)
 
     return {
-        editing: computed(() => editing.value),
+        editing,
         layout,
         style,
+        pillStyle,
+        scale: computed(() => presented.value.zoom),
         composing: computed(() => composingRef.value),
         setComposing,
         beginAt,
         beginTextEdit,
         commitNow,
+        setExpressionMode,
         armBlurCommit,
         ownsEventTarget,
     }

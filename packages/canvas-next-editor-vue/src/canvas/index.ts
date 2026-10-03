@@ -6,6 +6,7 @@
 export { default as AlignFloatBar } from './AlignFloatBar.vue'
 export { default as CanvasSurface, type CanvasSurfaceReady } from './CanvasSurface.vue'
 export { default as ContextMenu } from './ContextMenu.vue'
+export { default as ContentTypePill } from './ContentTypePill.vue'
 export { default as FindBar } from './FindBar.vue'
 export { default as GuidesOverlay } from './GuidesOverlay.vue'
 export { default as Ruler, type RulerGuideGesture } from './Ruler.vue'
