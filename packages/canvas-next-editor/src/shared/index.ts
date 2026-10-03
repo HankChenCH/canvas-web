@@ -62,3 +62,8 @@ export {
     type ExpressionContextKind,
 } from './expressionCandidates'
 
+export {
+    memoizeTextPolicies,
+    type MemoTextPoliciesOptions,
+} from './textPoliciesMemo'
+

@@ -45,11 +45,11 @@ export interface ResourceEntry {
 /** 资源状态切片：key = 资源缓存键。整体替换语义，直接对接未来 store 的 ui 分支 */
 export type ResourceState = Readonly<Record<string, ResourceEntry>>
 
-/** 缓存键：sha256(完整引用)——不继承 PHP basename 旧债（同名不同 URL 不碰撞） */
-export const imageResourceKey = (src: string): string => sha256Hex(src)
-export const fontResourceKey = (font: string): string => sha256Hex(font)
+/** 缓存键：sha256(完整引用)——不继承 PHP basename 旧债（同名不同 URL 不碰撞）；派生经键 memo（同引用不重复散列） */
+export const imageResourceKey = (src: string): string => memoSha256Hex(src)
+export const fontResourceKey = (font: string): string => memoSha256Hex(font)
 /** QR 内容加命名空间后散列：内容恰为 URL 的 QR 与图片键域隔离 */
-export const qrResourceKey = (value: string): string => sha256Hex(`qr:${value}`)
+export const qrResourceKey = (value: string): string => memoSha256Hex(`qr:${value}`)
 
 /**
  * 跨域代理注入点（对应 PHP DownloaderInterface）：把 http(s) 资源 URL 改写为代理
@@ -107,6 +107,32 @@ export function resourceRefOf(layer: Layer): ResourceRef | null {
 }
 
 const DEFAULT_CONCURRENCY = 6
+
+/**
+ * 键 memo 原语（canvas-web-render-perf 工单 02）：同输入串不重复散列，容量有界
+ * （FIFO 逐最旧）。逐键 doc 变更驱动 materialize 全树重扫，data URL 大图的 sha256
+ * 是逐键开销链的大头——文本编辑不碰资源，键派生必须 O(1) 走缓存。产物与底层函数
+ * 逐字节一致（resource-keys 测试 oracle 复核）。
+ */
+export function createMemoizedKeyHash(
+    load: (input: string) => string,
+    capacity = 512,
+): (input: string) => string {
+    const cache = new Map<string, string>()
+    return (input: string): string => {
+        const hit = cache.get(input)
+        if (hit !== undefined) return hit
+        const key = load(input)
+        if (cache.size >= capacity) {
+            const oldest = cache.keys().next().value
+            if (oldest !== undefined) cache.delete(oldest)
+        }
+        cache.set(input, key)
+        return key
+    }
+}
+
+const memoSha256Hex = createMemoizedKeyHash(sha256Hex)
 
 export class Materializer {
     private readonly backend: Canvas2DBackend

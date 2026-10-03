@@ -68,6 +68,7 @@ import {
     EditorSession,
     isLockedPath,
     isRootLayerPath,
+    memoizeTextPolicies,
     parseExpressionSchema,
     rootLayerOf,
 } from '@hankchen/canvas-next-editor'
@@ -127,6 +128,8 @@ import { buildVisualCheckGraph } from './visualCheckGraph'
 // + 渲染端字体映射（canvasFontCssFamily，族名派生与 FontFace 注册、未注册回落
 // sans-serif 同门）构造真实字体度量器，经 session 既有 textPolicies 缝显式注入——
 // 画布盒、面板解析值、导出预览同源走真实度量（不注入恒启发式，不隐式切换）。
+// memoizeTextPolicies 包装（canvas-web-render-perf 工单 02）：全画布重绘对未变图层
+// 反复求布局——断行/度量按 (text,width,font,fontSize) 引用级缓存，逐键只重算被编辑层。
 const measureCtx = document.createElement('canvas').getContext('2d')
 const editor = new EditorSession({
     scheduleFrame: createRafScheduler(),
@@ -134,7 +137,9 @@ const editor = new EditorSession({
     uploadHandler: uploadToDataUrl,
     fontCatalog: [{ label: 'Open Sans（演示字体）', ref: '/fonts/open-sans.ttf' }],
     textPolicies: measureCtx
-        ? { measurerFactory: createMeasureTextMeasurerFactory(measureCtx, { fontCssFamily: canvasFontCssFamily }) }
+        ? memoizeTextPolicies({
+              measurerFactory: createMeasureTextMeasurerFactory(measureCtx, { fontCssFamily: canvasFontCssFamily }),
+          })
         : undefined,
 })
 
@@ -477,9 +482,26 @@ const savedSnapshot = ref<string | null>(null)
 const isDirty = ref(false)
 const graphFileName = ref('canvas.graph.json')
 
-function syncDirty(): void {
+/**
+ * 未保存点防抖（canvas-web-render-perf 工单 02）：encode+stringify 全文档对大文档
+ * （data URL 内联图片）是 MB 级字符串重建，逐键同步跑是打字卡顿的大头。doc 订阅
+ * 侧只在文档停变 500ms 后算一次；保存/打开/关闭页面走同步即时比较——「● 点亮延迟
+ * ≤ 防抖窗口（无感知），撤销回已保存态自动复位 ○ 的行为零回退」。
+ */
+const DIRTY_DEBOUNCE_MS = 500
+let dirtyTimer: ReturnType<typeof setTimeout> | null = null
+
+function computeDirty(): void {
     const current = editor.store.doc ? JSON.stringify(encodeGraph(editor.store.doc)) : null
     isDirty.value = current !== null && current !== savedSnapshot.value
+}
+
+function syncDirty(): void {
+    if (dirtyTimer !== null) clearTimeout(dirtyTimer)
+    dirtyTimer = setTimeout(() => {
+        dirtyTimer = null
+        computeDirty()
+    }, DIRTY_DEBOUNCE_MS)
 }
 
 function downloadBlob(blob: Blob, filename: string): void {
@@ -505,7 +527,7 @@ function saveGraph(): void {
 function markCleanBaseline(doc: ReturnType<typeof decodeGraph>, name: string): void {
     savedSnapshot.value = JSON.stringify(encodeGraph(doc))
     graphFileName.value = name
-    syncDirty()
+    computeDirty()
 }
 
 async function onOpenGraphFile(event: Event): Promise<void> {
@@ -526,8 +548,10 @@ async function onOpenGraphFile(event: Event): Promise<void> {
     }
 }
 
-/** 关闭前提醒：有未保存变更时弹浏览器通用确认（文案由浏览器定） */
+/** 关闭前提醒：有未保存变更时弹浏览器通用确认（文案由浏览器定）；同步即时比较
+ *  （防抖窗口内的最近编辑也要计入，unmount 清定时器后没有下次机会） */
 function onBeforeUnload(event: BeforeUnloadEvent): void {
+    computeDirty()
     if (!isDirty.value) return
     event.preventDefault()
     event.returnValue = ''
@@ -691,6 +715,7 @@ onBeforeUnmount(() => {
     window.removeEventListener('keydown', onKeydown)
     window.removeEventListener('keydown', onDrawerKeydown, { capture: true })
     window.removeEventListener('beforeunload', onBeforeUnload)
+    if (dirtyTimer !== null) clearTimeout(dirtyTimer)
     unsubscribeAssets?.()
     unsubscribeDoc?.()
     unsubscribeCanvasBadge()
