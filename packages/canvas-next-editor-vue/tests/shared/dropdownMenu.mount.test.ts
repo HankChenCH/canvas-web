@@ -8,7 +8,7 @@
  * - 行为：分发即收（选中动作后菜单收）、点外收、Esc 收、容器内点击不误收
  *   （收合归触发钮 click 翻转，逻辑面详见 useDropdownMenu.test.ts）。
  */
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { nextTick } from 'vue'
 import { mount } from '@vue/test-utils'
 import type { DropdownMenuEntry } from '../../src/shared/useDropdownMenu'
@@ -28,6 +28,10 @@ const mountMenu = () =>
     mount(DropdownMenu, {
         props: { label: '排列', items: ARRANGE_ITEMS, title: '排列菜单（z 序/锁定/显隐）' },
     })
+
+beforeEach(() => {
+    runs.length = 0
+})
 
 const triggerEl = (wrapper: ReturnType<typeof mountMenu>): HTMLElement =>
     wrapper.find('[data-dropdown-trigger]').element as HTMLElement

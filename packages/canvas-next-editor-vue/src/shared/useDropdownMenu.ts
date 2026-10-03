@@ -64,8 +64,9 @@ export function useDropdownMenu(options: { container: Ref<HTMLElement | null> })
         }
     })
 
-    // 宿主组件卸载时开态未收的兜底（watch 卸载不触发）
-    onScopeDispose(detach)
+    // 宿主组件卸载时开态未收的兜底（watch 卸载不触发）；静默标志沿包内
+    // composables 同门惯例（无活动 scope 的调用不告警）
+    onScopeDispose(detach, true)
 
     return {
         open,

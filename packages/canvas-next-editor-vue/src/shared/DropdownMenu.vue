@@ -81,8 +81,9 @@ function run(item: DropdownMenuItem): void {
 </template>
 
 <style scoped>
-/* 令牌与 panel-theme.css 同值：底座自带主题（ghost 钮 + 暗色壳），不依赖宿主
-   接线，也不渗漏 */
+/* 自带主题，不依赖宿主接线也不渗漏：菜单壳五令牌与 panel-theme.css 同值；
+   触发钮 ghost 形态两令牌（--cn-fg-2/--cn-hover）沿壳层暗色族（App.vue
+   .toolbar button / FindBar 自带块同值） */
 .cn-dropdown {
     --cn-fg: #e6edf7;
     --cn-fg-2: #c3cddd;
