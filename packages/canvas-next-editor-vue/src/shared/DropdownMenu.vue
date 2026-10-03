@@ -16,8 +16,10 @@
  *   tabindex=-1）；菜单内 ↑↓ 循环移动、Home/End 首尾，**跳过置灰项**（原生
  *   disabled 不可聚焦，拍板记 issues/04 Comments）；Enter/Space 显式激活
  *   （preventDefault 抑制原生 click——Space 的 keyup click / Enter 的 keydown
- *   click——防双跑，且路径可被 jsdom 钉住）；Esc 收起回焦触发钮；Tab 关闭并
- *   移焦回触发钮（不 preventDefault，浏览器原生 Tab 自触发钮继续自然移焦）。
+ *   click——防双跑，且路径可被 jsdom 钉住）；Esc/Tab 收起并先把焦点送回触发钮
+ *   （幸免菜单卸载焦点坠 body；点外收路径不在此列——焦点归用户点击落点），
+ *   Tab 不 preventDefault，浏览器原生 Tab 随即自触发钮继续移焦（触发钮非
+ *   Tab 终态，APG 同例）。
  *   菜单根 @keydown.stop：焦点在菜单内时按键不再到 window——画布手势/微调不
  *   感知（与 useShortcuts 让路规则双保险：焦点在钮上分类器本就 yield）；
  *   typeahead 不做（issues/04 拍板可选）。触发钮 ↓ 开菜单（Enter/Space 走
@@ -81,6 +83,11 @@ function itemEntries(): DropdownMenuItem[] {
     return props.items.filter((entry): entry is DropdownMenuItem => entry !== 'separator')
 }
 
+/** 菜单项元素（DOM 序，导航落点与激活分发共用同一查询） */
+function menuItemEls(): HTMLElement[] {
+    return Array.from(menuEl.value?.querySelectorAll<HTMLElement>('[data-dropdown-item]') ?? [])
+}
+
 /** 分发即收（ContextMenu 动作即关同款；keepsOpen 本期不做）+ 回焦触发钮 */
 function run(item: DropdownMenuItem): void {
     item.run()
@@ -93,7 +100,7 @@ function run(item: DropdownMenuItem): void {
 function moveMenuFocus(key: MenuFocusKey): void {
     const menu = menuEl.value
     if (menu === null) return
-    const els = Array.from(menu.querySelectorAll<HTMLElement>('[data-dropdown-item]'))
+    const els = menuItemEls()
     const enabled = els.map((el) => !el.hasAttribute('disabled'))
     const current = document.activeElement instanceof HTMLElement ? els.indexOf(document.activeElement) : -1
     const next = nextEnabledItemIndex(enabled, current, key)
@@ -106,22 +113,18 @@ function moveMenuFocus(key: MenuFocusKey): void {
 
 /** 键盘激活焦点项：run（内含收起 + 回焦）；置灰项不可聚焦，防御性再判 */
 function activateItem(target: HTMLElement): void {
-    const els = Array.from(menuEl.value?.querySelectorAll<HTMLElement>('[data-dropdown-item]') ?? [])
-    const entry = itemEntries()[els.indexOf(target)]
+    const entry = itemEntries()[menuItemEls().indexOf(target)]
     if (entry !== undefined && !entry.disabled) run(entry)
 }
 
 /** 菜单根按键路由（@keydown.stop：菜单内按键模态化，不到 window）。Enter/Space
  *  显式激活并 preventDefault——抑制原生钮激活（Space keyup click / Enter keydown
- *  click）防双跑；Tab 关闭回焦但不 preventDefault，原生 Tab 自触发钮继续移焦 */
+ *  click）防双跑 */
 function onMenuKeydown(event: KeyboardEvent): void {
     const key = event.key
-    if (key === 'Escape') {
-        closeMenu()
-        focusTrigger()
-        return
-    }
-    if (key === 'Tab') {
+    if (key === 'Escape' || key === 'Tab') {
+        // 收起并先把焦点送回触发钮（幸免菜单 v-if 卸载时焦点坠 body）。Tab 不
+        // preventDefault——浏览器原生 Tab 随即自触发钮继续移焦，触发钮非终态
         closeMenu()
         focusTrigger()
         return
