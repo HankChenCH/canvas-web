@@ -8,9 +8,18 @@
 // 工单 02：头栏一行化（文档名 + 未保存点 + 画布规格徽标｜帮助 + 导出主按钮）+
 // 宿主级帮助抽屉（使用说明区 = legend 原样迁移；开发者区 = 工票长文 + 目验样图
 // + schema 三键，data-* 钩子原位保留）。
-// 工单 03：工具栏语义分组——文件（打开/保存/上传图片）｜历史（撤销/重做）｜插入
-// （＋文本/＋图片/＋二维码/＋表格，直调 editor.addRootLayer，与图层面板头「＋」
-// 同款动作并存保留，新层置顶并自动选中）。
+// editor-top-toolbar 工单 03：工具栏重组（spec 变体 A 拍板）——文件（打开/保存/
+// 上传图片）｜历史（撤销/重做）｜「＋插入▾」（面板＋ ADD_LAYER_MENU 同源四项
+// 统一武装画拉，直建语义退役；「模板表…」只属面板＋表单）｜「查找」（⌘F 同缝
+// beginFind，FindBar 本体留在画布顶部浮层，开合随内核会话态不双开）｜「排列▾」
+// （z 序四件 + 锁定/显隐；仅根图层可排列——无选中/非根全组置灰 + title 引导，
+// 内核空转守卫是正确性防线；锁定/显隐动态标签随选中根层当前态；「排列」为 v2
+// 对齐分布预留语义，不是对齐）｜「视图▾」（100%/适应画布/适应选区 = ⌘0/⇧1/⇧2
+// 的键位镜像，不含放大/缩小步进——缩放控件唯一归状态栏；标尺 ✓ 勾选项与 ⇧R
+// 双向同步，推翻 ruler-guides-snap 工单 04「标尺不设钮」旧拍板；清空参考线 =
+// 内核 clearGuides()，会话级不可撤销）｜网格右端独立开关（margin-left:auto 弹性
+// 空隙与头栏右对齐语言一致；推翻「网格后以视图组入列」旧拍板）。下拉底座 =
+// editor-vue/shared DropdownMenu（工单 02；弹层 fixed 定位逃出工具栏内滚容器）。
 // 工单 04：工具栏缩放控件整组摘除、缩放读数唯一归状态栏；ctrl/cmd+滚轮缩放不变。
 // kbd-nav 工单 06：缩放浮条退役（App.vue 浮条段与 zoomBy/zoomTo100/fitToCanvas/
 // fitToSelection 宿主辅助拆除），缩放入口归一状态栏缩放控件（工单 04 弹层菜单）；
@@ -43,7 +52,7 @@
 // 表达式」条目（标记层双击 = 编辑表达式并保持标记、pill 切写路径、删空片段或切静态
 // 解标、Esc 分流、zoom 锚点折算、一步历史）；「表格模板态与表达式标记」条目的双击
 // 语义同步修订（画布侧改就地编辑保持标记，面板侧字面写解标不变）。
-import { computed, nextTick, onBeforeUnmount, provide, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, provide, ref, shallowRef, watch } from 'vue'
 
 import {
     Canvas2DBackend,
@@ -54,15 +63,38 @@ import {
     exportPreviewPng,
 } from '@hankchen/canvas-next-browser-renderer'
 import type { ResourceState } from '@hankchen/canvas-next-browser-renderer'
-import { EditorSession, parseExpressionSchema } from '@hankchen/canvas-next-editor'
-import type { ExpressionSchemaDiagnostic, FontCatalogEntry, UploadFile } from '@hankchen/canvas-next-editor'
 import {
+    ARM_CREATE_LAYER_TYPES,
+    EditorSession,
+    isLockedPath,
+    isRootLayerPath,
+    parseExpressionSchema,
+    rootLayerOf,
+} from '@hankchen/canvas-next-editor'
+import type {
+    EditorShortcutAction,
+    ExpressionSchemaDiagnostic,
+    FontCatalogEntry,
+    LayerType,
+    UploadFile,
+} from '@hankchen/canvas-next-editor'
+import {
+    ADD_LAYER_MENU,
+    ARM_LAYER_CREATE_HINT,
+    DropdownMenu,
     FONT_PICKER_KEY,
     HelpDialog,
     StatusBar,
+    detectShortcutPlatform,
     formatLayerPath,
+    shortcutActionLabel,
     uploadFileFromDom,
+    useHistory,
+    useSelection,
     useShortcuts,
+    useTransientFeedback,
+    type CanvasSurfaceReady,
+    type DropdownMenuEntry,
     type FontPickerContext,
 } from '@hankchen/canvas-next-editor-vue'
 import {
@@ -76,8 +108,6 @@ import {
     LayerPanel,
     PropertyPanel,
     Ruler,
-    useHistory,
-    type CanvasSurfaceReady,
 } from '@hankchen/canvas-next-editor-vue'
 import type { OverlayPainter } from '@hankchen/canvas-next-editor'
 import { createMeasureTextMeasurerFactory, decodeGraph, encodeGraph } from '@hankchen/canvas-next'
@@ -196,6 +226,163 @@ const { canUndo, canRedo } = useHistory(editor)
 // 输入框/输入法）由内核分类器裁决，textarea 与属性面板输入框原生编辑优先。
 // ⇧R（标尺开关）同随注册表自带（ruler-guides-snap 工单 01 入表），宿主零键位代码。
 useShortcuts(editor)
+
+// ---- 工具栏三下拉 + 查找钮（editor-top-toolbar 工单 03）：变体 A 的指针入口 ----
+
+/** 键位后缀按宿主平台渲染（⌘] 或 Ctrl+]）：直查注册表，文案不另抄键位；平台
+ *  不会话中变更，挂载时求值一次（ContextMenu/LayerPanel 同门先例） */
+const shortcutPlatform = detectShortcutPlatform()
+
+/** 层型 → 武装快捷键动作（内核 ARM_CREATE_LAYER_TYPES 反查视图）：插入▾ 项的
+ *  键位后缀直查注册表（注册表是键位唯一事实源） */
+const ARM_CREATE_ACTION_BY_TYPE = Object.fromEntries(
+    Object.entries(ARM_CREATE_LAYER_TYPES).map(([action, type]) => [type, action]),
+) as Record<LayerType, EditorShortcutAction>
+
+/** 插入▾（组3）：面板＋ ADD_LAYER_MENU 同源四项（文案与 title 单点维护；
+ *  「模板表…」只属面板＋表单），点击 = 武装画拉 + 状态栏瞬时提示——与面板＋、
+ *  T/G/Q/I 快捷键三缝同句（ARM_LAYER_CREATE_HINT）。直建语义退役（spec Q7）：
+ *  删除旧四钮的 addRootLayer 直调，死区点击兜底缺省尺寸，直建价值不丢 */
+const insertItems = computed<DropdownMenuEntry[]>(() =>
+    ADD_LAYER_MENU.map((entry) => ({
+        label: entry.label,
+        title: entry.title,
+        shortcut: shortcutActionLabel(ARM_CREATE_ACTION_BY_TYPE[entry.type], shortcutPlatform),
+        run: () => {
+            editor.armLayerCreate(entry.type)
+            useTransientFeedback().show(ARM_LAYER_CREATE_HINT)
+        },
+    })),
+)
+
+/** 选中路径（响应式桥）：排列▾ 灰态判定与动作入参共用 */
+const selection = useSelection(editor)
+
+/** 排列▾ 灰态（spec Q4）：无选中或选中非根层 → 全组置灰 + title（内核
+ *  isRootLayerPath 空转守卫是正确性防线，灰态只是引导） */
+const ARRANGE_GRAY_TITLE = '仅根图层可排列'
+const canArrange = computed(() => selection.value !== null && isRootLayerPath(selection.value))
+
+/** 排列▾/视图▾ 动态读数桥：editor.store 非响应式（禁深度 reactive 红线），按
+ *  分支订阅同步 shallowRef（Ruler.vue rulersVisible 同款）——动态标签（锁定↔
+ *  解锁、显示↔隐藏，右键菜单显隐同款）与标尺勾选态不得滞留旧值 */
+const docSnapshot = shallowRef(editor.store.doc)
+const lockedPaths = shallowRef(editor.store.ui.lockedPaths)
+const rulersVisible = shallowRef(editor.store.ui.rulersVisible)
+const unsubscribeToolbarReads = editor.subscribe((change) => {
+    if (change.scope === 'doc') {
+        docSnapshot.value = editor.store.doc
+        return
+    }
+    if (change.scope !== 'ui') return
+    if (change.branch === 'lockedPaths') lockedPaths.value = editor.store.ui.lockedPaths
+    if (change.branch === 'rulersVisible') rulersVisible.value = editor.store.ui.rulersVisible
+})
+
+/** 选中根层的可见/锁定态（非根/无选择按可见/未锁兜底，ContextMenu 同门） */
+const selectedRootVisible = computed(() => {
+    const path = selection.value
+    const doc = docSnapshot.value
+    if (!path || !doc || !isRootLayerPath(path)) return true
+    return rootLayerOf(doc, path)?.visible ?? true
+})
+const selectedRootLocked = computed(() => {
+    const path = selection.value
+    return path !== null && isLockedPath(path, lockedPaths.value)
+})
+
+/** 排列▾（组5）：z 序四件 + 锁定/显隐，键位后缀直查注册表；动作与右键菜单同缝
+ *  （显隐/锁定传当前选中路径，z 序四件内核直吃当前选中）；前移/后移、置顶/置底
+ *  到边界不置灰——内核空转为权威（无历史步，右键菜单同门）。「排列」命名按
+ *  spec Q5 预留 v2 对齐分布语义（帮助文案不得解释成「对齐」） */
+const arrangeItems = computed<DropdownMenuEntry[]>(() => {
+    const gray = !canArrange.value
+    const title = gray ? ARRANGE_GRAY_TITLE : undefined
+    const path = selection.value
+    return [
+        {
+            label: '前移一层',
+            shortcut: shortcutActionLabel('bringForward', shortcutPlatform),
+            disabled: gray,
+            title,
+            run: () => editor.bringForward(),
+        },
+        {
+            label: '后移一层',
+            shortcut: shortcutActionLabel('sendBackward', shortcutPlatform),
+            disabled: gray,
+            title,
+            run: () => editor.sendBackward(),
+        },
+        {
+            label: '置顶',
+            shortcut: shortcutActionLabel('bringToFront', shortcutPlatform),
+            disabled: gray,
+            title,
+            run: () => editor.bringToFront(),
+        },
+        {
+            label: '置底',
+            shortcut: shortcutActionLabel('sendToBack', shortcutPlatform),
+            disabled: gray,
+            title,
+            run: () => editor.sendToBack(),
+        },
+        'separator',
+        {
+            label: selectedRootLocked.value ? '解锁' : '锁定',
+            shortcut: shortcutActionLabel('toggleLayerLock', shortcutPlatform),
+            disabled: gray,
+            title,
+            run: () => {
+                if (path) editor.toggleLayerLock(path)
+            },
+        },
+        {
+            label: selectedRootVisible.value ? '隐藏' : '显示',
+            shortcut: shortcutActionLabel('toggleLayerVisibility', shortcutPlatform),
+            disabled: gray,
+            title,
+            run: () => {
+                if (path) editor.toggleLayerVisibility(path)
+            },
+        },
+    ]
+})
+
+/** 视图▾（组6）：缩放三件 = ⌘0/⇧1/⇧2 的键位镜像（spec Q11，不含放大/缩小
+ *  步进——缩放控件唯一归状态栏）；标尺 ✓ 勾选项（spec Q9 推翻旧拍板，读数随
+ *  ⇧R 双向同步）；清空参考线（spec Q10：内核 clearGuides()，无确认直接清，
+ *  会话级不可撤销由 title 标注） */
+const viewItems = computed<DropdownMenuEntry[]>(() => [
+    {
+        label: '100%',
+        shortcut: shortcutActionLabel('zoomReset', shortcutPlatform),
+        run: () => editor.resetZoom(),
+    },
+    {
+        label: '适应画布',
+        shortcut: shortcutActionLabel('fitToSurface', shortcutPlatform),
+        run: () => editor.fitToSurface(),
+    },
+    {
+        label: '适应选区',
+        shortcut: shortcutActionLabel('fitToSelection', shortcutPlatform),
+        run: () => editor.fitToSelection(),
+    },
+    'separator',
+    {
+        label: rulersVisible.value ? '✓ 标尺' : '标尺',
+        shortcut: shortcutActionLabel('toggleRulers', shortcutPlatform),
+        title: '标尺显隐（⇧R 同效）',
+        run: () => editor.toggleRulers(),
+    },
+    {
+        label: '清空参考线',
+        title: '清空全部参考线（会话级，不可撤销；重建成本低——从标尺拖出即可）',
+        run: () => editor.clearGuides(),
+    },
+])
 
 // 参考线层实例（ruler-guides-snap 工单 04）：承接 Ruler 拖出参考线四事件的转发
 // 目标（begin/move/end/cancel defineExpose 对接面见 GuidesOverlay.vue 头注）
@@ -507,6 +694,7 @@ onBeforeUnmount(() => {
     unsubscribeAssets?.()
     unsubscribeDoc?.()
     unsubscribeCanvasBadge()
+    unsubscribeToolbarReads()
     unsubscribeCatalog()
     editor.dispose()
 })
@@ -541,22 +729,15 @@ onBeforeUnmount(() => {
             </div>
         </header>
 
-        <!-- 工具栏语义分组（playground-canvas-first 工单 03，spec 决策 3）：文件
-             （打开/保存/上传图片）｜历史（撤销/重做）｜插入（＋文本/＋图片/＋二维码/
-             ＋表格，直调 editor.addRootLayer——drag-create 工单 03 起图层面板「＋」
-             菜单已改武装画拉（点层型后画布拖拽定落位与尺寸），工具栏插入组保留直建
-             语义：落画布原点、置顶 priority = min−1 并自动选中、一次调用 = 一步
-             历史，就近插入不回退）。上传图片维持 uploadHandler 管线与 data-upload-image
-             钩子。分组视觉用分隔线语义（toolbar-divider 延伸），按钮 ghost 形态随
-             工单 05 暗色壳统一落定（插入组亮色引导高频动作）。缩放控件已整组摘除，
-             缩放入口唯一归状态栏缩放控件（工单 04；kbd-nav 工单 06 缩放浮条退役）；
-             目验样图
-             与 schema 三键已在工单 02 迁入帮助抽屉。标尺/网格在工单 03 时点不出现
-             （⑥ 范围外，不放死按钮）——网格开关后以视图组入列（宿主侧原型，调研
-             见 .scratch/canvas-web/canvas-grid-research.md）；标尺仍不设钮（常显
-             于画布顶+左，⇧R 开关，ruler-guides-snap 工单 04）。 -->
+        <!-- 工具栏重组（editor-top-toolbar 工单 03，spec 变体 A）：44px 单行六组。
+             分组与归口拍板见文件头「工单 03」注释块（单点维护，防注释与实现漂移）：
+             文件｜历史｜＋插入▾｜查找｜排列▾｜视图▾｜右端网格开关。三下拉底座 =
+             editor-vue/shared DropdownMenu（工单 02），触发钮 ghost 形态自带；插入
+             组亮色（.tb-insert 经 :deep 着色）引导高频动作。查找钮 = beginFind()
+             与 ⌘F 同缝。网格钮 margin-left:auto 弹性空隙推右端。隐藏文件入口
+             input 收尾（display:none 不占弹性位）。 -->
         <section class="toolbar" aria-label="编辑器工具栏">
-            <!-- 文件组：打开 / 保存 / 上传图片 -->
+            <!-- 文件组：打开 / 保存 / 上传图片（动作与禁用态维持现状） -->
             <button type="button" data-open title="打开 graph JSON（解码回编辑器）" @click="onOpenClick">打开</button>
             <button type="button" data-save title="保存 graph JSON（Ctrl/Cmd+S）" @click="saveGraph">保存</button>
             <button type="button" data-upload-image title="本机选图 → 上传（data URL 兜底）→ 新建图片图层（宿主未注入上传实现时禁用）" :disabled="!editor.canUpload" @click="onUploadImageClick">上传图片</button>
@@ -581,19 +762,44 @@ onBeforeUnmount(() => {
                 重做
             </button>
             <span class="toolbar-divider" aria-hidden="true"></span>
-            <!-- 插入组：直调 addRootLayer（drag-create 工单 03 起与图层面板「＋」菜单
-                 分道——面板武装画拉，这里保留直建：落画布原点置顶并自动选中）；
-                 ＋图片建空层，本机选图上传走「上传图片」 -->
-            <button type="button" class="tb-ins" data-insert-text title="直建文本层（落画布原点，置顶并自动选中，一步历史可撤销；画拉建层走图层面板「＋」菜单或 T 快捷键）" @click="editor.addRootLayer('TextLayer')">＋文本</button>
-            <button type="button" class="tb-ins" data-insert-image title="直建图片层（落画布原点，置顶并自动选中，一步历史可撤销；本机选图上传建层用「上传图片」）" @click="editor.addRootLayer('ImageLayer')">＋图片</button>
-            <button type="button" class="tb-ins" data-insert-qrcode title="直建二维码层（落画布原点，置顶并自动选中，一步历史可撤销；画拉建层走图层面板「＋」菜单或 Q 快捷键）" @click="editor.addRootLayer('QrCodeLayer')">＋二维码</button>
-            <button type="button" class="tb-ins" data-insert-table title="直建表格层（落画布原点，置顶并自动选中，一步历史可撤销；画拉建层走图层面板「＋」菜单或 G 快捷键）" @click="editor.addRootLayer('TableLayer')">＋表格</button>
+            <!-- 插入组：面板＋同源四项统一武装画拉（直建退役，spec Q7/Q8）；＋图片
+                 建空层，本机选图上传建带像素层走「上传图片」 -->
+            <DropdownMenu
+                class="tb-insert"
+                data-insert-menu
+                label="＋插入"
+                :items="insertItems"
+                title="插入图层（四类层型统一画拉：点击后在画布拖拽定落位与尺寸，Esc 取消）"
+            />
             <span class="toolbar-divider" aria-hidden="true"></span>
-            <!-- 视图组：桌面网格开关（原型）。网格垫在内容层 begin 后、只画纸面外
+            <!-- 查找：⌘F 同缝（FindBar 开合随内核会话态，互斥不双开；查找条本体
+                 在画布顶部浮层，canvas-web-find-replace 工单 03 内挂） -->
+            <button type="button" data-find title="查找替换（Ctrl/Cmd+F 同效；查找条开在画布顶部）" @click="editor.beginFind()">查找</button>
+            <span class="toolbar-divider" aria-hidden="true"></span>
+            <!-- 排列组：z 序四件 + 锁定/显隐（仅根图层可排列，灰态 + title 引导） -->
+            <DropdownMenu
+                class="tb-arrange"
+                data-arrange-menu
+                label="排列"
+                :items="arrangeItems"
+                title="排列：z 序与锁定/显隐"
+            />
+            <span class="toolbar-divider" aria-hidden="true"></span>
+            <!-- 视图组：缩放键位镜像 + 标尺开关 + 清空参考线（spec Q9/Q10/Q11） -->
+            <DropdownMenu
+                class="tb-view"
+                data-view-menu
+                label="视图"
+                :items="viewItems"
+                title="视图：缩放键位镜像 / 标尺 / 参考线"
+            />
+            <span class="toolbar-divider" aria-hidden="true"></span>
+            <!-- 右端开关：桌面网格（原型）。网格垫在内容层 begin 后、只画纸面外
                  桌面（evenodd 挖掉纸面矩形）——桌面有纹理、纸面保持平滑，边界恒
-                 清晰；导出走 fork 后端不带网格 -->
+                 清晰；导出走 fork 后端不带网格。独立开关不入视图下拉（spec Q1）。 -->
             <button
                 type="button"
+                class="tb-grid"
                 :class="{ 'tb-on': gridEnabled }"
                 data-grid-toggle
                 title="桌面网格线（区分画布与背景；只影响编辑器预览，不进导出 PNG）"
@@ -696,6 +902,7 @@ onBeforeUnmount(() => {
                                 <li><b>剪贴板（工单 14）</b>：选中图层后 <b>Ctrl/Cmd+C</b> 复制、<b>Ctrl/Cmd+V</b> 粘贴、<b>Ctrl/Cmd+D</b> 创建副本（右键菜单「创建副本」同款）；复制的是<b>整棵子树深拷贝</b>（表格连行/格/内容一起复制，复制后改原件不影响粘贴产物）；粘贴<b>置顶</b>（priority = min−1）且位置偏移 +20 不与原件重叠，连续粘贴偏移递增（+20、+40…）互不压叠；一次粘贴/副本 = 一步历史，Ctrl/Cmd+Z 可撤销；副本不覆盖剪贴板（复制 A → 副本 B → 粘贴仍出 A）；行/格不可复制（容器内结构），格内容可复制出表</li>
                                 <li><b>右键菜单（工单 14）</b>：画布上<b>右键点图层</b> = 选中并弹出最小菜单（创建副本/置顶/置底/删除）——按视口坐标定位（pan/zoom 不跟随、画布边缘自动钳位）；可用态随选择裁剪：置顶/置底只对根层生效（表格行/格是数组序语义），菜单上右键/点菜单外/Esc/执行动作即关；textarea 内右键仍是浏览器原生菜单</li>
                                 <li><b>快捷键面板（kbd-nav 工单 04/06）</b>：<b>⌘/（Ctrl+/）或状态栏「快捷键」按钮</b>打开快捷键面板——注册表驱动列出全部键位（撤销/重做/删除/剪贴板/样式粘贴/z 序四件套/方向键微调/循环选层/<b>画拉建层 T·G·Q·I</b>/缩放/锁定与显隐/⇧R 标尺，新动作自动入面板）与内置交互（滚轮缩放/空格平移/<b>画拉建层</b>/双击编辑/Esc/方向键微调/Tab 循环）；<b>文本编辑态与输入框焦点自动让路</b>——编辑文本时 Delete/Backspace 只改文字不删图层、Ctrl/Cmd+Z 撤「输入」、属性面板输入框内原生编辑优先，<b>编辑文本时 T 打字不武装</b>；输入法候选窗里的按键不误触发（isComposing/229 守卫）</li>
+                                <li><b>工具栏分组（editor-top-toolbar 工单 03）</b>：六组变体 A——文件（打开/保存/上传图片）｜撤销/重做｜<b>「＋插入▾」</b>（文本层/图片层/二维码层/表格四项统一<b>武装画拉</b>，与面板＋、T/G/Q/I 三缝同句；点击菜单即收 + 状态栏画拉提示，画布拖拽定落位与尺寸，死区点击落缺省尺寸，Esc 取消零副作用）｜<b>「查找」</b>（= Ctrl/Cmd+F 同缝；查找条开在画布顶部，Esc 关闭，与快捷键互斥不双开）｜<b>「排列▾」</b>（前移一层/后移一层/置顶/置底 + 锁定/解锁 + 显示/隐藏，键位后缀随平台——<b>仅根图层可排列</b>：无选中或选中行/格时全组置灰并提示原因；锁定/显隐标签随选中根层当前态翻转；z 序动作可撤销；「排列」管 z 序与锁定显隐，<b>不是对齐</b>——对齐分布属后续版本）｜<b>「视图▾」</b>（100%/适应画布/适应选区 = ⌘0/⇧1/⇧2 三个键位的可视入口，缩放控件仍唯一归状态栏；「✓ 标尺」勾选项与 ⇧R 双向同步；「清空参考线」一键清全部——会话级不可撤销，重拖即重建）｜右端<b>「网格」</b>独立开关（不进视图菜单）</li>
                                 <li><b>状态栏（工单 14）</b>：画布下方的暗色读数条 = <b>缩放百分比</b>（随 ctrl/cmd+滚轮实时更新；<b>点击弹缩放菜单</b>——100%/适应画布/适应选区/放大/缩小，kbd-nav 工单 06 起缩放浮条退役、全壳缩放入口唯一归此）· <b>选中图层路径</b>（图层 N · 行 N · 格 N · 格内容，未选中回落文案）· <b>物化进行数</b>（在途资源装载 &gt; 0 时显示「物化中 N」，归零隐藏）</li>
                                 <li><b>保存 / 打开（工单 13）</b>：<b>保存</b>（Ctrl/Cmd+S 或顶栏按钮）= 导出 canonical graph JSON 文件；<b>打开</b> = 解码回编辑器，再次打开无损复原（编辑→保存→打开→再保存字节级恒等）；保存时机归宿主，内核只经 store 订阅暴露「文档已变更」信号——顶部 <b>● 未保存</b> 标记随文档变更点亮、保存/打开后复位（撤销回已保存状态同样复位）；关闭页面前有未保存变更会弹确认</li>
                                 <li><b>导出 PNG（预览图，非终图）</b>：顶栏「导出 PNG」先<b>等待全部资源物化</b>（慢资源在途时按钮显示「导出中…」、读数提示进行中），再全幅渲染下载；出图写入 PNG 元数据标注（tEXt: CanvasNext = preview render, not the final image）+ 文件名 <code>-preview.png</code> 后缀——<b>终图由服务端渲染端依据 graph JSON 权威产出</b>（ADR 0004），物化失败的资源以占位出图并在读数中注明</li>
@@ -706,8 +913,8 @@ onBeforeUnmount(() => {
                                 <li><b>图层面板</b>：左侧树形大纲<b>顶部 = 视觉最上层</b>（图层数组尾，priority 越大越垫底不反直觉）；表格展开三层嵌套（表 → 行 → 格/格内容）；点选行 = 画布选中、行悬停 = 画布高亮（双向联动，画布点选后行也高亮）</li>
                                 <li><b>锁定图层（canvas-web-layer-lock 工单 02，会话级）</b>：根层行 hover 显<b>开锁钮</b>（锁定态闭锁常显，⇧⌘L 同效）——锁定层<b>整棵子树退出画布命中面</b>：点选/拖动/hover 高亮/右键都够不到（点到会穿透选中下方层），Delete/⌫ 与方向键误操作在内核空转；面板<b>删除按钮与右键菜单删除项变灰</b>；gizmo 对锁定选中层<b>只画选中框不画柄</b>（可定位、不可变换）；<b>锁定 ≠ 隐藏</b>——渲染/导出照常包含锁定层（锁定行不降不透明度），两态独立可叠加；属性面板全部字段、改名、显隐、z 序等刻意通道不受限；⌘D 副本无锁；解锁走面板钮或 ⇧⌘L（画布右键不做穿透）；锁定是会话态——不进历史、保存不带、换文档重置</li>
                                 <li><b>拖动重排</b>：根层拖行上半/下半落位，画布叠放<b>即时变化</b>，priority 走中点插值（保存再打开顺序不变）；表格行拖动直接改数组序（行 0 恒在视觉顶部，行 priority 不参与），格拖动同款数组序语义；两套语义分立</li>
-                                <li><b>画拉建层（canvas-web-drag-create 工单 03）</b>：面板「＋」菜单点层型或按 <b>T/G/Q/I</b>（文本/表格/二维码/图片）<b>武装</b>——状态栏瞬时提示「画拉或点击落层，Esc 取消」、画布转十字光标；<b>画布拖拽</b>出橡皮筋一次定落位与尺寸（移动缘贴邻层/画布中轴自动吸附、玫红吸附线回显，W×H 尺寸气泡实时跟随；二维码恒方形——高随宽从动；缩放状态下死区手感恒定）；<b>抬手落库</b>置顶并自动选中（文本层画完直接进入编辑可打字）；位移小于死区 = <b>点击兜底</b>（缺省尺寸、左上角对准点击点）；<b>Esc 解除零副作用</b>（不动文档不进历史）；一次手势 = 一步历史（Ctrl/Cmd+Z 整体回退落位+尺寸）；拖拽中改主意 = Esc 解除重新武装（无粘性工具态）；工具栏 ＋按钮 保留直建落原点（见「增删」）</li>
-                                <li><b>增删</b>：面板头「＋」菜单四类图层 = <b>武装画拉</b>（见上「画拉建层」——点菜单不再立即落层；<b>模板表仍表单直建</b>：rowsPath 必填校验就地拦）；工具栏 ＋文本/＋图片/＋二维码/＋表格 保留<b>直建</b>（落画布原点，置顶 priority = min−1 并自动选中）；行尾 ✕ 删除（根层含整棵子树，行/格/格内容分别 splice/置空）；重排与删除均为一步历史，Ctrl/Cmd+Z 可撤销</li>
+                                <li><b>画拉建层（canvas-web-drag-create 工单 03）</b>：面板「＋」菜单点层型或按 <b>T/G/Q/I</b>（文本/表格/二维码/图片）<b>武装</b>——状态栏瞬时提示「画拉或点击落层，Esc 取消」、画布转十字光标；<b>画布拖拽</b>出橡皮筋一次定落位与尺寸（移动缘贴邻层/画布中轴自动吸附、玫红吸附线回显，W×H 尺寸气泡实时跟随；二维码恒方形——高随宽从动；缩放状态下死区手感恒定）；<b>抬手落库</b>置顶并自动选中（文本层画完直接进入编辑可打字）；位移小于死区 = <b>点击兜底</b>（缺省尺寸、左上角对准点击点）；<b>Esc 解除零副作用</b>（不动文档不进历史）；一次手势 = 一步历史（Ctrl/Cmd+Z 整体回退落位+尺寸）；拖拽中改主意 = Esc 解除重新武装（无粘性工具态）；工具栏「＋插入▾」与面板＋同缝武装（见「增删」）</li>
+                                <li><b>增删</b>：面板头「＋」菜单四类图层 = <b>武装画拉</b>（见上「画拉建层」——点菜单不再立即落层；<b>模板表仍表单直建</b>：rowsPath 必填校验就地拦）；工具栏<b>「＋插入▾」</b>四项（文本层/图片层/二维码层/表格）与面板＋<b>同缝武装画拉</b>（editor-top-toolbar 工单 03 起直建语义退役——画拉死区点击兜底缺省尺寸，「落原点直建」价值不丢；「模板表…」只属面板＋）；行尾 ✕ 删除（根层含整棵子树，行/格/格内容分别 splice/置空）；重排与删除均为一步历史，Ctrl/Cmd+Z 可撤销</li>
                                 <li><b>表格编辑</b>：表节点悬停 <b>+行</b>（缺省行+格+文本，行宽=表宽）、行节点悬停 <b>+格</b>（缺省格+文本，行高取最高格）；<b>行可跨表拖动、格可跨行拖动</b>（重建路径与 graph 解码同一套 add 同步语义——跨表行宽重同步、跨行行高取最高格）；选中格后在属性面板开「高自适应」= 按<b>行数×行高+padding</b> 采纳内容动态高（autowrap 文本）；双击格内文本直接编辑（复用文本编辑 overlay）；建表→加行→改单元格文本→移动行，全程一步一撤销</li>
                                 <li><b>属性面板</b>：点选图层后右侧按字段注册表自动生成表单——数值（X/Y/宽高/字号）逐键实时生效、change/blur 收口为一步历史；改背景色（取色器拖动实时）、文本内容（逐键实时，输入法合成中不误提交）、九宫锚点（点击即一步历史）；<b>内边距/边框 = CSS 风格简写控件（工单 04）</b>：方钮循环 1→2→4 值模式（单框/上下｜左右/四框），初始模式随数据推导、数据一变即重推导；展开不改数据、收缩立即取代表值（上/左）规整入一步历史（边框上为 null 收缩到 1 = 全 null 无边框）；边框宽+色共享模式，宽度 0 = 关、无边框空显示；未选中时显示画布宽/高；行宽/格内容宽高等被解码强同步的字段不出现（权威字段过滤）</li>
                                 <li><b>撤销/重做</b>：顶栏按钮随历史栈自动可用/禁用；快捷键 <b>Ctrl/Cmd+Z</b> 撤销、<b>Ctrl/Cmd+Shift+Z</b>（或 Ctrl+Y）重做；上限 100 步、不跨会话，撤销后的新变更弃用重做分支（对齐 Figma）；面板连续输入合并为一步，blur 收口</li>
@@ -723,7 +930,7 @@ onBeforeUnmount(() => {
                                 <li><b>表格模板态与表达式标记（TableLayer V2，工票 03）</b>：中列 V2 目验区自上而下——<b>标记图片</b>（src 为表达式镜像字面 <span v-pre>{{org.logo}}</span>，按字面引用装载失败 → 占位 + 红叉，不崩渲染）、<b>标记二维码</b>（内容为字面 <span v-pre>{{certNo}}</span>，按字面出码）、<b>标记文本</b>（显示镜像字面 <span v-pre>证书 {{certName}} · 编号 {{certNo}}</span>，编辑器不求值——终图由服务端展开求值）、<b>模板态表格</b>（<b>空壳渲染</b>：表壳 bg/border 照画、行区零高——rows 为空、模板行不实例化）；模板子树不进大纲/不可选中/不参与物化，<b>面板编辑标记文本即解除标记回字面</b>（字面写解标双路径不变，保存后需重打标，spec §3.7）；画布双击自 canvas-web-expression-editing 起改为<b>就地编辑表达式并保持标记</b>（见上「就地编辑表达式」条）</li>
                                 <li><b>数据源 schema 注入缝（content-completion 工单 03/11）</b>：<b>宿主随会话注入</b>（D2）——本页建立会话即注入<b>证书 form-data schema</b>（draft-07：$ref/definitions、嵌套对象树、数组、<b>additionalProperties: true</b> 开放映射；根级 13 键 = 根上下文候选，D1 声明即 <code>compile(canvas, dataset)</code> 的 data 载荷形状；表达式键树与演示 graph 对齐，见工票 03 条目）。开发者区注入键可重演：<b>注入 schema</b>（证书样例：机构/学员/培训/章节树/课件嵌套分支全可达；<code>fields</code> 开放映射无键候选但浮层出占位提示，<code>originCertificates</code> 徽标 array 无具名子候选；已编译无诊断）、<b>注入非法 schema</b>（根级保留键 <code>row</code> → 声明被拒：<b>整份拒绝降级无候选 + console.warn，不弹错不抛错</b>，前移填充期 reserved_root_key 硬错误）、<b>注入断链样例</b>（$ref 断链/外部指针/环引用/目标形态不符 → 故障节点<b>局部降级为叶子</b>，健康分支照常出候选）、<b>清除声明</b>（未注入 = 无候选，清除不告警）；<b>编译诊断面板</b>（工单 11，D12）直取 parseExpressionSchema 纯函数返回面——合法注入显示「已编译，无诊断」，局部降级逐条列出 path/诊断码/明细，供开发期排查方言问题（内核 console.warn 单点收口不变，编辑器始终降级不弹错）；声明只进编辑器会话态（store ui 分支）——<b>不进 graph、不落 localStorage、不动 wire</b>，换文档不重置；页头读数显示声明态（已注入键数 / 无候选）</li>
                                 <li><b>表达式路径补全三字段接线（content-completion 工单 05）</b>：<b>仅表达式态生效</b>（ValueTypeSegmented 表达式段点亮）——选中标记文本/图片/二维码层，在 内容/资源地址 输入框键入 <code v-pre>{{</code> 自动弹出候选浮层（portal 到 body，不破 288px 面板）；<b>上下文感知</b>：根层 = 根候选集（载荷顶层键 + <code>$root</code>），模板表格<b>格内容层</b> = 行候选集（+ <code>row.*</code> / <code>$index</code>，<code>row.</code> 下钻 items 键树）；片段内 <code>.</code> 刷新候选、↑↓ 移动、Enter/Tab 接受（补全剩余路径段）、鼠标点选同效；接受 = 文本替换走既有 input/change 提交——<b>表达式 + 镜像同改、一步历史</b>，Ctrl/Cmd+Z 撤销一步恢复镜像；Esc/失焦/点外/<code v-pre>}}</code> 关闭；静态态与未注入声明零补全；中文输入法合成期按键不误触发（IME 守卫）；全角 <code>｛｛</code> 不触发属已知限制（Ctrl/Cmd+Space 手动触发兜底）</li>
-                                <li><b>标尺 / 参考线 / 吸附线（ruler-guides-snap 工单 04）</b>：画布顶+左常显<b>标尺</b>（px 刻度、0 点=画布左上、随平移缩放联动；<b>⇧R</b> 开关收起/展开）；<b>从标尺拖出参考线</b>（顶条出垂直线、左条出水平线，拖出途中自动吸附近旁图层缘/中心与画布中轴，抬手落线）；参考线横跨整个可视窗口（自标尺起线；天青实线、驻留）<b>拖回标尺即删除</b>（悬到标尺转红色预告）；<b>拖动图层</b>靠近其他图层的缘/中心、画布水平/垂直中轴时自动吸附，命中轴显示玫红虚线<b>吸附线</b>（瞬时回显、松手即消失；一次拖动至多吸一横一纵，隐藏层不供轴）；参考线与吸附线是<b>会话级</b>能力——不进历史（撤销/重做不回退）、不写文档（保存产物零改动），换文档即清空</li>
+                                <li><b>标尺 / 参考线 / 吸附线（ruler-guides-snap 工单 04）</b>：画布顶+左常显<b>标尺</b>（px 刻度、0 点=画布左上、随平移缩放联动；<b>⇧R 或工具栏「视图▾ → 标尺」</b>开关收起/展开，两入口双向同步）；<b>从标尺拖出参考线</b>（顶条出垂直线、左条出水平线，拖出途中自动吸附近旁图层缘/中心与画布中轴，抬手落线）；参考线横跨整个可视窗口（自标尺起线；天青实线、驻留）<b>拖回标尺即删除</b>（悬到标尺转红色预告）；<b>拖动图层</b>靠近其他图层的缘/中心、画布水平/垂直中轴时自动吸附，命中轴显示玫红虚线<b>吸附线</b>（瞬时回显、松手即消失；一次拖动至多吸一横一纵，隐藏层不供轴）；参考线与吸附线是<b>会话级</b>能力——不进历史（撤销/重做不回退）、不写文档（保存产物零改动），换文档即清空</li>
                                 <li><b>桌面网格（原型）</b>：工具栏「网格」开关画布背景网格线——<b>只画纸面之外的桌面</b>（垫在图层之下、evenodd 挖掉纸面矩形），桌面有纹理、纸面保持平滑，「画布 vs 背景」之辨不随模板底图有无而失效；随平移缩放联动（线宽恒 1 物理像素、步长随缩放自适应倍增）；开关是<b>编辑器会话态</b>（不进 graph、不进导出——导出 PNG 经 fork 后端恒无网格）</li>
                             </ul>
                         </section>
@@ -973,14 +1180,21 @@ onBeforeUnmount(() => {
     cursor: not-allowed;
 }
 
-/* 插入组（工单 03 前置直达）：亮色引导最高频动作 */
-.toolbar button.tb-ins {
+/* 插入组（工单 03 前置直达的视觉遗留）：亮色引导最高频动作——底座触发钮经
+   :deep 着色（ghost 形态与悬停反馈仍归组件自带令牌） */
+.toolbar :deep(.tb-insert .cn-dropdown__trigger) {
     color: var(--shell-insert);
 }
 
 /* 视图开关点亮态（网格原型）：与插入组同族亮色，灭时回落 ghost */
 .toolbar button.tb-on {
     color: var(--shell-insert);
+}
+
+/* 网格钮推右端（工单 03 变体 A）：margin-left:auto 弹性空隙，与头栏右对齐
+   语言一致（分隔线之后整段空隙归弹性区） */
+.toolbar button.tb-grid {
+    margin-left: auto;
 }
 
 .toolbar-divider {

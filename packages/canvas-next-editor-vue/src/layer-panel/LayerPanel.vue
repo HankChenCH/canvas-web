@@ -30,12 +30,12 @@ import {
     type EditorSession,
     type LayerOutlineNode,
     type LayerPath,
-    type LayerType,
 } from '@hankchen/canvas-next-editor'
 
 import PanelIcon from '../shared/PanelIcon.vue'
 import { ARM_LAYER_CREATE_HINT, detectShortcutPlatform, shortcutActionLabel } from '../shared/shortcutsHelp'
 import { useTransientFeedback } from '../shared/useTransientFeedback'
+import { ADD_MENU, type AddMenuKind } from './addMenu'
 import { isUpperHalf, useLayerPanel } from './useLayerPanel'
 const props = defineProps<{ editor: EditorSession }>()
 
@@ -61,20 +61,8 @@ interface FlatRow {
     draggable: boolean
 }
 
-/** 新增菜单项（spec §2.1）：四类图层武装画拉（drag-create 工单 03）；模板表带 rowsPath 必填表单 */
-type AddMenuKind =
-    | { kind: 'layer'; type: LayerType; label: string; title: string }
-    | { kind: 'template-table'; label: string; title: string }
-
-const ADD_MENU: readonly AddMenuKind[] = [
-    { kind: 'layer', type: 'TextLayer', label: '文本层', title: '画拉建文本层（点击后在画布拖拽定落位与尺寸，Esc 取消）' },
-    { kind: 'layer', type: 'ImageLayer', label: '图片层', title: '画拉建图片层（点击后在画布拖拽定落位与尺寸，Esc 取消）' },
-    { kind: 'layer', type: 'QrCodeLayer', label: '二维码层', title: '画拉建二维码层（点击后在画布拖拽定落位与尺寸，恒方形，Esc 取消）' },
-    { kind: 'layer', type: 'TableLayer', label: '表格', title: '画拉建表格（点击后在画布拖拽定落位与尺寸，Esc 取消）' },
-    { kind: 'template-table', label: '模板表', title: '新增模板表（行模板 + 数据行展开）' },
-]
-
-/** 新增菜单态：菜单开合 + 模板表 rowsPath 表单（必填校验就地拦，spec §2.1 N1） */
+/** 新增菜单态：菜单开合 + 模板表 rowsPath 表单（必填校验就地拦，spec §2.1 N1）。
+ *  菜单数据面（ADD_MENU/类型）在 ./addMenu——工具栏「＋插入▾」同源消费（工单 03） */
 const addMenuOpen = ref(false)
 const templateFormOpen = ref(false)
 const templateRowsPath = ref('')

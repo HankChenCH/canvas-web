@@ -123,3 +123,32 @@ describe('DropdownMenu：收起三路', () => {
         wrapper.unmount()
     })
 })
+
+describe('DropdownMenu：fixed 弹层定位（editor-top-toolbar 工单 03）', () => {
+    it('开态菜单内联视口坐标（fixed 归样式表；jsdom 无布局 rect 全零：top = 触发钮下缘 + 间隙 6、left 经钳位下限 2）', async () => {
+        const wrapper = mountMenu()
+        await wrapper.find('[data-dropdown-trigger]').trigger('click')
+        await nextTick()
+        const menu = menuEl(wrapper)
+        expect(menu).toBeDefined()
+        // 内联坐标随开态同步写入（首帧即落位，不依赖 CSS 相对偏移）；fixed 定位
+        // 由组件 scoped 样式持有（jsdom 不算样式表，不可断言）
+        expect(menu?.style.top).toBe('6px')
+        expect(menu?.style.left).toBe('2px')
+        wrapper.unmount()
+    })
+
+    it('再开重定位：收起后重开仍按触发钮现 rect 重算（不残留上次坐标）', async () => {
+        const wrapper = mountMenu()
+        const trigger = wrapper.find('[data-dropdown-trigger]')
+        await trigger.trigger('click')
+        await nextTick()
+        const firstTop = (menuEl(wrapper)?.style.top ?? '')
+        await trigger.trigger('click')
+        expect(menuEl(wrapper)).toBeUndefined()
+        await trigger.trigger('click')
+        await nextTick()
+        expect(menuEl(wrapper)?.style.top).toBe(firstTop)
+        wrapper.unmount()
+    })
+})

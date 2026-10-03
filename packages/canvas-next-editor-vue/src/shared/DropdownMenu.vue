@@ -11,13 +11,19 @@
  *   文案由调用方传入）；title 承载置灰原因（「置灰 + title」统一先例
  *   ContextMenu.vue）；'separator' 条目渲染分段分隔线（排列▾/视图▾ 各需一段）；
  * - 分发即收（选中动作后菜单收）；keepsOpen 语义本期不做（spec Q12）。
+ * - 弹层 fixed 定位（issues/03 集成）：宿主工具栏是 overflow-x:auto 内滚容器，
+ *   absolute 弹层会被其裁切——fixed 后代不受 overflow 祖先影响（壳内无
+ *   transform/filter 祖先，无 containing block 例外）。打开时按触发钮 rect 取
+ *   「下缘 + 间隙」起点（首帧即落位），渲染后按实际尺寸钳位进视口（右缘的
+ *   视图▾ 必须收回，ContextMenu openAt 同款：换算只在打开时发生一次，
+ *   pan/resize 不跟随——瞬时弹层可接受）。
  *
  * 样式自带令牌（与 panel-theme.css 同值）：触发钮 ghost 形态沿 playground
  * 工具栏钮观感（App.vue .toolbar button），菜单壳沿状态栏缩放菜单/右键菜单
  * （暗色抬升面 + accent 悬停）；自带主题不依赖宿主接线，也不渗漏。向下弹出
  * （工具栏下拉自顶栏向下开）。data-dropdown-* 钩子供目验定位（issues/03）。
  */
-import { ref } from 'vue'
+import { nextTick, ref } from 'vue'
 
 import { useDropdownMenu, type DropdownMenuEntry, type DropdownMenuItem } from './useDropdownMenu'
 
@@ -29,31 +35,67 @@ const props = defineProps<{
     title?: string
 }>()
 
+/** 弹层与触发钮的屏幕间隙（原 CSS top: calc(100% + 6px) 的 6px） */
+const MENU_GAP_PX = 6
+/** 视口钳位的屏幕边距（ContextMenu openAt 同值） */
+const VIEWPORT_MARGIN_PX = 2
+
 const container = ref<HTMLElement | null>(null)
+const triggerEl = ref<HTMLElement | null>(null)
+const menuEl = ref<HTMLElement | null>(null)
 const { open, toggle, closeMenu } = useDropdownMenu({ container })
+
+/** 弹层视口坐标（fixed 内联 style，开态首帧即落位） */
+const menuPosition = ref({ left: 0, top: 0 })
 
 /** 分发即收（ContextMenu 动作即关同款；keepsOpen 本期不做） */
 function run(item: DropdownMenuItem): void {
     item.run()
     closeMenu()
 }
+
+/** 点击开合 + 打开时定位：同步取触发钮 rect 落首帧坐标，渲染后按实际尺寸钳位 */
+async function onToggle(): Promise<void> {
+    if (!open.value) {
+        const rect = triggerEl.value?.getBoundingClientRect()
+        if (rect) menuPosition.value = { left: rect.left, top: rect.bottom + MENU_GAP_PX }
+    }
+    toggle()
+    if (!open.value) return
+    await nextTick()
+    const rect = menuEl.value?.getBoundingClientRect()
+    if (!rect) return
+    menuPosition.value = {
+        left: Math.max(VIEWPORT_MARGIN_PX, Math.min(menuPosition.value.left, window.innerWidth - rect.width - VIEWPORT_MARGIN_PX)),
+        top: Math.max(VIEWPORT_MARGIN_PX, Math.min(menuPosition.value.top, window.innerHeight - rect.height - VIEWPORT_MARGIN_PX)),
+    }
+}
 </script>
 
 <template>
     <div ref="container" class="cn-dropdown">
         <button
+            ref="triggerEl"
             type="button"
             class="cn-dropdown__trigger"
             data-dropdown-trigger
             aria-haspopup="menu"
             :aria-expanded="open"
             :title="title ?? label"
-            @click="toggle()"
+            @click="onToggle()"
         >
             {{ label }}
             <span class="cn-dropdown__caret" aria-hidden="true">▾</span>
         </button>
-        <div v-if="open" class="cn-dropdown__menu" role="menu" :aria-label="label" data-dropdown-menu>
+        <div
+            v-if="open"
+            ref="menuEl"
+            class="cn-dropdown__menu"
+            role="menu"
+            :aria-label="label"
+            data-dropdown-menu
+            :style="{ left: `${menuPosition.left}px`, top: `${menuPosition.top}px` }"
+        >
             <template v-for="(entry, index) in items" :key="index">
                 <div
                     v-if="entry === 'separator'"
@@ -124,11 +166,11 @@ function run(item: DropdownMenuItem): void {
     color: var(--cn-muted);
 }
 
-/* 菜单壳：暗色抬升面（状态栏缩放菜单/右键菜单同观感），向下弹出 */
+/* 菜单壳：暗色抬升面（状态栏缩放菜单/右键菜单同观感），向下弹出。fixed +
+   内联视口坐标（见组件头注「fixed 弹层定位」）——left/top 由打开时计算，CSS
+   不再持有相对偏移 */
 .cn-dropdown__menu {
-    position: absolute;
-    top: calc(100% + 6px);
-    left: 0;
+    position: fixed;
     z-index: 40;
     min-width: 148px;
     display: flex;
