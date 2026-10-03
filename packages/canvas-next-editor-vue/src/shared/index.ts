@@ -7,6 +7,13 @@
  * 一律收口到这里。
  */
 export { default as HelpDialog } from './HelpDialog.vue'
+export { default as DropdownMenu } from './DropdownMenu.vue'
+export {
+    useDropdownMenu,
+    type DropdownMenuController,
+    type DropdownMenuEntry,
+    type DropdownMenuItem,
+} from './useDropdownMenu'
 export { isEditableEventTarget } from './editableTarget'
 export { default as ExpressionCompletionPopup } from './ExpressionCompletionPopup.vue'
 export { applyCompletion, type CompletionItem, type CompletionResult, type CompletionSource } from './completion'

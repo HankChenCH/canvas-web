@@ -11,6 +11,7 @@ Vue 3 薄绑定：composables 切片桥、画布表面组件、schema 驱动属�
 - `src/shared/` — 跨域切片桥：useSelection / useViewport / useHistory / useShortcuts / useShortcutsHelp（快捷键帮助单例开合态，⌘/ 桥路由与状态栏按钮双入口共享）/ useTransientFeedback（状态栏瞬时反馈单例，包内来源直写、StatusBar 补位显示）/ uploadFileFromDom（DOM File → 上传文件描述，canvas 拖放与字体控件两域共用）/ editableTarget、
   表达式补全五件（completion 数据契约与接受手术 / completionAnchor 光标锚点测量 / useExpressionCompletion 浮层控件 / ExpressionCompletionPopup 呈现件 / expressionContext 上下文判定与候选源适配——属性面板与画布文本编辑两域共用，画布接线归表达式就地编辑 spec）、
   HelpDialog（帮助面板展示件，Teleport body、注册表 bindings/platform 双注入缝）与 shortcutsHelp（分组展示名/平台键位符号纯函数）、
+  下拉菜单底座 DropdownMenu + useDropdownMenu（editor-top-toolbar 工单 02：触发钮 + 弹层一体呈现件——点击开合/点外收/Esc 收在 composable、a11y 对齐状态栏缩放菜单先例、菜单项 { label, title?, disabled?, shortcut?, run } + 'separator' 分段、分发即收；工具栏三下拉消费，↑↓/Enter 键盘导航与旧菜单迁移是后续票）、
   面板图标统一封装 PanelIcon（lucide 图标经 icon prop 注入，统一尺寸/描边默认，
   封装不引 lucide 运行时以保 tree-shake）——唯一允许被各域引用的层。
 - `src/panel-theme.css` — 面板设计令牌（子路径出口 `./panel-theme.css`）。
