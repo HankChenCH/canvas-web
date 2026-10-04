@@ -1,6 +1,7 @@
 /**
- * useDataSourceSchema：schema 声明切片的响应式桥（status-bar 域内私有，与
- * shared/useViewport 同款模式）。shallowRef 整体替换（禁深度 reactive 红线），
+ * useDataSourceSchema：schema 声明切片的响应式桥（shared 域——状态栏读数段与
+ * 图层面板建表表单两域共用，rows-path-completion 工单 04 自 status-bar 收口至此；
+ * 与 useViewport 同款模式）。shallowRef 整体替换（禁深度 reactive 红线），
  * 只在 ui.dataSourceSchema 分支通知（注入/清除）时同步；订阅随 effect scope
  * 自动注销。声明随会话（openDocument 不重置），无需挂 doc 通知。
  */

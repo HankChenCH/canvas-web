@@ -15,7 +15,6 @@
 import { computed, onScopeDispose, shallowRef, type ComputedRef } from 'vue'
 
 import {
-    enumerateRowsPathCandidates,
     resolveLayer,
     resolveRowsPathStartSchema,
     type Canvas,
@@ -36,6 +35,7 @@ import {
     expressionCompletionSource,
     expressionFieldContext,
 } from '../shared/expressionContext'
+import { rowsPathCompletionSource } from '../shared/rowsPathCompletionSource'
 import type { CompletionSource } from '../shared/completion'
 
 export type { FieldDef, FieldSection } from './fieldSchema'
@@ -146,26 +146,13 @@ export function usePropertyPanel(editor: EditorSession): PropertyPanelBinding {
     /**
      * rowsPath 标记字段的补全候选源（rows-path-completion 工单 03，D3/D6）：工单 01
      * 起点三分流判别（根层表 = 载荷根 schema；嵌套表 = 沿选中路径 template 段行相对
-     * 递归到外层行 schema）+ 枚举器组装。array 段展示文案「行数组」在此置入（工单 02
-     * 钉定的 source 组装位——浮层零改动，表达式候选的 array 徽标不受牵连）。
-     * schema 未注入 = null 源；判别降级（外层 rowsPath 无 items 声明/漂移/途经非表）
-     * = null 源，静默不弹（D7），手输不受阻。
+     * 递归到外层行 schema）+ 公共源组装 rowsPathCompletionSource（工单 04 收口——
+     * 「行数组」文案置入的共享合流点）。schema 未注入 = null 源；判别降级（外层
+     * rowsPath 无 items 声明/漂移/途经非表）= null 源，静默不弹（D7），手输不受阻。
      */
-    const rowsPathSource = computed<CompletionSource | null>(() => {
-        const schema = resolveRowsPathStartSchema(doc.value, selection.value, dataSourceSchema.value)
-        if (schema === null) return null
-        return (input) => {
-            const result = enumerateRowsPathCandidates(schema, input)
-            if (result === null) return null
-            return {
-                partial: result.partial,
-                candidates: result.candidates.map((candidate) =>
-                    candidate.type === 'array' ? { ...candidate, type: '行数组' } : candidate,
-                ),
-                ...(result.open === true ? { open: true } : {}),
-            }
-        }
-    })
+    const rowsPathSource = computed<CompletionSource | null>(() =>
+        rowsPathCompletionSource(resolveRowsPathStartSchema(doc.value, selection.value, dataSourceSchema.value)),
+    )
 
     // 与内核 isTemplateSubtreePath 同义（path 含 template 段）；内核符号落地前
     // 域内自持，语义漂移由内核侧测试看护

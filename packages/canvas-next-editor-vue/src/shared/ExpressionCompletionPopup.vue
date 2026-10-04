@@ -9,7 +9,10 @@
  * - 根元素自带 .cn-props：portal 后脱离面板 DOM 子树，靠它重建令牌命名空间
  *   （panel-theme.css 的 --cn-* 系在浮层内照常解析）；
  * - 根拦 mousedown（prevent + stop）：点击候选不夺宿主焦点（浮层不因失焦误
- *   关）、不冒泡到 document 的点外关闭；点选经 select 上抛由宿主 accept；
+ *   关）、不冒泡到 document 的点外关闭；根拦 pointerdown（stop，rows-path-completion
+ *   工单 04 review）：pointerdown 先于 mousedown 且拦不住 mousedown 的 stop——
+ *   宿主带「window pointerdown 点外收」的容器（下拉底座）会在点选候选时先收起
+ *   撕掉浮层，click 接受永不到达；点选经 select 上抛由宿主 accept；
  * - 工单 10 两增量：open 信号（开放映射节点）渲染「动态字段，键由模板定义」
  *   占位提示行（不可接受、不进导航序）；候选说明展示回落 description ?? title
  *   （D8 两字段分离透传，二者皆缺省维持现状）；
@@ -48,6 +51,7 @@ watch(
             class="cn-props cn-completion fixed z-50 max-h-[200px] min-w-[140px] max-w-[280px] overflow-y-auto rounded-md border border-cn-field-line py-1 text-[11px] leading-none"
             :style="{ top: `${state.top}px`, left: `${state.left}px` }"
             @mousedown.prevent.stop
+            @pointerdown.stop
         >
             <!-- listbox 只含 option 子节点（严格 ARIA）；开放映射占位提示行在其外作脚注 -->
             <div role="listbox" aria-label="表达式路径候选">
