@@ -71,6 +71,13 @@ export interface FieldDef {
     readonly auto?: FieldAutoToggle
     /** 数据字段：提交走 updateData（按 type 分派到 text/src/value），其余走 updateSpec */
     readonly data?: boolean
+    /**
+     * 补全标记门（rows-path-completion 工单 03，D6）：'rowsPath' = 裸路径补全
+     * （usePathCompletion，候选源 = 面板 rowsPathSource）——不走 data 门
+     * （rowsPath 是结构语义，表达式补全门不适用）；缺省 = 无标记（data 门字段
+     * 照走 useExpressionCompletion）。
+     */
+    readonly completion?: 'rowsPath'
     /** 输入框占位文案（text 控件透传） */
     readonly placeholder?: string
     /** 非空校验（text 控件）：空提交被控件拦截并标错、不落库（spec §2.4 P4） */
@@ -228,6 +235,8 @@ const DATA_SECTION: FieldSection = {
             control: 'text',
             placeholder: '如 order.items',
             nonEmpty: true,
+            // 补全标记门（工单 03，D6）：裸路径补全，不走 data 门（P3 结构语义）
+            completion: 'rowsPath',
             visibleWhen: (layer) => layer.type === 'TableLayer' && layer.template !== null,
         },
     ],

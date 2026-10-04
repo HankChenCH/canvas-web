@@ -15,7 +15,9 @@
 import { computed, onScopeDispose, shallowRef, type ComputedRef } from 'vue'
 
 import {
+    enumerateRowsPathCandidates,
     resolveLayer,
+    resolveRowsPathStartSchema,
     type Canvas,
     type EditorSession,
     type Layer,
@@ -60,6 +62,11 @@ export interface PropertyPanelBinding {
      * （根层 = 根候选集 / 模板格内容层 = 行候选集）；未注入声明为 null。
      */
     readonly completionSource: ComputedRef<CompletionSource | null>
+    /**
+     * rowsPath 标记字段的补全候选源（rows-path-completion 工单 03）：起点三分流
+     * + 枚举器组装，「行数组」文案在此置入；未注入/判别降级为 null（零弹层）。
+     */
+    readonly rowsPathSource: ComputedRef<CompletionSource | null>
     /** 锚点折叠区开合（store ui 分支投影，会话内记忆；工票 03） */
     readonly anchorExpanded: ComputedRef<boolean>
     /** 面板唯一提交口：final = 收口提交（change/blur），否则按 mergeKey 合并累积 */
@@ -134,6 +141,30 @@ export function usePropertyPanel(editor: EditorSession): PropertyPanelBinding {
         const schema = dataSourceSchema.value
         if (schema === null) return null
         return expressionCompletionSource(schema, expressionFieldContext(schema, doc.value, selection.value))
+    })
+
+    /**
+     * rowsPath 标记字段的补全候选源（rows-path-completion 工单 03，D3/D6）：工单 01
+     * 起点三分流判别（根层表 = 载荷根 schema；嵌套表 = 沿选中路径 template 段行相对
+     * 递归到外层行 schema）+ 枚举器组装。array 段展示文案「行数组」在此置入（工单 02
+     * 钉定的 source 组装位——浮层零改动，表达式候选的 array 徽标不受牵连）。
+     * schema 未注入 = null 源；判别降级（外层 rowsPath 无 items 声明/漂移/途经非表）
+     * = null 源，静默不弹（D7），手输不受阻。
+     */
+    const rowsPathSource = computed<CompletionSource | null>(() => {
+        const schema = resolveRowsPathStartSchema(doc.value, selection.value, dataSourceSchema.value)
+        if (schema === null) return null
+        return (input) => {
+            const result = enumerateRowsPathCandidates(schema, input)
+            if (result === null) return null
+            return {
+                partial: result.partial,
+                candidates: result.candidates.map((candidate) =>
+                    candidate.type === 'array' ? { ...candidate, type: '行数组' } : candidate,
+                ),
+                ...(result.open === true ? { open: true } : {}),
+            }
+        }
     })
 
     // 与内核 isTemplateSubtreePath 同义（path 含 template 段）；内核符号落地前
@@ -212,6 +243,7 @@ export function usePropertyPanel(editor: EditorSession): PropertyPanelBinding {
         layerBox,
         isPreviewBox,
         completionSource,
+        rowsPathSource,
         anchorExpanded: computed(() => anchorExpanded.value),
         commit,
         toggleDataMode,

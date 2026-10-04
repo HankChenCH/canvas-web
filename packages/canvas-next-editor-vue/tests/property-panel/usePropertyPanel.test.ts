@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import { computed, effectScope, type ComputedRef } from 'vue'
 
-import { EditorSession, resolveLayer, type Canvas, type FrameScheduler } from '@hankchen/canvas-next-editor'
+import { EditorSession, createTemplateTable, resolveLayer, type Canvas, type FrameScheduler } from '@hankchen/canvas-next-editor'
+
+import { cellLayer, rowTemplateLayer, tableLayer } from '../../../canvas-next-editor/tests/support/fixtures'
 
 import { CANVAS_FIELD_SECTIONS } from '../../src/property-panel/fieldSchema'
 import { usePropertyPanel, type FieldDef } from '../../src/property-panel/usePropertyPanel'
@@ -367,5 +369,106 @@ describe('订阅清理', () => {
         const unsubscribe = subscribeSpy.mock.results[0]!.value
         scope.stop()
         expect(() => unsubscribe()).not.toThrow()
+    })
+})
+
+describe('rowsPathSource（rows-path-completion 工单 03：行相对候选源）', () => {
+    /** 三层嵌套 schema：order.items 行 = name 标量 + lines 数组；lines 行 = sku 标量 + subitems 数组 */
+    const RAW_SCHEMA = {
+        type: 'object',
+        properties: {
+            orderNo: { type: 'string' },
+            order: {
+                type: 'object',
+                properties: {
+                    items: {
+                        type: 'array',
+                        items: {
+                            type: 'object',
+                            properties: {
+                                name: { type: 'string' },
+                                lines: {
+                                    type: 'array',
+                                    items: {
+                                        type: 'object',
+                                        properties: {
+                                            sku: { type: 'string' },
+                                            subitems: {
+                                                type: 'array',
+                                                items: { type: 'object', properties: { title: { type: 'string' } } },
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        },
+    }
+
+    /** 外层表（order.items）→ 内层表（lines）→ 叶表（subitems） */
+    function nestedTableLayer() {
+        const leafTable = tableLayer([], { rowsPath: 'subitems', template: rowTemplateLayer([cellLayer(textLayer())]) })
+        const innerTable = tableLayer([], { rowsPath: 'lines', template: rowTemplateLayer([cellLayer(leafTable)]) })
+        return tableLayer([], { rowsPath: 'order.items', template: rowTemplateLayer([cellLayer(innerTable)]) })
+    }
+
+    it('schema 未注入 → null 源（零弹层态）', () => {
+        const editor = makeEditor([createTemplateTable({ rowsPath: 'order.items' })])
+        const { scope, panel } = bind(editor)
+        editor.setSelection(['layers', 0])
+        expect(panel.rowsPathSource.value).toBeNull()
+        scope.stop()
+    })
+
+    it('根层表 = 根起点：标量不出、array 候选带「行数组」文案置入', () => {
+        const editor = makeEditor([createTemplateTable({ rowsPath: '' })])
+        editor.setDataSourceSchema(RAW_SCHEMA)
+        const { scope, panel } = bind(editor)
+        editor.setSelection(['layers', 0])
+
+        const source = panel.rowsPathSource.value
+        if (source === null) throw new Error('schema 注入后应有源')
+        const result = source('order.')
+        if (result === null) throw new Error('尾点应枚举成功')
+        expect(result.partial).toBe('')
+        expect(result.candidates.map((c) => c.segment)).toEqual(['items'])
+        expect(result.candidates[0]!.type).toBe('行数组')
+        scope.stop()
+    })
+
+    it('深层嵌套（两个 template 段）：判别件行相对逐级递归到叶起点（标量行键不出）', () => {
+        const editor = makeEditor([nestedTableLayer()])
+        editor.setDataSourceSchema(RAW_SCHEMA)
+        const { scope, panel } = bind(editor)
+        editor.setSelection(['layers', 0, 'template', 'cells', 0, 'content', 'template', 'cells', 0, 'content'])
+
+        const source = panel.rowsPathSource.value
+        if (source === null) throw new Error('深层嵌套应有源')
+        // 叶起点 = 内层行 schema（sku 标量 + subitems 数组）：候选只出 subitems
+        const result = source('sub')
+        if (result === null) throw new Error('应枚举成功')
+        expect(result.candidates.map((c) => c.segment)).toEqual(['subitems'])
+        scope.stop()
+    })
+
+    it('外层 rowsPath 漂移 → degraded null 源；漂移修复后随 doc 切片联动恢复', () => {
+        const drifted = tableLayer([], {
+            rowsPath: 'order.missing',
+            template: rowTemplateLayer([cellLayer(textLayer())]),
+        })
+        const editor = makeEditor([drifted])
+        editor.setDataSourceSchema(RAW_SCHEMA)
+        const { scope, panel } = bind(editor)
+        editor.setSelection(['layers', 0, 'template', 'cells', 0, 'content'])
+        expect(panel.rowsPathSource.value).toBeNull()
+
+        editor.updateSpec(['layers', 0], ['rowsPath'], 'order.items', { mergeKey: 'fix' })
+        const source = panel.rowsPathSource.value
+        if (source === null) throw new Error('修复后应有源')
+        expect(source('li')?.candidates.map((c) => c.segment)).toEqual(['lines'])
+        scope.stop()
     })
 })

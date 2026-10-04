@@ -400,4 +400,24 @@ describe('fieldSectionsForPath：模板态（模板创作 spec）', () => {
         expect(rowsPath.nonEmpty).toBe(true)
         expect(rowsPath.placeholder).toBeTruthy()
     })
+
+    it('rowsPath 字段带 rowsPath 补全标记（工单 03，D6 标记门）：全注册表唯一', () => {
+        const dataSection = fieldSectionsForPath(['layers', 0], templateTable).find((s) => s.title === '数据')!
+        const rowsPath = dataSection.fields.find((f) => f.key[0] === 'rowsPath')!
+        expect(rowsPath.completion).toBe('rowsPath')
+
+        // 标记不扩散：其余字段（含 data 门三字段）一个不带
+        const marked: string[] = []
+        for (const sections of Object.values(FIELD_SECTIONS_BY_TYPE)) {
+            for (const section of sections) {
+                for (const field of section.fields) {
+                    if (field.completion !== undefined) marked.push(field.key.join('.'))
+                    for (const item of field.items ?? []) {
+                        if (item.completion !== undefined) marked.push(`${field.key.join('.')}.${item.key.join('.')}`)
+                    }
+                }
+            }
+        }
+        expect(marked).toEqual(['rowsPath'])
+    })
 })

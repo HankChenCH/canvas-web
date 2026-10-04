@@ -21,6 +21,13 @@
  * `{{` 自动配对（工单 07）独立于 schema 注入：表达式态即配对（防未闭合静默错），
  * 静态态 `{{` 是字面不配对。
  *
+ * 裸路径补全（rows-path-completion 工单 03，D6）：接线门扩为「data 门或 completion
+ * 标记门」——rowsPath 字段（completion: 'rowsPath' 标记）按标记走 usePathCompletion
+ * （候选源 = 面板 rowsPathSource 行相对源），数据字段仍走 useExpressionCompletion
+ * 零改动。两门互斥（data 与 completion 不共存于同一字段），两 composable 均实例化、
+ * 非本门 enabled 恒假事件入口全短路；浮层按门渲染对应呈现态。提交管线不动：接受
+ * = 合成 input/change 走既有 updateSpec 分支（P3 结构语义透传不变）。
+ *
  * 行解剖（面板布局优化，三种形态共用同一份控件分发）：
  * - pair：全宽块级（列标签 X/Y/宽/高 自描述，行级标签不复述）；
  * - 数据字段（field.data）：上下两行——第一行 = 标签（定宽列）+ 取值方式分段
@@ -37,6 +44,7 @@ import type { FieldDef, FieldDisplay } from './fieldSchema'
 import ValueTypeSegmented from './fields/ValueTypeSegmented.vue'
 import ExpressionCompletionPopup from '../shared/ExpressionCompletionPopup.vue'
 import { useExpressionCompletion } from '../shared/useExpressionCompletion'
+import { usePathCompletion } from '../shared/usePathCompletion'
 import type { CompletionSource } from '../shared/completion'
 
 const props = defineProps<{
@@ -45,7 +53,10 @@ const props = defineProps<{
     value: unknown
     /** 数据字段取值方式；undefined = 非 data 字段（无切换钮） */
     dataMode?: 'static' | 'expression'
-    /** 补全候选源（面板按选中路径构造）；null = 未注入/无接线（浮层恒闭）。 */
+    /**
+     * 补全候选源（面板按字段分发：data 门字段 = 表达式源，rowsPath 标记字段 =
+     * 行相对源，工单 03）；null = 未注入/无接线/降级（浮层恒闭）。
+     */
     completion?: CompletionSource | null
     /** pair 子字段的禁用态替代显示（键 = 子字段绝对键）；其他控件不传 */
     displays?: Record<string, FieldDisplay>
@@ -78,13 +89,18 @@ const rowClass = computed(() =>
 const controlClass = computed(() => (props.field.data === true ? 'col-span-2' : ''))
 
 /**
- * 补全接线面：数据文本字段（fieldSchema 中 data:true 且 textarea/text 控件——
- * 现状即 text/src/value 三个内容字段；rowsPath 的 text 控件无 data 门不入）。
+ * 补全接线门（双门取并，单字段只落一门——data 与 completion 标记互斥声明）：
+ * - data 门：数据文本字段（fieldSchema 中 data:true 且 textarea/text 控件——
+ *   现状即 text/src/value 三个内容字段）；
+ * - 标记门（rows-path-completion 工单 03，D6）：completion === 'rowsPath'
+ *   （rowsPath 字段，结构语义不走 data 门）。
  * 其余字段零接线。
  */
-const wiresCompletion = computed(
+const wiresExpressionCompletion = computed(
     () => props.field.data === true && (props.field.control === 'textarea' || props.field.control === 'text'),
 )
+const wiresPathCompletion = computed(() => props.field.completion === 'rowsPath')
+const wiresCompletion = computed(() => wiresExpressionCompletion.value || wiresPathCompletion.value)
 
 /** 控件根元素（组件实例 $el；textarea/input 双形态，其余控件给 null 不绑） */
 const controlRef = ref<ComponentPublicInstance | null>(null)
@@ -101,11 +117,25 @@ const popupElement = computed<HTMLElement | null>(() => popupRef.value?.rootEl ?
 const { popup, accept } = useExpressionCompletion({
     target: completionTarget,
     // 表达式态且声明在场才开事件入口（静态态不生效；未注入 schema = 无候选态）
-    enabled: () => wiresCompletion.value && isExpression.value && props.completion != null,
+    enabled: () => wiresExpressionCompletion.value && isExpression.value && props.completion != null,
     // 配对门（工单 07）独立于候选源注入：表达式态即配对——未闭合 {{ 的静默错
     // （字面渲染/编进二维码）不依赖 schema 在场；静态态 {{ 是字面不配对
-    pairing: () => wiresCompletion.value && isExpression.value,
+    pairing: () => wiresExpressionCompletion.value && isExpression.value,
     resolve: (expr) => props.completion?.(expr) ?? null,
+    popupEl: popupElement,
+})
+
+/**
+ * 标记字段的裸路径补全（工单 03）：按标记选 composable——rowsPath 字段走
+ * usePathCompletion（与表达式控件同门分轨，触发语义无 {{}} 逻辑）；enabled 门
+ * = 标记在场 + 声明注入（表达式门的 isExpression 态门在路径面不存在，裸路径
+ * 无静态/表达式两态）。两 composable 均实例化（composable 不可条件调用），
+ * 互斥声明保证任一字段至多一门 enabled，事件入口对另一门全部短路。
+ */
+const { popup: pathPopup, accept: acceptPath } = usePathCompletion({
+    target: completionTarget,
+    enabled: () => wiresPathCompletion.value && props.completion != null,
+    resolve: (input) => props.completion?.(input) ?? null,
     popupEl: popupElement,
 })
 
@@ -153,7 +183,20 @@ function relaySubCommit(field: FieldDef, value: unknown, final: boolean): void {
             @sub-commit="relaySubCommit"
         />
     </component>
-    <!-- 补全浮层（工单 04/05）：portal 到 body，仅数据文本字段渲染；面板不给本
-         组件下发 attrs，多根无 fallthrough 断点 -->
-    <ExpressionCompletionPopup v-if="wiresCompletion" ref="popupRef" :state="popup" @select="accept" />
+    <!-- 补全浮层（工单 04/05/03）：portal 到 body，仅接线字段渲染——按门选呈现
+         态（表达式门 = useExpressionCompletion，标记门 = usePathCompletion，互斥
+         声明下单字段至多渲染一个）；面板不给本组件下发 attrs，多根无 fallthrough
+         断点 -->
+    <ExpressionCompletionPopup
+        v-if="wiresExpressionCompletion"
+        ref="popupRef"
+        :state="popup"
+        @select="accept"
+    />
+    <ExpressionCompletionPopup
+        v-else-if="wiresPathCompletion"
+        ref="popupRef"
+        :state="pathPopup"
+        @select="acceptPath"
+    />
 </template>

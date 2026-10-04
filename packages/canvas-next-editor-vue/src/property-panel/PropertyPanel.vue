@@ -23,10 +23,19 @@ import { readField, pairItemKey, type FieldDef, type FieldDisplay } from './fiel
 import AnchorDisclosureField from './fields/AnchorDisclosureField.vue'
 import PropertyField from './PropertyField.vue'
 import { usePropertyPanel } from './usePropertyPanel'
+import type { CompletionSource } from '../shared/completion'
 
 const props = defineProps<{ editor: EditorSession }>()
 
 const panel = usePropertyPanel(props.editor)
+
+/**
+ * 按字段分发对应候选源（rows-path-completion 工单 03，D6）：rowsPath 标记字段走
+ * 行相对专用源（rowsPathSource），其余字段（data 门）走表达式源——两源互不串场。
+ */
+function fieldCompletionSource(field: FieldDef): CompletionSource | null {
+    return field.completion === 'rowsPath' ? panel.rowsPathSource.value : panel.completionSource.value
+}
 
 interface RenderField {
     /** 渲染键：含选中路径——选择切换即重挂载字段组件（清草稿、闭合本地态） */
@@ -167,7 +176,7 @@ function toggleAnchorExpanded(): void {
                         :field="item.field"
                         :value="item.value"
                         :data-mode="item.dataMode"
-                        :completion="panel.completionSource.value"
+                        :completion="fieldCompletionSource(item.field)"
                         :displays="pairDisplays"
                         @input="panel.commit(item.field, $event, false)"
                         @change="panel.commit(item.field, $event, true)"
