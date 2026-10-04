@@ -6,7 +6,8 @@
  * （呈现件 + 开合逻辑 composable；工具栏三下拉内建触发钮直用，状态栏缩放菜单/
  * 面板＋经 #trigger/#body 受控插槽迁移消费——issues/05）与表达式补全五件（数据
  * 契约/锚点测量/浮层控件/呈现件/上下文判定与候选源适配——属性面板与画布文本
- * 编辑两域共用）。
+ * 编辑两域共用）及裸路径补全控件 usePathCompletion（rows-path-completion 工单
+ * 02：复用同门 Popup/Anchor/applyCompletion，触发语义分轨——裸路径输入即弹）。
  * 这是唯一允许被各域引用的层——域间横向 import 被依赖红线
  * （editor-vue-*-isolation）禁止，跨域消费一律收口到这里。
  */
@@ -34,6 +35,7 @@ export {
     type ExpressionFieldContext,
 } from './expressionContext'
 export { useExpressionCompletion, type ExpressionCompletionState } from './useExpressionCompletion'
+export { usePathCompletion } from './usePathCompletion'
 export { useHistory, type HistoryAvailability } from './useHistory'
 export { useSelection } from './useSelection'
 export { useShortcuts } from './useShortcuts'
