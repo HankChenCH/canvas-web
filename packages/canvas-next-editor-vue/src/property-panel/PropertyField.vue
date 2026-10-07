@@ -13,7 +13,7 @@
  * 编辑保持标记（镜像字面）。模式由面板按图层 expression 标记派生传入，本组件
  * 零本地状态；切换语义仍上抛 toggle-mode 归面板 toggleDataMode（管线不动）。
  *
- * 表达式路径补全（content-completion 工单 05）：仅三个数据字段（textarea/text
+ * 表达式路径补全（content-completion 工单 05）：数据字段（textarea/text/imageSrc
  * 控件）在表达式态接入浮层控件（工单 04 的 useExpressionCompletion +
  * ExpressionCompletionPopup）——target 取控件根元素（textarea/input 双形态），
  * 候选源由面板按选中路径下发（completionSource：根层 = 根候选集 / 模板格内容层
@@ -38,6 +38,8 @@
  *   （布尔开关）落在控件列左缘，与填充类控件同一条起始线。
  */
 import { computed, ref, type ComponentPublicInstance } from 'vue'
+
+import type { ResourceStatus } from '@hankchen/canvas-next-editor'
 
 import { controlRegistry } from './controls'
 import type { FieldDef, FieldDisplay } from './fieldSchema'
@@ -65,6 +67,11 @@ const props = defineProps<{
      * 谓词求值下发（占位态图片层的 padding 行）；undefined = 无提示行。
      */
     hint?: string
+    /**
+     * 字段值的物化态（面板按当前值查 ui 切片解析）：仅 imageSrc 控件消费
+     * （缩略图角标，与画布失败标识同源）；undefined = 无记录/不适用。
+     */
+    resourceStatus?: ResourceStatus
 }>()
 
 const emit = defineEmits<{
@@ -95,14 +102,16 @@ const controlClass = computed(() => (props.field.data === true ? 'col-span-2' : 
 
 /**
  * 补全接线门（双门取并，单字段只落一门——data 与 completion 标记互斥声明）：
- * - data 门：数据文本字段（fieldSchema 中 data:true 且 textarea/text 控件——
- *   现状即 text/src/value 三个内容字段）；
+ * - data 门：数据文本字段（fieldSchema 中 data:true 且 textarea/text/imageSrc
+ *   控件——现状即 text/src/value 内容字段与图片资源字段）；
  * - 标记门（rows-path-completion 工单 03，D6）：completion === 'rowsPath'
  *   （rowsPath 字段，结构语义不走 data 门）。
  * 其余字段零接线。
  */
 const wiresExpressionCompletion = computed(
-    () => props.field.data === true && (props.field.control === 'textarea' || props.field.control === 'text'),
+    () =>
+        props.field.data === true &&
+        (props.field.control === 'textarea' || props.field.control === 'text' || props.field.control === 'imageSrc'),
 )
 const wiresPathCompletion = computed(() => props.field.completion === 'rowsPath')
 const wiresCompletion = computed(() => wiresExpressionCompletion.value || wiresPathCompletion.value)
@@ -151,10 +160,12 @@ function relaySubCommit(field: FieldDef, value: unknown, final: boolean): void {
 </script>
 
 <template>
-    <!-- pair 行根用 div（code-review 整改：其列各有 label，嵌套 label 非法且点击
-         归属会被外层劫持）；其余单控件行保持 label 包裹的点击聚焦行为 -->
+    <!-- pair/imageSrc 行根用 div（code-review 整改）：pair 列各有 label，嵌套
+         label 非法；imageSrc 行内多交互元素（缩略图钮 + file input + 路径输入），
+         label 激活转发会命中首个 labelable 后代（缩略图钮）误弹文件选择。其余
+         单控件行保持 label 包裹的点击聚焦行为 -->
     <component
-        :is="field.control === 'pair' ? 'div' : 'label'"
+        :is="field.control === 'pair' || field.control === 'imageSrc' ? 'div' : 'label'"
         :class="rowClass"
     >
         <!-- pair 列自描述（X/Y/宽/高），行级标签不复述（消除「尺寸 尺寸」双 label）；
@@ -186,6 +197,8 @@ function relaySubCommit(field: FieldDef, value: unknown, final: boolean): void {
             :field="field"
             :model-value="value"
             :displays="field.control === 'pair' ? displays : undefined"
+            :data-mode="field.control === 'imageSrc' ? dataMode : undefined"
+            :resource-status="field.control === 'imageSrc' ? resourceStatus : undefined"
             @input="emit('input', $event)"
             @change="emit('change', $event)"
             @sub-commit="relaySubCommit"

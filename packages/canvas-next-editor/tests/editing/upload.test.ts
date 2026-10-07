@@ -126,6 +126,34 @@ describe('uploadHandler 注入点：core 不内置上传实现', () => {
     })
 })
 
+describe('uploadImage 裸上传（属性面板图片控件消费：只取引用，不建层不写文档）', () => {
+    it('注入后经 handler 得到可物化引用；文档、历史、选中零扰动（引用落点归消费方）', async () => {
+        const handler = vi.fn(async () => 'https://cdn.example.com/b.png')
+        const editor = sessionWith({ uploadHandler: handler })
+        editor.openDocument(decodeGraph({ canvas: { width: 100, height: 80 }, layers: [] }))
+
+        const ref = await editor.uploadImage(file('photo.png'))
+        expect(handler).toHaveBeenCalledWith(file('photo.png'))
+        expect(ref).toBe('https://cdn.example.com/b.png')
+        expect(editor.store.doc?.layers).toHaveLength(0)
+        expect(editor.canUndo).toBe(false)
+        expect(editor.store.ui.selection).toBeNull()
+    })
+
+    it('未注入时拒绝（UploadHandlerMissingError 对位语义）', async () => {
+        const editor = sessionWith()
+        editor.openDocument(decodeGraph({ canvas: { width: 100, height: 80 }, layers: [] }))
+        await expect(editor.uploadImage(file('a.png'))).rejects.toThrow(/uploadHandler/)
+    })
+
+    it('文档未打开返回 null 且不调 handler（字节不离开本机，无副作用）', async () => {
+        const handler = vi.fn(async () => 'https://cdn.example.com/a.png')
+        const editor = sessionWith({ uploadHandler: handler })
+        await expect(editor.uploadImage(file('a.png'))).resolves.toBeNull()
+        expect(handler).not.toHaveBeenCalled()
+    })
+})
+
 describe('uploadImageAsLayer 摆位覆盖 {at?, size?}（kbd-nav 工单 05：拖放落点语义）', () => {
     const sessionWithUpload = () =>
         sessionWith({ uploadHandler: async () => 'https://cdn.example.com/a.png' })

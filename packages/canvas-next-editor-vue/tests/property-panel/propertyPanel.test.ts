@@ -84,6 +84,7 @@ describe('PropertyField：<component :is> 注册表分发', () => {
             'align',
             'padding',
             'border',
+            'imageSrc',
         ]
         for (const kind of kinds) {
             const component = controlRegistry[kind]
@@ -830,6 +831,66 @@ describe('padding 行动态提示（placeholder-padding-hint 工单 02：占位�
         await wrapper.vm.$nextTick()
         expect(paddingRow(wrapper).find('.cn-prop-field__hint').text()).toBe(UNDRAWN_HINT)
         expect(editor.store.history).toHaveLength(0)
+        wrapper.unmount()
+    })
+})
+
+describe('imageSrc 控件面板接线（图片资源地址上传形态）', () => {
+    const imageLayer = (overrides: Record<string, unknown> = {}): Layer =>
+        ({ ...textLayer(), type: 'ImageLayer', src: '/a.png', expression: null, ...overrides } as Layer)
+
+    async function mountWithEditor(
+        layers: readonly Layer[],
+        options: Partial<ConstructorParameters<typeof EditorSession>[0]> = {},
+    ) {
+        const editor = new EditorSession({ scheduleFrame: nullScheduler, ...options })
+        editor.openDocument({ width: 800, height: 600, layers })
+        const wrapper = mount(PropertyPanel, { props: { editor } })
+        editor.setSelection(['layers', 0])
+        await wrapper.vm.$nextTick()
+        return { editor, wrapper }
+    }
+
+    it('会话注入 uploadHandler：面板 provide 到控件，缩略图回显当前 src；清除走 data 门落 null（一步历史）', async () => {
+        const { editor, wrapper } = await mountWithEditor([imageLayer()], {
+            uploadHandler: async () => 'data:image/png;base64,QQ',
+        })
+        const img = wrapper.find('.cn-imagesrc__thumb img')
+        expect(img.exists()).toBe(true)
+        expect(img.attributes('src')).toBe('/a.png')
+
+        await wrapper.find('.cn-imagesrc__clear').trigger('click')
+        const layer = editor.store.doc!.layers[0]!
+        expect(layer.type === 'ImageLayer' && layer.src).toBeNull()
+        expect(editor.store.history).toHaveLength(1)
+        wrapper.unmount()
+    })
+
+    it('未注入 uploadHandler：退化纯路径输入（无缩略图）', async () => {
+        const { wrapper } = await mountWithEditor([imageLayer()])
+        expect(wrapper.find('.cn-imagesrc__thumb').exists()).toBe(false)
+        expect(wrapper.find('input[type="text"]').exists()).toBe(true)
+        wrapper.unmount()
+    })
+
+    it('表达式标记图片层：不渲染上传通道（路径输入编辑镜像原文）', async () => {
+        const { wrapper } = await mountWithEditor(
+            [imageLayer({ src: '{{org.logo}}', expression: '{{org.logo}}' })],
+            { uploadHandler: async () => 'data:image/png;base64,QQ' },
+        )
+        expect(wrapper.find('.cn-imagesrc__thumb').exists()).toBe(false)
+        expect(wrapper.find('input[type="text"]').exists()).toBe(true)
+        wrapper.unmount()
+    })
+
+    it('物化态角标：resourceStatuses 切片按字段值解析下发（failed → 失败）', async () => {
+        const { editor, wrapper } = await mountWithEditor([imageLayer()], {
+            uploadHandler: async () => 'data:image/png;base64,QQ',
+        })
+        expect(wrapper.find('.cn-imagesrc__status').exists()).toBe(false)
+        editor.store.setResourceStatuses({ '/a.png': 'failed' })
+        await wrapper.vm.$nextTick()
+        expect(wrapper.find('.cn-imagesrc__status').text()).toContain('失败')
         wrapper.unmount()
     })
 })

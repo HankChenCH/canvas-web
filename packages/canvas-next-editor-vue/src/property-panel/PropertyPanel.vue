@@ -15,19 +15,28 @@
  * 视觉：暗色「精密仪器」检视面板——设计令牌见 panel-theme.css（作用域在
  * .cn-props 根，自带主题不渗漏宿主）；工具类由宿主 tailwind 经 @source 编译。
  */
-import { computed } from 'vue'
+import { computed, provide } from 'vue'
 
-import type { Anchor, Canvas, EditorSession, Layer } from '@hankchen/canvas-next-editor'
+import type { Anchor, Canvas, EditorSession, Layer, ResourceStatus } from '@hankchen/canvas-next-editor'
 
 import { readField, pairItemKey, type FieldDef, type FieldDisplay } from './fieldSchema'
 import AnchorDisclosureField from './fields/AnchorDisclosureField.vue'
 import PropertyField from './PropertyField.vue'
+import { IMAGE_UPLOAD_KEY } from './imageUpload'
 import { usePropertyPanel } from './usePropertyPanel'
 import type { CompletionSource } from '../shared/completion'
 
 const props = defineProps<{ editor: EditorSession }>()
 
 const panel = usePropertyPanel(props.editor)
+
+// 图片上传控件缝（imageUpload）：canUpload 与裸上传动作都是会话能力——面板以
+// 持有的 EditorSession 提供一次，宿主零接线（上传实现仍归宿主注入的
+// uploadHandler）；控件树任意深度 inject 取用
+provide(IMAGE_UPLOAD_KEY, {
+    canUpload: props.editor.canUpload,
+    uploadImage: (file) => props.editor.uploadImage(file),
+})
 
 /**
  * 按字段分发对应候选源（rows-path-completion 工单 03，D6）：rowsPath 标记字段走
@@ -49,6 +58,11 @@ interface RenderField {
      * 选中层与资源态切片求值的产物；undefined = 无提示（谓词缺省/求值 null）。
      */
     hint?: string
+    /**
+     * 字段值的物化态（imageSrc 控件的缩略图角标）：按当前值原串查 ui 切片——
+     * 无记录（宿主未桥接）= 不可知不假报；其他控件不下发。
+     */
+    resourceStatus?: ResourceStatus
 }
 
 interface RenderSection {
@@ -92,6 +106,10 @@ const visibleSections = computed<readonly RenderSection[]>(() => {
                 value: read.value,
                 dataMode: field.data ? readDataMode(target) : undefined,
                 hint: field.hint && hintTarget ? (field.hint(hintTarget, statuses) ?? undefined) : undefined,
+                resourceStatus:
+                    field.control === 'imageSrc' && typeof read.value === 'string' && read.value !== ''
+                        ? statuses[read.value]
+                        : undefined,
             })
         }
         if (fields.length > 0) result.push({ title: section.title, fields })
@@ -188,6 +206,7 @@ function toggleAnchorExpanded(): void {
                         :hint="item.hint"
                         :completion="fieldCompletionSource(item.field)"
                         :displays="pairDisplays"
+                        :resource-status="item.resourceStatus"
                         @input="panel.commit(item.field, $event, false)"
                         @change="panel.commit(item.field, $event, true)"
                         @toggle-mode="panel.toggleDataMode(item.field)"

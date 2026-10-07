@@ -38,6 +38,7 @@ export type FieldControl =
     | 'padding'
     | 'border'
     | 'font'
+    | 'imageSrc'
 
 /**
  * 自适应 prefix 钮描述（pair 子字段用）：key 相对 pair 值对象上的布尔键；
@@ -233,7 +234,9 @@ const TEXT_SECTION: FieldSection = {
 
 const IMAGE_SECTION: FieldSection = {
     title: '图片',
-    fields: [{ key: ['src'], label: '资源地址', control: 'text', data: true }],
+    // 上传控件（缩略图回显 + 上传 + 紧凑路径行）；静态值语义不变——data 门提交
+    // 走 updateData（字面接管），引用形态（data URL/宿主存储）归 uploadHandler
+    fields: [{ key: ['src'], label: '资源地址', control: 'imageSrc', data: true }],
 }
 
 const QR_SECTION: FieldSection = {

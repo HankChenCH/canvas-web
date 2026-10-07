@@ -123,6 +123,12 @@ describe('type 标识 ↔ 注册表映射', () => {
         expect(dataKeys('TableCellLayer')).toEqual([])
     })
 
+    it('图片资源地址注册为上传控件（imageSrc：缩略图回显 + 上传 + 紧凑路径行），仍走 data 门', () => {
+        const src = flatFields(fieldSectionsForType('ImageLayer')).find((f) => f.key.join('.') === 'src')!
+        expect(src.control).toBe('imageSrc')
+        expect(src.data).toBe(true)
+    })
+
     it('未知 type 返回空清单且不抛（不告警刷屏的注册表侧语义）', () => {
         expect(fieldSectionsForType('LegacyLayer')).toEqual([])
         expect(fieldSectionsForType('')).toEqual([])

@@ -1537,6 +1537,17 @@ export class EditorSession {
     }
 
     /**
+     * 本机图片 → 可物化引用（裸上传，不建层不写文档）：引用落到哪个图片层由
+     * 消费方决定（属性面板图片控件），与 uploadFont 同门的 bare 形态。文档未打开
+     * 直接返回 null（不产生上传副作用——字节不离开本机）；未注入 uploadHandler
+     * 抛 UploadHandlerMissingError；handler 失败异常上抛。
+     */
+    async uploadImage(file: UploadFile): Promise<string | null> {
+        if (!this.store.doc) return null
+        return this.requireUpload(file)
+    }
+
+    /**
      * 本机字体 → 可物化引用并加入字体清单（自定义条目，上传后即可选可用）。
      * 不写文档：引用落到哪个文本层由宿主/绑定层决定（属性面板字体控件）。
      */

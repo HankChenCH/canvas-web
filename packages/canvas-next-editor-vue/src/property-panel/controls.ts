@@ -18,6 +18,7 @@ import BooleanField from './fields/BooleanField.vue'
 import BorderField from './fields/BorderField.vue'
 import FontField from './fields/FontField.vue'
 import ColorField from './fields/ColorField.vue'
+import ImageSrcField from './fields/ImageSrcField.vue'
 import NumberField from './fields/NumberField.vue'
 import PaddingField from './fields/PaddingField.vue'
 import PairField from './fields/PairField.vue'
@@ -38,4 +39,5 @@ export const controlRegistry: Record<FieldControl, Component> = {
     padding: markRaw(PaddingField),
     border: markRaw(BorderField),
     font: markRaw(FontField),
+    imageSrc: markRaw(ImageSrcField),
 }
