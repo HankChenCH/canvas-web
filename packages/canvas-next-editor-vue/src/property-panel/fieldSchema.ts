@@ -16,10 +16,12 @@
 import {
     HORIZONTAL_ALIGNS,
     VERTICAL_ALIGNS,
+    isImageContentUndrawn,
     isTemplateSubtreePath,
     type Layer,
     type LayerPath,
     type LayerType,
+    type ResourceStatusMap,
 } from '@hankchen/canvas-next-editor'
 
 /** 控件种类（与 controls.ts 的组件注册表一一对应） */
@@ -86,6 +88,13 @@ export interface FieldDef {
      * 「作用于内容盒」）；缺省 = 无
      */
     readonly title?: string
+    /**
+     * 行级动态可见提示（placeholder-padding-hint 工单 02）：按选中层与内核资源态
+     * 切片求值，非 null 时在行下渲染可见提示行——占位态图片层的 padding 语义
+     * （工单 01 悬停 title 的可见性补强面）。纯函数（与内核判定同源），仅图层级
+     * 目标求值；缺省 = 无。文案常量 UNDRAWN_CONTENT_HINT 供测试同源断言。
+     */
+    readonly hint?: (layer: Layer, statuses: ResourceStatusMap) => string | null
     /** 非空校验（text 控件）：空提交被控件拦截并标错、不落库（spec §2.4 P4） */
     readonly nonEmpty?: boolean
     /** select 取值域（领域常量原样引用，不自创缩写） */
@@ -107,6 +116,13 @@ export interface FieldSection {
 }
 
 // ---- 公共字段组（各 type 共享一份描述） ----
+
+/**
+ * 占位态图片层的 padding 行提示文案（placeholder-padding-hint 工单 02，工单
+ * 原文全角逗号）：三种占位态（表达式标记/物化未达 done/内容盒 ≤0）命中即渲染。
+ * 导出供消费方与测试同源断言，避免文案字面漂移。
+ */
+export const UNDRAWN_CONTENT_HINT = '当前层内容未绘制，padding 不影响预览'
 
 /**
  * 位置与尺寸（layer-panel-ux 工票 03）：X|Y、宽|高两条两列语义行；宽/高列带
@@ -186,8 +202,16 @@ const SHAPE_SECTION: FieldSection = {
         },
         // padding 语义预期差（placeholder-padding-hint 工单 01）：全型通用静态
         // 文案挂 label title——padding 只内缩内容盒，图层盒（背景/边框/gizmo
-        // 选框/状态栏尺寸读数）恒为声明尺寸（排查记录 canvas-web/layer-padding-research.md 根因 2）
-        { key: ['shape', 'padding'], label: '内边距', control: 'padding', title: '内边距作用于内容盒，不改变图层尺寸' },
+        // 选框/状态栏尺寸读数）恒为声明尺寸（排查记录 canvas-web/layer-padding-research.md 根因 2）；
+        // 工单 02 补动态可见提示——占位态图片层内容未绘制，padding 与像素无关
+        // （判定在内核 isImageContentUndrawn，物化态经 ui 切片注入）
+        {
+            key: ['shape', 'padding'],
+            label: '内边距',
+            control: 'padding',
+            title: '内边距作用于内容盒，不改变图层尺寸',
+            hint: (layer, statuses) => (isImageContentUndrawn(layer, statuses) ? UNDRAWN_CONTENT_HINT : null),
+        },
         { key: ['shape', 'border'], label: '边框', control: 'border' },
     ],
 }

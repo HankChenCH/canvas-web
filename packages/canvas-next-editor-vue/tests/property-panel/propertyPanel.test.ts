@@ -6,7 +6,7 @@
  * - 提交链路：控件事件 → commit → 内核 action → mergeKey 合步
  */
 import { describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { mount, type DOMWrapper } from '@vue/test-utils'
 
 import { EditorSession, type FrameScheduler, type Layer } from '@hankchen/canvas-next-editor'
 
@@ -15,7 +15,7 @@ import PropertyField from '../../src/property-panel/PropertyField.vue'
 import PropertyPanel from '../../src/property-panel/PropertyPanel.vue'
 import NumberField from '../../src/property-panel/fields/NumberField.vue'
 import { controlRegistry } from '../../src/property-panel/controls'
-import type { FieldDef } from '../../src/property-panel/fieldSchema'
+import { UNDRAWN_CONTENT_HINT, type FieldDef } from '../../src/property-panel/fieldSchema'
 
 const nullScheduler: FrameScheduler = () => () => {}
 
@@ -753,6 +753,83 @@ describe('形状：内边距/边框简写控件（layer-panel-ux 工单 04）', 
             right: side(3, '#000000'),
         })
         expect(editor.store.history).toHaveLength(1)
+        wrapper.unmount()
+    })
+})
+
+describe('padding 行动态提示（placeholder-padding-hint 工单 02：占位态内容未绘制）', () => {
+    // 文案同源断言：直接引 schema 导出常量，字面漂移即编译错（工单 01 测试文案收 const 同款）
+    const UNDRAWN_HINT = UNDRAWN_CONTENT_HINT
+    const imageLayer = (overrides: Record<string, unknown> = {}): Layer =>
+        // expression 恒在场（decode 域形态，缺省字面态）——占位态判定的标记维度依赖它
+        ({ ...textLayer(), type: 'ImageLayer', src: 'assets/logo.png', expression: null, ...overrides } as Layer)
+    const paddingRow = (wrapper: { findAll: (selector: string) => DOMWrapper<Element>[] }) =>
+        wrapper.findAll('.cn-prop-field').find((r) => r.find('.cn-padding').exists())!
+    async function mountWithLayers(layers: readonly Layer[]) {
+        const editor = makeEditor(layers)
+        const wrapper = mount(PropertyPanel, { props: { editor } })
+        editor.setSelection(['layers', 0])
+        await wrapper.vm.$nextTick()
+        return { editor, wrapper }
+    }
+
+    it('PropertyField：hint 属性渲染可见提示行，缺省不渲染（title 悬停面的可见性补强）', () => {
+        const field: FieldDef = {
+            key: ['shape', 'padding'],
+            label: '内边距',
+            control: 'padding',
+            title: PADDING_COPY,
+        }
+        const hinted = mount(PropertyField, {
+            props: { field, value: { top: 0, bottom: 0, left: 0, right: 0 }, hint: UNDRAWN_HINT },
+        })
+        const hintEl = hinted.find('.cn-prop-field__hint')
+        expect(hintEl.exists()).toBe(true)
+        expect(hintEl.text()).toBe(UNDRAWN_HINT)
+        hinted.unmount()
+
+        const bare = mount(PropertyField, {
+            props: { field, value: { top: 0, bottom: 0, left: 0, right: 0 } },
+        })
+        expect(bare.find('.cn-prop-field__hint').exists()).toBe(false)
+        bare.unmount()
+    })
+
+    it('占位态图片层（表达式标记）的 padding 行渲染提示行：schema hint 驱动，非组件硬编码', async () => {
+        const { wrapper } = await mountWithLayers([
+            imageLayer({ src: '{{org.logo}}', expression: '{{org.logo}}' }),
+        ])
+        const row = paddingRow(wrapper)
+        expect(row.find('.cn-prop-field__hint').text()).toBe(UNDRAWN_HINT)
+        // 静态文案 title 同行仍在（工单 01 语义与工单 02 提示并存）
+        expect(row.find('.cn-prop-field__label').attributes('title')).toBe(PADDING_COPY)
+        wrapper.unmount()
+    })
+
+    it('静态可加载图片层不提示；物化态经 ui 切片注入联动（pending → 提示出现，done → 消失）', async () => {
+        const { editor, wrapper } = await mountWithLayers([imageLayer()])
+        const hint = () => paddingRow(wrapper).find('.cn-prop-field__hint')
+
+        editor.store.setResourceStatuses({ 'assets/logo.png': 'done' })
+        await wrapper.vm.$nextTick()
+        expect(hint().exists()).toBe(false)
+
+        editor.store.setResourceStatuses({ 'assets/logo.png': 'pending' })
+        await wrapper.vm.$nextTick()
+        expect(hint().text()).toBe(UNDRAWN_HINT)
+
+        editor.store.setResourceStatuses({})
+        await wrapper.vm.$nextTick()
+        expect(hint().exists()).toBe(false)
+        wrapper.unmount()
+    })
+
+    it('提示不进历史、不写 graph（ui 分支红线）：注入物化态零 undo 步', async () => {
+        const { editor, wrapper } = await mountWithLayers([imageLayer({ src: null })])
+        editor.store.setResourceStatuses({ 'assets/logo.png': 'failed' })
+        await wrapper.vm.$nextTick()
+        expect(paddingRow(wrapper).find('.cn-prop-field__hint').text()).toBe(UNDRAWN_HINT)
+        expect(editor.store.history).toHaveLength(0)
         wrapper.unmount()
     })
 })

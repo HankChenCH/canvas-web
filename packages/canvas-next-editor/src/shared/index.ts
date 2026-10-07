@@ -75,3 +75,8 @@ export {
     type MemoTextPoliciesOptions,
 } from './textPoliciesMemo'
 
+export {
+    isImageContentUndrawn,
+    type ResourceStatus,
+    type ResourceStatusMap,
+} from './resourceStatus'

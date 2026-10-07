@@ -132,6 +132,48 @@ describe('ui 分支：参考线/标尺/命中吸附轴（ruler-guides-snap 工�
     })
 })
 
+describe('ui 分支：resourceStatuses（placeholder-padding-hint 工单 02：物化状态进 ui 分支，红线 3 延伸）', () => {
+    it('setResourceStatuses 整体替换并按 branch 通知', () => {
+        const store = new EditorStore()
+        const changes: EditorChange[] = []
+        store.subscribe((c) => changes.push(c))
+
+        const statuses = { 'assets/logo.png': 'pending' } as const
+        store.setResourceStatuses(statuses)
+        expect(store.ui.resourceStatuses).toBe(statuses)
+        expect(changes).toEqual([{ scope: 'ui', branch: 'resourceStatuses' }])
+    })
+
+    it('内容等短路：同态新引用不通知（物化桥接高频整体替换不惊动订阅方）', () => {
+        const store = new EditorStore()
+        const listener = vi.fn()
+        store.subscribe(listener)
+
+        store.setResourceStatuses({ 'a.png': 'pending', 'b.png': 'done' })
+        store.setResourceStatuses({ 'b.png': 'done', 'a.png': 'pending' }) // 键序不同、内容等
+        expect(listener).toHaveBeenCalledTimes(1)
+
+        store.setResourceStatuses({ 'a.png': 'done', 'b.png': 'done' })
+        expect(listener).toHaveBeenCalledTimes(2)
+    })
+
+    it('不写 graph、不进历史：doc 引用与 undo 栈零变化（红线 3 延伸）', () => {
+        const store = new EditorStore()
+        const document = doc()
+        store.openDocument(document)
+        store.setResourceStatuses({ 'a.png': 'failed' })
+        expect(store.doc).toBe(document)
+        expect(store.history).toHaveLength(0)
+    })
+
+    it('openDocument 换文档重置（资源态描述当次文档，跨文档旧 src 条目无意义）', () => {
+        const store = new EditorStore()
+        store.setResourceStatuses({ 'a.png': 'failed' })
+        store.openDocument(doc())
+        expect(store.ui.resourceStatuses).toEqual({})
+    })
+})
+
 describe('订阅', () => {
     it('退订后不再通知', () => {
         const store = new EditorStore()

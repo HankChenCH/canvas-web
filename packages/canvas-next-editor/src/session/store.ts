@@ -20,6 +20,7 @@ import type { Guide, SnapAxis } from '../spatial/snap'
 import type { ResizeHandle } from '../spatial/resize'
 import { pathsEqual, type LayerPath } from '../shared/layerPath'
 import type { ExpressionSchemaNode } from '../shared/expressionSchema'
+import type { ResourceStatusMap } from '../shared/resourceStatus'
 
 enablePatches()
 // 关闭 immer 自动冻结：文档树以「不可变 + 结构共享」语义流转（引用相等即未变），
@@ -194,6 +195,14 @@ export interface EditorUi {
      * listFindMatches 查询口），overlay 高亮与查找条计数同源消费。
      */
     find: FindSession
+    /**
+     * 资源物化状态切片（placeholder-padding-hint 工单 02）：key = 图片 src 原串、
+     * value = 物化三态，宿主从渲染端物化状态机桥接注入（整体替换，散列键反解在
+     * 宿主桥）。占位态判定的物化维度事实源——只住会话态：不进历史、不写 graph、
+     * wire 零键（红线 3 延伸，物化状态机切片的 ui 分支落点）；openDocument 换
+     * 文档重置（资源态描述当次文档，跨文档旧 src 条目无意义）。
+     */
+    resourceStatuses: ResourceStatusMap
 }
 
 /** 一步历史：一次（或同键合并的多次）文档事务的正向/逆向 patch 组 */
@@ -250,6 +259,17 @@ function lockedPathsEqual(a: readonly LayerPath[], b: readonly LayerPath[]): boo
     return true
 }
 
+/** 资源物化状态内容等（逐键值等，宿主桥整体替换的短路比较——键序无关） */
+function resourceStatusesEqual(a: ResourceStatusMap, b: ResourceStatusMap): boolean {
+    if (a === b) return true
+    const aKeys = Object.keys(a)
+    if (aKeys.length !== Object.keys(b).length) return false
+    for (const key of aKeys) {
+        if (a[key] !== b[key]) return false
+    }
+    return true
+}
+
 export class EditorStore {
     private docValue: Canvas | null = null
     private uiValue: EditorUi = {
@@ -269,6 +289,7 @@ export class EditorStore {
         snapAxes: [],
         lockedPaths: [],
         find: initialFindSession(),
+        resourceStatuses: {},
     }
     /** undo 栈：已提交步，栈尾最新 */
     private undoSteps: HistoryStep[] = []
@@ -318,6 +339,7 @@ export class EditorStore {
             snapAxes: [],
             lockedPaths: [],
             find: initialFindSession(),
+            resourceStatuses: {},
         }
         this.notify({ scope: 'doc', patches: [], inversePatches: [] })
     }
@@ -507,6 +529,17 @@ export class EditorStore {
         }
         this.uiValue = { ...this.uiValue, find }
         this.notify({ scope: 'ui', branch: 'find' })
+    }
+
+    /**
+     * 资源物化状态替换（placeholder-padding-hint 工单 02）：宿主从渲染端物化状态机
+     * 桥接注入的唯一写入口，整体替换语义；内容等短路（同态快照不惊动订阅方，
+     * 桥接的高频整体替换零噪声）。仅 ui 通知，不参与历史、不写 graph（红线 3 延伸）。
+     */
+    setResourceStatuses(statuses: ResourceStatusMap): void {
+        if (resourceStatusesEqual(this.uiValue.resourceStatuses, statuses)) return
+        this.uiValue = { ...this.uiValue, resourceStatuses: statuses }
+        this.notify({ scope: 'ui', branch: 'resourceStatuses' })
     }
 
     subscribe(listener: Listener): () => void {

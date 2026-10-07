@@ -2356,6 +2356,9 @@ export class EditorSession {
         else if (change.branch === 'viewport') this.invalidate('both')
         // 编辑会话开始/结束切换内容层的文本跳绘（textarea 接管该层呈现），双层都要重绘
         else if (change.branch === 'editing') this.invalidate('both')
+        // 资源物化状态（placeholder-padding-hint 工单 02）：装载落定伴随内容像素
+        // 变化（完成出图/失败占位），提示面在绑定层读 ui 切片——双层重绘
+        else if (change.branch === 'resourceStatuses') this.invalidate('both')
         // schema 声明不触达像素（候选消费在绑定层补全面），不参与重绘脏标
         else if (change.branch === 'dataSourceSchema') return
         // 选择/悬停/拖动会话/重命名/锁定集合/查找会话（命中高亮随 query/游标变）

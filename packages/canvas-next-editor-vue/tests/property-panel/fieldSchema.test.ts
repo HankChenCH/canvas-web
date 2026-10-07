@@ -14,6 +14,7 @@ import {
 import {
     CANVAS_FIELD_SECTIONS,
     FIELD_SECTIONS_BY_TYPE,
+    UNDRAWN_CONTENT_HINT,
     fieldSectionsForPath,
     fieldSectionsForType,
     layerRoleAt,
@@ -454,5 +455,53 @@ describe('fieldSectionsForPath：模板态（模板创作 spec）', () => {
             }
         }
         expect(marked).toEqual(['rowsPath'])
+    })
+})
+
+describe('padding 行动态提示（placeholder-padding-hint 工单 02：占位态内容未绘制）', () => {
+    // 文案同源断言：直接引 schema 导出常量，字面漂移即编译错（工单 01 测试文案收 const 同款）
+    const UNDRAWN_HINT = UNDRAWN_CONTENT_HINT
+    const paddingRow = (type: LayerType): FieldDef =>
+        flatFields(fieldSectionsForPath(['layers', 0], layerByType(type))).find(
+            (f) => f.key.join('.') === 'shape.padding',
+        )!
+
+    it('占位态三态命中：表达式标记/物化未达 done/内容盒 ≤0 的图片层返回提示文案', () => {
+        const hint = paddingRow('ImageLayer').hint!
+        const statuses = { 'assets/logo.png': 'pending' } as const
+        // ① 表达式标记（设计态最常见，demo 的 {{org.logo}}；文档 src 恒镜像原文）
+        expect(hint({ ...layerByType('ImageLayer'), src: '{{org.logo}}', expression: '{{org.logo}}' } as Layer, statuses)).toBe(UNDRAWN_HINT)
+        // ② 物化 pending/failed（静态引用在册但未达 done）
+        const staticLayer = { ...layerByType('ImageLayer'), src: 'assets/logo.png' } as Layer
+        expect(hint(staticLayer, statuses)).toBe(UNDRAWN_HINT)
+        expect(hint(staticLayer, { 'assets/logo.png': 'failed' })).toBe(UNDRAWN_HINT)
+        // ③ 内容盒 ≤0（解码清零的自适应声明尺寸）
+        const auto = layerByType('ImageLayer')
+        ;(auto.shape as { width: number }).width = 0
+        expect(hint(auto, { 'assets/logo.png': 'done' })).toBe(UNDRAWN_HINT)
+    })
+
+    it('静态可加载图片层与文本层不提示（done/无记录求值 null）——验收反例', () => {
+        const hint = paddingRow('ImageLayer').hint!
+        const staticLayer = { ...layerByType('ImageLayer'), src: 'assets/logo.png' } as Layer
+        expect(hint(staticLayer, { 'assets/logo.png': 'done' })).toBeNull()
+        expect(hint(staticLayer, {})).toBeNull()
+        // hint 谓词对非图片层恒 null（内核判定面只属于图片层）
+        expect(hint(layerByType('TextLayer'), {})).toBeNull()
+    })
+
+    it('hint 不扩散：全注册表仅 shape.padding 一处携带（含 pair 子字段；共享 section 按 key 去重）', () => {
+        const hinted = new Set<string>()
+        for (const sections of Object.values(FIELD_SECTIONS_BY_TYPE)) {
+            for (const section of sections) {
+                for (const field of section.fields) {
+                    if (field.hint !== undefined) hinted.add(field.key.join('.'))
+                    for (const item of field.items ?? []) {
+                        if (item.hint !== undefined) hinted.add(`${field.key.join('.')}.${item.key.join('.')}`)
+                    }
+                }
+            }
+        }
+        expect([...hinted]).toEqual(['shape.padding'])
     })
 })

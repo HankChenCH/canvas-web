@@ -60,6 +60,11 @@ const props = defineProps<{
     completion?: CompletionSource | null
     /** pair 子字段的禁用态替代显示（键 = 子字段绝对键）；其他控件不传 */
     displays?: Record<string, FieldDisplay>
+    /**
+     * 行级动态可见提示（placeholder-padding-hint 工单 02）：面板按 schema hint
+     * 谓词求值下发（占位态图片层的 padding 行）；undefined = 无提示行。
+     */
+    hint?: string
 }>()
 
 const emit = defineEmits<{
@@ -185,6 +190,13 @@ function relaySubCommit(field: FieldDef, value: unknown, final: boolean): void {
             @change="emit('change', $event)"
             @sub-commit="relaySubCommit"
         />
+        <!-- 行级动态可见提示（placeholder-padding-hint 工单 02）：跨两列落控件行
+             下方，弱提示视觉（muted 小字）；span 块级化——行根对单控件是 label，
+             phrasing content 才合法 -->
+        <span
+            v-if="hint"
+            class="cn-prop-field__hint col-span-2 block text-[11px] leading-4 text-cn-muted"
+        >{{ hint }}</span>
     </component>
     <!-- 补全浮层（工单 04/05/03）：portal 到 body，仅接线字段渲染——按门选呈现
          态（表达式门 = useExpressionCompletion，标记门 = usePathCompletion，互斥

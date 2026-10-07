@@ -22,6 +22,7 @@ import {
     type Layer,
     type LayerBox,
     type LayerPath,
+    type ResourceStatusMap,
 } from '@hankchen/canvas-next-editor'
 
 import {
@@ -69,6 +70,11 @@ export interface PropertyPanelBinding {
     readonly rowsPathSource: ComputedRef<CompletionSource | null>
     /** 锚点折叠区开合（store ui 分支投影，会话内记忆；工票 03） */
     readonly anchorExpanded: ComputedRef<boolean>
+    /**
+     * 资源物化状态切片（placeholder-padding-hint 工单 02，store ui 分支投影）：
+     * 宿主从渲染端物化状态机桥接注入，padding 行占位态动态提示的物化维度事实源。
+     */
+    readonly resourceStatuses: ComputedRef<ResourceStatusMap>
     /** 面板唯一提交口：final = 收口提交（change/blur），否则按 mergeKey 合并累积 */
     commit(field: FieldDef, value: unknown, final: boolean): void
     /**
@@ -87,6 +93,8 @@ export function usePropertyPanel(editor: EditorSession): PropertyPanelBinding {
     const anchorExpanded = shallowRef(editor.store.ui.anchorExpanded)
     /** 数据源 schema 声明（工单 03 注入缝，会话态）：补全候选源的唯一来源 */
     const dataSourceSchema = shallowRef(editor.store.ui.dataSourceSchema)
+    /** 资源物化状态切片（工单 02 注入缝，会话态）：padding 行占位态提示的物化维度 */
+    const resourceStatuses = shallowRef<ResourceStatusMap>(editor.store.ui.resourceStatuses)
 
     const unsubscribe = editor.subscribe((change) => {
         if (change.scope === 'doc') {
@@ -95,6 +103,8 @@ export function usePropertyPanel(editor: EditorSession): PropertyPanelBinding {
             // 镜像在此重读（useSelection 同门），否则换文档后旧路径解到新文档同下标的
             // 层上，面板给已不被选中的层继续显示表单（工单 03 目验同族第三处收口）
             selection.value = editor.store.ui.selection
+            // resourceStatuses 同被 openDocument 重置：doc 通知一并重读（契约注记同门）
+            resourceStatuses.value = editor.store.ui.resourceStatuses
         } else if (change.scope === 'ui') {
             if (change.branch === 'selection') {
                 selection.value = editor.store.ui.selection
@@ -105,6 +115,8 @@ export function usePropertyPanel(editor: EditorSession): PropertyPanelBinding {
                 anchorExpanded.value = editor.store.ui.anchorExpanded
             } else if (change.branch === 'dataSourceSchema') {
                 dataSourceSchema.value = editor.store.ui.dataSourceSchema
+            } else if (change.branch === 'resourceStatuses') {
+                resourceStatuses.value = editor.store.ui.resourceStatuses
             }
         }
     })
@@ -231,6 +243,7 @@ export function usePropertyPanel(editor: EditorSession): PropertyPanelBinding {
         isPreviewBox,
         completionSource,
         rowsPathSource,
+        resourceStatuses: computed(() => resourceStatuses.value),
         anchorExpanded: computed(() => anchorExpanded.value),
         commit,
         toggleDataMode,

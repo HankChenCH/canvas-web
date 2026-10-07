@@ -44,6 +44,11 @@ interface RenderField {
     value: unknown
     /** 数据字段取值方式（静态值/表达式）；undefined = 非 data 字段 */
     dataMode?: 'static' | 'expression'
+    /**
+     * 行级动态可见提示（placeholder-padding-hint 工单 02）：schema hint 谓词按
+     * 选中层与资源态切片求值的产物；undefined = 无提示（谓词缺省/求值 null）。
+     */
+    hint?: string
 }
 
 interface RenderSection {
@@ -71,6 +76,9 @@ const visibleSections = computed<readonly RenderSection[]>(() => {
     const target = panel.layer.value ?? (panel.selection.value ? null : panel.canvas.value)
     if (!target) return []
     const scope = panel.selection.value?.join('.') ?? 'canvas'
+    // 行级动态提示只对图层级目标求值（谓词签名收图层；画布级无 hint 面）
+    const hintTarget = panel.layer.value
+    const statuses = panel.resourceStatuses.value
     const result: RenderSection[] = []
     for (const section of panel.sections.value) {
         const fields: RenderField[] = []
@@ -83,6 +91,7 @@ const visibleSections = computed<readonly RenderSection[]>(() => {
                 field,
                 value: read.value,
                 dataMode: field.data ? readDataMode(target) : undefined,
+                hint: field.hint && hintTarget ? (field.hint(hintTarget, statuses) ?? undefined) : undefined,
             })
         }
         if (fields.length > 0) result.push({ title: section.title, fields })
@@ -176,6 +185,7 @@ function toggleAnchorExpanded(): void {
                         :field="item.field"
                         :value="item.value"
                         :data-mode="item.dataMode"
+                        :hint="item.hint"
                         :completion="fieldCompletionSource(item.field)"
                         :displays="pairDisplays"
                         @input="panel.commit(item.field, $event, false)"

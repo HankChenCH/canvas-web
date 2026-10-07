@@ -1,4 +1,7 @@
 <script setup lang="ts">
+// placeholder-padding-hint 工单 02：资源物化状态桥接——物化状态机散列键切片按
+// src 反解进内核 store ui 分支（syncResourceStatuses，物化订阅 + doc 订阅双口
+// 回填），属性面板对占位态图片层的 padding 行渲染「内容未绘制」动态提示。
 // 工单 14 目验：剪贴板（Ctrl/Cmd+C/V/D 与右键「创建副本」）、快捷键注册表
 // （useShortcuts 统一接键盘：让路规则见内核 classifyEditorShortcut）、右键菜单
 // （删除/副本/置顶/置底）、状态栏（缩放/选中路径/物化进行数；工单 01 起状态栏
@@ -61,6 +64,7 @@ import {
     canvasFontCssFamily,
     drawResourceMarkers,
     exportPreviewPng,
+    imageResourceKey,
 } from '@hankchen/canvas-next-browser-renderer'
 import type { ResourceState } from '@hankchen/canvas-next-browser-renderer'
 import {
@@ -77,6 +81,7 @@ import type {
     ExpressionSchemaDiagnostic,
     FontCatalogEntry,
     LayerType,
+    ResourceStatus,
     UploadFile,
 } from '@hankchen/canvas-next-editor'
 import {
@@ -111,7 +116,7 @@ import {
     Ruler,
 } from '@hankchen/canvas-next-editor-vue'
 import type { OverlayPainter } from '@hankchen/canvas-next-editor'
-import { createMeasureTextMeasurerFactory, decodeGraph, encodeGraph } from '@hankchen/canvas-next'
+import { createMeasureTextMeasurerFactory, decodeGraph, encodeGraph, forEachLayerBox } from '@hankchen/canvas-next'
 
 import { DEMO_GRAPH_JSON } from './demoGraph'
 // 桌面网格底纹（原型）：内容层 begin 后垫网格线（只画纸面外桌面），区分纸面与
@@ -475,6 +480,27 @@ function assetsStatus(state: ResourceState, pendingCount: number): string {
     return '资源就绪，已渲染'
 }
 
+/**
+ * 资源物化状态桥接（placeholder-padding-hint 工单 02）：物化状态机的散列键切片
+ * 反解为 src 键状态进内核 store ui 分支——属性面板占位态提示（「当前层内容未绘制，
+ * padding 不影响预览」）的物化维度事实源。散列键反解在宿主桥完成（内核零散列
+ * 依赖）；内容等短路在 setter 内收口，桥接整体替换零噪声。只读 doc + 物化切片，
+ * ui 分支写入不进历史、不写 graph（红线 3 延伸）。
+ */
+function syncResourceStatuses(): void {
+    const doc = editor.store.doc
+    const state = materializer?.state
+    const statuses: Record<string, ResourceStatus> = {}
+    if (doc && state) {
+        forEachLayerBox(doc, (layer) => {
+            if (layer.type !== 'ImageLayer' || layer.src === null) return
+            const entry = state[imageResourceKey(layer.src)]
+            if (entry) statuses[layer.src] = entry.status
+        })
+    }
+    editor.store.setResourceStatuses(statuses)
+}
+
 // ---- 保存 / 打开（工单 13）：保存时机归宿主，core 只经 doc 订阅给变更信号 ----
 
 /** 打开/保存的基线快照（canonical encode JSON）；文档 JSON 与它不同即「未保存」 */
@@ -663,6 +689,8 @@ function onReady({ contentCanvas, overlayCanvas }: CanvasSurfaceReady) {
     unsubscribeAssets = materializer.subscribe(() => {
         assetsNote.value = assetsStatus(materializer!.state, materializer!.pendingCount)
         pendingCount.value = materializer!.pendingCount
+        // 资源态桥接进内核 ui 分支（工单 02）：面板占位态提示随物化落定联动
+        syncResourceStatuses()
         // 双层都脏：内容层补绘新就绪资源，覆盖层的占位/失败标识随之消失或变色——
         // 标识画在覆盖层，只脏内容层会留灰叉残影（工单 15 修正）
         editor.invalidate('both')
@@ -674,6 +702,8 @@ function onReady({ contentCanvas, overlayCanvas }: CanvasSurfaceReady) {
         if (change.scope !== 'doc') return
         const doc = editor.store.doc
         if (doc) materializer?.materialize(doc)
+        // 换文档/增删层后按当前文档重解资源态（openDocument 重置 ui 切片后即刻回填）
+        syncResourceStatuses()
         syncDirty()
     })
 
