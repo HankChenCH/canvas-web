@@ -80,6 +80,12 @@ export interface FieldDef {
     readonly completion?: 'rowsPath'
     /** 输入框占位文案（text 控件透传） */
     readonly placeholder?: string
+    /**
+     * 标签悬停提示（原生 title 属性，placeholder-padding-hint 工单 01）：标签列
+     * 定宽截断不占版面，语义预期差类静态文案挂这里（首个消费方 = padding 行
+     * 「作用于内容盒」）；缺省 = 无
+     */
+    readonly title?: string
     /** 非空校验（text 控件）：空提交被控件拦截并标错、不落库（spec §2.4 P4） */
     readonly nonEmpty?: boolean
     /** select 取值域（领域常量原样引用，不自创缩写） */
@@ -178,7 +184,10 @@ const SHAPE_SECTION: FieldSection = {
             min: 0,
             visibleWhen: (layer) => layer.type === 'TextLayer',
         },
-        { key: ['shape', 'padding'], label: '内边距', control: 'padding' },
+        // padding 语义预期差（placeholder-padding-hint 工单 01）：全型通用静态
+        // 文案挂 label title——padding 只内缩内容盒，图层盒（背景/边框/gizmo
+        // 选框/状态栏尺寸读数）恒为声明尺寸（排查记录 canvas-web/layer-padding-research.md 根因 2）
+        { key: ['shape', 'padding'], label: '内边距', control: 'padding', title: '内边距作用于内容盒，不改变图层尺寸' },
         { key: ['shape', 'border'], label: '边框', control: 'border' },
     ],
 }

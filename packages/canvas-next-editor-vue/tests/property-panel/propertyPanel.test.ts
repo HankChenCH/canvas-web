@@ -19,6 +19,9 @@ import type { FieldDef } from '../../src/property-panel/fieldSchema'
 
 const nullScheduler: FrameScheduler = () => () => {}
 
+/** padding 行静态文案（placeholder-padding-hint 工单 01，与 fieldSchema.test 同源字面） */
+const PADDING_COPY = '内边距作用于内容盒，不改变图层尺寸'
+
 function makeEditor(layers: readonly Layer[]): EditorSession {
     const editor = new EditorSession({ scheduleFrame: nullScheduler })
     editor.openDocument({ width: 800, height: 600, layers })
@@ -126,6 +129,29 @@ describe('PropertyField：行解剖布局（面板布局优化：标签列定宽
         expect(wrapper.find('.cn-valuetype').exists()).toBe(true)
         // 第二行：输入控件跨标签列 + 控件列（撑满面板宽）
         expect(wrapper.find('textarea').classes()).toContain('col-span-2')
+    })
+
+    it('字段级悬停提示：FieldDef.title 落标签 title 属性（placeholder-padding-hint 工单 01），缺省不渲染', () => {
+        const withTitle: FieldDef = {
+            key: ['shape', 'padding'],
+            label: '内边距',
+            control: 'padding',
+            title: PADDING_COPY,
+        }
+        const titled = mount(PropertyField, {
+            props: { field: withTitle, value: { top: 0, bottom: 0, left: 0, right: 0 } },
+        })
+        expect(titled.find('.cn-prop-field__label').attributes('title')).toBe(PADDING_COPY)
+        titled.unmount()
+
+        const bare = mount(PropertyField, {
+            props: {
+                field: { key: ['position', 'x'], label: 'X', control: 'number', integer: true } satisfies FieldDef,
+                value: 7,
+            },
+        })
+        expect(bare.find('.cn-prop-field__label').attributes('title')).toBeUndefined()
+        bare.unmount()
     })
 })
 
@@ -623,6 +649,15 @@ describe('形状：内边距/边框简写控件（layer-panel-ux 工单 04）', 
         editor.setSelection(['layers', 1])
         await wrapper.vm.$nextTick()
         expect(wrapper.find('.cn-padding').findAll('input[type="number"]')).toHaveLength(2)
+        wrapper.unmount()
+    })
+
+    it('padding 行标签带内容盒语义悬停文案（placeholder-padding-hint 工单 01：schema 驱动，非组件硬编码）', async () => {
+        const { wrapper } = await mountWithLayers([textLayer()])
+        const row = wrapper.findAll('.cn-prop-field').find((r) => r.find('.cn-padding').exists())!
+        const label = row.find('.cn-prop-field__label')
+        expect(label.text()).toBe('内边距')
+        expect(label.attributes('title')).toBe(PADDING_COPY)
         wrapper.unmount()
     })
 

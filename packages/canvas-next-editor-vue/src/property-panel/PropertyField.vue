@@ -153,10 +153,13 @@ function relaySubCommit(field: FieldDef, value: unknown, final: boolean): void {
         :class="rowClass"
     >
         <!-- pair 列自描述（X/Y/宽/高），行级标签不复述（消除「尺寸 尺寸」双 label）；
-             数据字段行标签占 r1c1，取值方式分段占 r1c2（右端对齐） -->
+             数据字段行标签占 r1c1，取值方式分段占 r1c2（右端对齐）；title 属性透传
+             FieldDef.title（字段级悬停提示，placeholder-padding-hint 工单 01——pair
+             行无行级标签，v-if 门下天然不涉及） -->
         <span
             v-if="field.control !== 'pair'"
             class="cn-prop-field__label shrink-0 select-none truncate text-[11px] leading-none text-cn-muted"
+            :title="field.title"
         >
             {{ field.label }}
         </span>

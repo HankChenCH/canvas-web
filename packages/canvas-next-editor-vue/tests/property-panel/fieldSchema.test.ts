@@ -313,6 +313,41 @@ describe('容器角色的权威过滤（解码强同步字段不渲染：改了�
     })
 })
 
+describe('padding 行静态文案（placeholder-padding-hint 工单 01：作用于内容盒、不改图层尺寸）', () => {
+    const PADDING_COPY = '内边距作用于内容盒，不改变图层尺寸'
+
+    it('有 padding 行的全部图层型该行 title 携带静态文案，可见 label 不动（文案走悬停 title）', () => {
+        for (const type of LAYER_TYPES) {
+            const field = flatFields(fieldSectionsForPath(['layers', 0], layerByType(type))).find(
+                (f) => f.key.join('.') === 'shape.padding',
+            )
+            // 行模板替身无形状组（只有高/高自适应），padding 行本就不在场
+            if (type === 'TableRowTemplate') {
+                expect(field, type).toBeUndefined()
+                continue
+            }
+            expect(field, type).toBeDefined()
+            expect(field!.label, type).toBe('内边距')
+            expect(field!.title, type).toBe(PADDING_COPY)
+        }
+    })
+
+    it('title 不扩散：全注册表仅 shape.padding 一处携带（含 pair 子字段；共享 section 按 key 去重）', () => {
+        const titled = new Set<string>()
+        for (const sections of Object.values(FIELD_SECTIONS_BY_TYPE)) {
+            for (const section of sections) {
+                for (const field of section.fields) {
+                    if (field.title !== undefined) titled.add(field.key.join('.'))
+                    for (const item of field.items ?? []) {
+                        if (item.title !== undefined) titled.add(`${field.key.join('.')}.${item.key.join('.')}`)
+                    }
+                }
+            }
+        }
+        expect([...titled]).toEqual(['shape.padding'])
+    })
+})
+
 describe('readField：字段值读取（未知路径不渲染、不告警的面板侧依据）', () => {
     it('深层路径命中返回值', () => {
         const layer = layerByType('TextLayer')
