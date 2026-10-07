@@ -7,60 +7,60 @@
  * editor → editor-vue 违规，抓不到即脚本失败。
  *
  * 依赖方向（spec「仓库与边界」）：
- *   editor-vue → editor → { canvas-next, browser-renderer }
- *   browser-renderer → canvas-next
+ *   editor-vue → editor → { canvas, browser-renderer }
+ *   browser-renderer → canvas
  *
  * @type {import('dependency-cruiser').IConfiguration}
  */
 module.exports = {
     forbidden: [
         {
-            name: 'canvas-next-no-deps',
+            name: 'canvas-no-deps',
             comment: '红线：文档模型零运行时依赖——不得 import 任何 npm 包或其它 workspace 包（spec「文档模型与契约面」；测试文件不在约束内，可用 vitest）',
             severity: 'error',
-            from: { path: '^packages/canvas-next/src/' },
+            from: { path: '^packages/canvas/src/' },
             to: {
-                path: ['^(packages/(canvas-next-browser-renderer|canvas-next-editor|canvas-next-editor-vue)/|playground/|node_modules/)'],
-                pathNot: ['^packages/canvas-next/'],
+                path: ['^(packages/(canvas-browser-renderer|canvas-editor|canvas-editor-vue)/|playground/|node_modules/)'],
+                pathNot: ['^packages/canvas/'],
             },
         },
         {
             name: 'core-no-vue',
             comment: '红线：文档模型/渲染后端/内核不得依赖 Vue——框架绑定只允许出现在 editor-vue 与 playground',
             severity: 'error',
-            from: { path: '^packages/(canvas-next|canvas-next-browser-renderer|canvas-next-editor)/src/' },
+            from: { path: '^packages/(canvas|canvas-browser-renderer|canvas-editor)/src/' },
             to: { path: 'node_modules/(vue/|@vue/)' },
         },
         {
-            name: 'renderer-only-depends-on-canvas-next',
-            comment: '红线：browser-renderer 只许向下依赖 canvas-next，不得依赖 editor/editor-vue/playground',
+            name: 'renderer-only-depends-on-canvas',
+            comment: '红线：browser-renderer 只许向下依赖 canvas，不得依赖 editor/editor-vue/playground',
             severity: 'error',
-            from: { path: '^packages/canvas-next-browser-renderer/src/' },
-            to: { path: '^(packages/(canvas-next-editor|canvas-next-editor-vue)/|playground/)' },
+            from: { path: '^packages/canvas-browser-renderer/src/' },
+            to: { path: '^(packages/(canvas-editor|canvas-editor-vue)/|playground/)' },
         },
         {
             name: 'editor-immer-only-npm-deps',
-            comment: '红线：内核运行时仅依赖 immer（spec「Solution」）；包间方向由各包自己的规则约束',
+            comment: '红线：内核 npm 运行时依赖仅 immer + 核心契约包 @hankchen/canvas（经 npm 接入）；包间方向由各包自己的规则约束',
             severity: 'error',
-            from: { path: '^packages/canvas-next-editor/src/' },
+            from: { path: '^packages/canvas-editor/src/' },
             to: {
                 path: 'node_modules/',
-                pathNot: ['node_modules/\\.pnpm/immer@'],
+                pathNot: ['node_modules/\\.pnpm/(immer@|@hankchen\\+canvas@)'],
             },
         },
         {
             name: 'editor-no-binding-layer',
             comment: '红线：headless 内核不依赖任何 UI 绑定层与壳（editor-vue/playground）；金丝雀自验脚本用的就是这条',
             severity: 'error',
-            from: { path: '^packages/canvas-next-editor/src/' },
-            to: { path: '^(packages/canvas-next-editor-vue/|playground/)' },
+            from: { path: '^packages/canvas-editor/src/' },
+            to: { path: '^(packages/canvas-editor-vue/|playground/)' },
         },
         {
             name: 'editor-vue-only-depends-on-editor',
-            comment: '红线：Vue 绑定只许依赖 editor 内核，不得绕过内核直接依赖 canvas-next/browser-renderer',
+            comment: '红线：Vue 绑定只许依赖 editor 内核，不得绕过内核直接依赖 canvas/browser-renderer',
             severity: 'error',
-            from: { path: '^packages/canvas-next-editor-vue/src/' },
-            to: { path: '^(packages/(canvas-next$|canvas-next/|canvas-next-browser-renderer/)|playground/)' },
+            from: { path: '^packages/canvas-editor-vue/src/' },
+            to: { path: '^(packages/(canvas$|canvas/|canvas-browser-renderer/)|playground/)' },
         },
         // —— editor-vue 包内域纪律（2026-09 分域）：域间禁止横向 import，
         //    跨域消费收口 shared；shared 是被依赖层不得反向依赖任何域。
@@ -68,36 +68,36 @@ module.exports = {
             name: 'editor-vue-shared-isolation',
             comment: '域纪律：shared 切片桥是被依赖层，不得反向 import 任何域',
             severity: 'error',
-            from: { path: '^packages/canvas-next-editor-vue/src/shared/' },
-            to: { path: '^packages/canvas-next-editor-vue/src/(canvas|property-panel|layer-panel|status-bar)/' },
+            from: { path: '^packages/canvas-editor-vue/src/shared/' },
+            to: { path: '^packages/canvas-editor-vue/src/(canvas|property-panel|layer-panel|status-bar)/' },
         },
         {
             name: 'editor-vue-canvas-isolation',
             comment: '域纪律：画布域不得横引属性面板/图层/状态栏域',
             severity: 'error',
-            from: { path: '^packages/canvas-next-editor-vue/src/canvas/' },
-            to: { path: '^packages/canvas-next-editor-vue/src/(property-panel|layer-panel|status-bar)/' },
+            from: { path: '^packages/canvas-editor-vue/src/canvas/' },
+            to: { path: '^packages/canvas-editor-vue/src/(property-panel|layer-panel|status-bar)/' },
         },
         {
             name: 'editor-vue-property-panel-isolation',
             comment: '域纪律：属性面板域不得横引画布/图层/状态栏域',
             severity: 'error',
-            from: { path: '^packages/canvas-next-editor-vue/src/property-panel/' },
-            to: { path: '^packages/canvas-next-editor-vue/src/(canvas|layer-panel|status-bar)/' },
+            from: { path: '^packages/canvas-editor-vue/src/property-panel/' },
+            to: { path: '^packages/canvas-editor-vue/src/(canvas|layer-panel|status-bar)/' },
         },
         {
             name: 'editor-vue-layer-panel-isolation',
             comment: '域纪律：图层面板域不得横引画布/属性面板/状态栏域',
             severity: 'error',
-            from: { path: '^packages/canvas-next-editor-vue/src/layer-panel/' },
-            to: { path: '^packages/canvas-next-editor-vue/src/(canvas|property-panel|status-bar)/' },
+            from: { path: '^packages/canvas-editor-vue/src/layer-panel/' },
+            to: { path: '^packages/canvas-editor-vue/src/(canvas|property-panel|status-bar)/' },
         },
         {
             name: 'editor-vue-status-bar-isolation',
             comment: '域纪律：状态栏域不得横引画布/属性面板/图层面板域',
             severity: 'error',
-            from: { path: '^packages/canvas-next-editor-vue/src/status-bar/' },
-            to: { path: '^packages/canvas-next-editor-vue/src/(canvas|property-panel|layer-panel)/' },
+            from: { path: '^packages/canvas-editor-vue/src/status-bar/' },
+            to: { path: '^packages/canvas-editor-vue/src/(canvas|property-panel|layer-panel)/' },
         },
         // —— editor 内核分层纪律（2026-09 分层）：session → {spatial, editing, shared}、
         //    editing → shared、spatial → shared、shared → ∅，下层禁引上层。
@@ -105,22 +105,22 @@ module.exports = {
             name: 'editor-shared-isolation',
             comment: '分层纪律：layerPath 寻址原语（shared）不得引用任何上层',
             severity: 'error',
-            from: { path: '^packages/canvas-next-editor/src/shared/' },
-            to: { path: '^packages/canvas-next-editor/src/(spatial|editing|session)/' },
+            from: { path: '^packages/canvas-editor/src/shared/' },
+            to: { path: '^packages/canvas-editor/src/(spatial|editing|session)/' },
         },
         {
             name: 'editor-spatial-isolation',
             comment: '分层纪律：空间层（camera/hitTest/wheel）不得引用 editing/session',
             severity: 'error',
-            from: { path: '^packages/canvas-next-editor/src/spatial/' },
-            to: { path: '^packages/canvas-next-editor/src/(editing|session)/' },
+            from: { path: '^packages/canvas-editor/src/spatial/' },
+            to: { path: '^packages/canvas-editor/src/(editing|session)/' },
         },
         {
             name: 'editor-editing-isolation',
             comment: '分层纪律：编辑特性层不得引用 session 会话门面',
             severity: 'error',
-            from: { path: '^packages/canvas-next-editor/src/editing/' },
-            to: { path: '^packages/canvas-next-editor/src/session/' },
+            from: { path: '^packages/canvas-editor/src/editing/' },
+            to: { path: '^packages/canvas-editor/src/session/' },
         },
         {
             name: 'no-deps-on-playground',

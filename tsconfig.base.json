@@ -5,7 +5,7 @@
         "module": "ESNext",
         "moduleResolution": "bundler",
         "moduleDetection": "force",
-        // 红线：结构包（canvas-next、editor）不加 DOM lib——document/window 等
+        // 红线：结构包（canvas、editor）不加 DOM lib——document/window 等
         // 宿主类型直接编译报错（浏览器基线桌面 evergreen，ES2022 全量可用）
         "strict": true,
         "noUncheckedIndexedAccess": true,

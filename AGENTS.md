@@ -17,22 +17,23 @@ pnpm --filter playground dev
 
 ## Layout
 
-- `packages/canvas-next/` — `@hankchen/canvas-next` 文档模型。**零 DOM、零运行时依赖**。
-- `packages/canvas-next-browser-renderer/` — Canvas2D 五原语后端。
-- `packages/canvas-next-editor/` — headless 内核，运行时仅依赖 immer。测试全部 Node 无 DOM 环境。
+- `packages/canvas-browser-renderer/` — Canvas2D 五原语后端（npm `@hankchen/canvas-browser-renderer`）。
+- `packages/canvas-editor/` — headless 内核（npm `@hankchen/canvas-editor`），运行时仅依赖 immer。测试全部 Node 无 DOM 环境。
   src 按 `session → spatial/editing/shared` 分层（下层禁引上层，depcruise `editor-*-isolation` 锁定）；只保留根 barrel 单出口。详见包内 `AGENTS.md`。
-- `packages/canvas-next-editor-vue/` — Vue 3 薄绑定。src 按领域分域：`canvas / property-panel / layer-panel / status-bar / shared`（域间禁横引、跨域只经 shared，depcruise `editor-vue-*-isolation` 锁定）；宿主可按域子路径引用（`./canvas` 等）。详见包内 `AGENTS.md`。
+- `packages/canvas-editor-vue/` — Vue 3 薄绑定（npm `@hankchen/canvas-editor-vue`）。src 按领域分域：`canvas / property-panel / layer-panel / status-bar / shared`（域间禁横引、跨域只经 shared，depcruise `editor-vue-*-isolation` 锁定）；宿主可按域子路径引用（`./canvas` 等）。详见包内 `AGENTS.md`。
 - `playground/` — 目验壳（不发布，无单测；验证走 `pnpm --filter playground dev` + `build`）。
 - `.dependency-cruiser.cjs` — 依赖红线；`scripts/check-guardrails.sh` — 红线自验金丝雀。
 
+核心文档模型包 `@hankchen/canvas` 不在本仓：住在核心仓 [js-canvas](https://github.com/HankChenCH/js-canvas)（无 DOM 世界），经 npm 依赖接入；wire 契约改动在彼仓做（与 PHP/Go 同步）。
+
 ## 红线（双闸，CI 锁死）
 
-1. **依赖方向**：`editor-vue → editor → { canvas-next, browser-renderer }`、`browser-renderer → canvas-next`，
-   仅此四条正向边。反向/绕行（如 editor-vue 直接 import canvas-next、任何包依赖根级 `playground/`、内核 import Vue）都被
+1. **依赖方向**：`editor-vue → editor → { canvas, browser-renderer }`、`browser-renderer → canvas`，
+   仅此四条正向边。反向/绕行（如 editor-vue 直接 import canvas、任何包依赖根级 `playground/`、内核 import Vue）都被
    dependency-cruiser 拦截；editor 的运行时 npm 依赖仅 immer（`editor-immer-only-npm-deps` 机审）。
    改依赖方向必须同时改 `.dependency-cruiser.cjs` 与对应包 `package.json`。
    注意 playground 位于仓库根 `playground/`（不在 packages/ 下），写规则时 to.path 用 `^playground/`。
-2. **无 DOM lib**：`canvas-next`、`editor`（以及暂未用到 DOM 的 `browser-renderer`）tsconfig 不含 `"DOM"` lib——
+2. **无 DOM lib**：`canvas`、`editor`（以及暂未用到 DOM 的 `browser-renderer`）tsconfig 不含 `"DOM"` lib——
    `document`/`window` 等宿主类型直接编译报错。浏览器包只有 `editor-vue` 与 `playground`。
    `browser-renderer` 将来需要 Canvas2D 类型时在用到它的文件里局部 `/// <reference lib="dom" />`，不要整体放开 lib。
 3. **图层 setter 禁 I/O 的编辑器延伸**：物化状态进内核 store 的 ui 分支，永不写 graph。
@@ -41,7 +42,10 @@ pnpm --filter playground dev
 
 - npm registry：仓库 `.npmrc` 不配镜像（CI 走 npmjs）；本机外网源慢，安装/加依赖时用
   `npm_config_registry=https://registry.npmmirror.com pnpm install` 按次指定（lockfile 不含 registry 主机，产物一致）。
-- 包之间**源码直引**（exports 指向 `src/index.ts`），无 dist 构建步骤；`tsc --noEmit` 只做类型检查。
+- 包间消费是**双轨**：workspace 内开发期 exports 指向 `src/index.ts`（源码直引，playground 免 build），
+  `tsc --noEmit` 只做类型检查；发布产物走 `pnpm -r build`（tsup ×2 + editor-vue vite lib mode）产 `dist/`，
+  **`publishConfig.exports` 在 pnpm publish 时把出口切换到 dist**——改包出口必须同时改 `exports` 与 `publishConfig.exports`。
+- 核心包跨仓联调：js-canvas 检出在同级时 `pnpm link ../js-canvas/packages/canvas`（或临时改 overrides），改动勿提交。
 - 内核测试必须在 Node 无 DOM 环境跑（vitest 默认 node 环境即为所需，别装 jsdom）；结构包测试里
   断言"无 DOM"要经 `globalThis` 索引，直接写 `document` 字面量会被无 DOM lib 的 tsconfig 拦下。
 - dependency-cruiser 需在 `enhancedResolveOptions` 显式开 `exportsFields: ['exports']`，否则 exports-only

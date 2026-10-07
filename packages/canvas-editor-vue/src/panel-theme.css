@@ -1,0 +1,254 @@
+/**
+ * 属性面板设计令牌（shadcn/ui 语义令牌的面板命名空间版）。
+ *
+ * 纯 CSS、零构建：令牌全部作用域在面板根 .cn-props 上——面板自带主题、
+ * 不向宿主页面渗漏（宿主无需全局变量）。Tailwind 工具类（组件模板内）由
+ * 宿主的 tailwind 编译器经 @source 扫描本包源码生成，@theme inline 把下面的
+ * --cn-* 映射成 --color-cn-* 颜色族（见 playground/src/style.css 的接线样例）。
+ *
+ * 宿主接入三步：
+ *   1. devDeps 加 tailwindcss + @tailwindcss/vite，vite 插件启用；
+ *   2. 应用 css：@import "tailwindcss"; @source "<本包 src 路径>";
+ *   3. import '@hankchen/canvas-editor-vue/panel-theme.css'
+ *
+ * 主题方向：暗色检视面板（precision-instrument）——深蓝灰底、发丝线分隔、
+ * 天蓝 accent、表格数字。宿主可覆盖 .cn-props 上的 --cn-* 变量换肤。
+ */
+.cn-props {
+    /* 表面与文字 */
+    --cn-bg: #0b1220;
+    --cn-bg-elevated: #101a2e;
+    --cn-fg: #e6edf7;
+    --cn-muted: #7c8ca5;
+
+    /* 边界：容器发丝线 / 输入框描边 */
+    --cn-line: #1e2a40;
+    --cn-field-line: #2a3a57;
+
+    /* 图层行卡片描边（工单 08）：行级独立卡片的发丝线，介于容器线与输入框线
+       之间——只增不改，既有令牌值不动（两板共用本命名空间） */
+    --cn-card-line: #23324d;
+
+    /* 输入底（半透明石板，叠在面板底色上） */
+    --cn-field: rgba(148, 163, 184, 0.07);
+
+    /* accent（天蓝）与其上的可读前景 */
+    --cn-accent: #38bdf8;
+    --cn-accent-soft: rgba(56, 189, 248, 0.12);
+    --cn-on-accent: #06283d;
+
+    /* 表达式前置色（layer-panel-expression-prefix 工单 02）：带标记内容层行内
+       片段串的用色（图层面板 .cn-layers__prefix 消费）；原型 .ex 色值为参考值 */
+    --cn-expression: #5dd3b0;
+
+    /* 危险/告警（预留） */
+    --cn-danger: #f87171;
+
+    /* 数字/代码用等宽字族（面板的「仪器刻度」字形） */
+    --cn-font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas,
+        monospace;
+
+    /* 原生控件（number 步进器、color、checkbox）走暗色渲染 */
+    color-scheme: dark;
+
+    background-color: var(--cn-bg);
+    color: var(--cn-fg);
+}
+
+/* SelectField 的自绘箭头（appearance-none 后由背景 svg 补上指示） */
+.cn-props .cn-select {
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237c8ca5' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 6px center;
+    background-size: 10px;
+}
+
+.cn-props .cn-select option {
+    background-color: var(--cn-bg-elevated);
+    color: var(--cn-fg);
+}
+
+/* 数据字段表达式态输入框描边（工单 02 落地、工单 06 保留）：取值方式切换已
+   升级为分段选择器（ValueTypeSegmented，tailwind 配方在组件模板），原 {{ }}
+   徽章令牌随控件退役。双类名选择器压过控件上的单类 tailwind border 色 */
+.cn-props .cn-field--expression {
+    border-color: var(--cn-accent);
+}
+
+/* pair 自适应 prefix 切换钮（工票 03）：徽章方钮视觉语言（原 {{ }} 徽章钮同族，
+   该钮已于工单 06 升级为分段选择器）的「自」字徽章。
+   双类名选择器压过控件上的单类 tailwind border 色，无需 !important */
+.cn-props .cn-props__auto-toggle {
+    font-size: 9px;
+    line-height: 1;
+    padding: 3px 3px;
+    border-radius: 4px;
+    border: 1px solid var(--cn-field-line);
+    color: var(--cn-muted);
+    background: transparent;
+    cursor: pointer;
+}
+
+.cn-props .cn-props__auto-toggle:hover {
+    color: var(--cn-fg);
+    border-color: var(--cn-muted);
+}
+
+.cn-props .cn-props__auto-toggle--active {
+    border-color: var(--cn-accent);
+    color: var(--cn-accent);
+    background: var(--cn-accent-soft);
+}
+
+/* 简写控件的模式循环钮（工单 04）：1/2/4 值模式单按钮循环，徽章方钮视觉语言
+   的图标方钮。双类名选择器压过控件上的单类 tailwind
+   border 色，无需 !important */
+.cn-props .cn-props__mode-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border-radius: 4px;
+    border: 1px solid var(--cn-field-line);
+    color: var(--cn-muted);
+    background: transparent;
+    cursor: pointer;
+}
+
+.cn-props .cn-props__mode-toggle:hover {
+    color: var(--cn-fg);
+    border-color: var(--cn-muted);
+}
+
+/* 自适应禁用态的预览值区分展示（工票 03）：模板子树的解析盒非文档权威值，
+   斜体 + 弱化提示（悬停有完整说明），与声明值一眼可辨 */
+.cn-props .cn-field--preview {
+    font-style: italic;
+}
+
+/* ---- 图层行卡片 + 根层拖拽把手（工单 08）----
+   行 = 独立描边卡片条目（非行间分隔线）；描边走新增令牌 --cn-card-line，
+   既有令牌值不动。行卡片的选中/悬停/落点提示状态与把手样式收口在本文件
+   （类名由 LayerPanel.vue 按 ui 分支绑定），不依赖宿主 tailwind 令牌映射；
+   行的几何（内距/字号/行距 gap）仍以 tailwind utility 留在组件模板。 */
+.cn-props .cn-layers__row {
+    border: 1px solid var(--cn-card-line);
+    border-radius: 6px;
+}
+
+.cn-props .cn-layers__row--hovered {
+    border-color: var(--cn-field-line);
+    background-color: var(--cn-field);
+}
+
+.cn-props .cn-layers__row--selected {
+    border-color: var(--cn-accent);
+    background-color: var(--cn-accent-soft);
+    color: var(--cn-accent);
+}
+
+/* 拖放落点提示：插入边点亮（行上半 = 顶边 before，下半 = 底边 after） */
+.cn-props .cn-layers__row--drop-before {
+    border-top-color: var(--cn-accent);
+}
+
+.cn-props .cn-layers__row--drop-after {
+    border-bottom-color: var(--cn-accent);
+}
+
+/* 六点把手：根层行常显（非 hover 门控），拖拽仅从此处发起；行/格不加把手 */
+.cn-props .cn-layers__handle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 20px;
+    border-radius: 3px;
+    color: var(--cn-muted);
+    cursor: grab;
+}
+
+.cn-props .cn-layers__handle:hover {
+    color: var(--cn-fg);
+    background-color: var(--cn-field);
+}
+
+.cn-props .cn-layers__handle:active {
+    cursor: grabbing;
+}
+
+/* 行内重命名输入框（工单 09）：覆盖行标签同槽（flex-1 由模板 utility 承担）——
+   accent 描边 + 抬升底色标识编辑态，字号/字族与 .cn-layers__label 对齐 */
+.cn-props .cn-layers__rename-input {
+    padding: 0 3px;
+    font-family: var(--cn-font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    color: var(--cn-fg);
+    background-color: var(--cn-bg-elevated);
+    border: 1px solid var(--cn-accent);
+    border-radius: 3px;
+    outline: none;
+}
+
+/* 表达式前置（layer-panel-expression-prefix 工单 02）：带标记内容层行内、拖柄
+   与标签之间的等宽小字片段串（内容与全文提示都由内核投影携带，面板零计算）。
+   溢出契约（spec 决策 7）：名称 flex-1 truncate 先截，前置 flex:none + max-width
+   封顶后自身省略——title 提示完整片段串。字号 10.5px 为原型 .ex 参考值，
+   line-height 对齐行标签 leading-4，行高不因前置变化 */
+.cn-props .cn-layers__prefix {
+    flex: none;
+    max-width: 96px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--cn-font-mono);
+    font-size: 10.5px;
+    line-height: 16px;
+    color: var(--cn-expression);
+}
+
+/* 隐藏行（layer-panel-ux 工单 10）：降不透明度示意不可见态（与闭眼钮常显同源），
+   约 50%——选中/悬停描边保持可辨（隐藏 ≠ 不可操作，显隐/属性编辑照常） */
+.cn-props .cn-layers__row--hidden {
+    opacity: 0.5;
+}
+
+/* 模板子树行（模板创作 spec §2.2 D1）：虚线描边卡片区分「声明态结构」与实体
+   行/格——选中/悬停态换 accent 虚线（意图锁定，具体令牌与 layer-panel-ux 协调） */
+.cn-props .cn-layers__row--template {
+    border-style: dashed;
+    border-color: var(--cn-field-line);
+}
+
+.cn-props .cn-layers__row--template.cn-layers__row--hovered {
+    border-color: var(--cn-accent);
+    border-style: dashed;
+    background-color: var(--cn-field);
+}
+
+.cn-props .cn-layers__row--template.cn-layers__row--selected {
+    border-color: var(--cn-accent);
+    border-style: dashed;
+}
+
+/* 非空校验标错（模板创作 spec §2.4 P4）：拦截期红框——空串永不落库 */
+.cn-props .cn-field--invalid {
+    border-color: var(--cn-danger);
+}
+
+/* ---- 表达式补全浮层（content-completion 工单 04）----
+   portal 到 body（躲 288px 面板 overflow 裁剪）后脱离面板 DOM 子树，根元素
+   自带 .cn-props 重建令牌命名空间；此处只收抬升底色/投影与高亮态（option
+   几何以 tailwind utility 留在组件模板）。 */
+.cn-props.cn-completion {
+    background-color: var(--cn-bg-elevated);
+    box-shadow: 0 16px 40px -12px rgba(2, 6, 23, 0.55);
+}
+
+.cn-props .cn-completion__option--active {
+    background-color: var(--cn-accent-soft);
+    color: var(--cn-accent);
+}

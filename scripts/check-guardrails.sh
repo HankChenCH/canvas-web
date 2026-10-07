@@ -35,25 +35,25 @@ expect_hit() {
 }
 
 # 金丝雀 1：editor → editor-vue 是禁止方向
-editor_pkg="packages/canvas-next-editor"
+editor_pkg="packages/canvas-editor"
 canary="$editor_pkg/src/__guardrail-canary__.ts"
 scope_dir="$editor_pkg/node_modules/@hankchen"
-fake_link="$scope_dir/canvas-next-editor-vue"
+fake_link="$scope_dir/canvas-editor-vue"
 
 mkdir -p "$scope_dir"
 # 与 pnpm workspace 链接同款相对目标（ ../../../ = packages/ 下同级目录）
-ln -sfn ../../../canvas-next-editor-vue "$fake_link"
+ln -sfn ../../../canvas-editor-vue "$fake_link"
 trap 'rm -f "$canary" "$fake_link"' EXIT
 
 expect_hit "$canary" \
     "// 红线金丝雀：editor → editor-vue 是禁止方向（由 scripts/check-guardrails.sh 临时生成）
-import '@hankchen/canvas-next-editor-vue'
+import '@hankchen/canvas-editor-vue'
 
 export {}" \
     "editor-no-binding-layer"
 
 # 金丝雀 2：editor-vue 属性面板域不得横引画布域
-expect_hit "packages/canvas-next-editor-vue/src/property-panel/__guardrail-canary__.ts" \
+expect_hit "packages/canvas-editor-vue/src/property-panel/__guardrail-canary__.ts" \
     "// 域纪律金丝雀：property-panel → canvas 横向 import 是禁止方向（由 scripts/check-guardrails.sh 临时生成）
 import '../canvas/gizmo'
 
@@ -61,7 +61,7 @@ export {}" \
     "editor-vue-property-panel-isolation"
 
 # 金丝雀 3：内核编辑特性层不得引用 session 会话门面
-expect_hit "packages/canvas-next-editor/src/editing/__guardrail-canary__.ts" \
+expect_hit "packages/canvas-editor/src/editing/__guardrail-canary__.ts" \
     "// 分层纪律金丝雀：editing → session 是禁止方向（由 scripts/check-guardrails.sh 临时生成）
 import '../session/editor'
 

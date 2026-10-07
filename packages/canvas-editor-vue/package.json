@@ -1,0 +1,106 @@
+{
+    "name": "@hankchen/canvas-editor-vue",
+    "version": "0.1.0",
+    "license": "MIT",
+    "description": "Vue 3 薄绑定：响应式桥、composables、画布表面组件、textarea 文本编辑 overlay、schema 驱动属性面板注册表",
+    "type": "module",
+    "exports": {
+        ".": {
+            "types": "./src/index.ts",
+            "default": "./src/index.ts"
+        },
+        "./canvas": {
+            "types": "./src/canvas/index.ts",
+            "default": "./src/canvas/index.ts"
+        },
+        "./property-panel": {
+            "types": "./src/property-panel/index.ts",
+            "default": "./src/property-panel/index.ts"
+        },
+        "./layer-panel": {
+            "types": "./src/layer-panel/index.ts",
+            "default": "./src/layer-panel/index.ts"
+        },
+        "./status-bar": {
+            "types": "./src/status-bar/index.ts",
+            "default": "./src/status-bar/index.ts"
+        },
+        "./shared": {
+            "types": "./src/shared/index.ts",
+            "default": "./src/shared/index.ts"
+        },
+        "./panel-theme.css": "./src/panel-theme.css"
+    },
+    "files": [
+        "dist",
+        "README.md",
+        "LICENSE"
+    ],
+    "sideEffects": [
+        "**/*.css"
+    ],
+    "publishConfig": {
+        "access": "public",
+        "registry": "https://registry.npmjs.org/",
+        "exports": {
+            ".": {
+                "types": "./dist/index.d.ts",
+                "import": "./dist/index.js",
+                "default": "./dist/index.js"
+            },
+            "./canvas": {
+                "types": "./dist/canvas/index.d.ts",
+                "import": "./dist/canvas.js",
+                "default": "./dist/canvas.js"
+            },
+            "./property-panel": {
+                "types": "./dist/property-panel/index.d.ts",
+                "import": "./dist/property-panel.js",
+                "default": "./dist/property-panel.js"
+            },
+            "./layer-panel": {
+                "types": "./dist/layer-panel/index.d.ts",
+                "import": "./dist/layer-panel.js",
+                "default": "./dist/layer-panel.js"
+            },
+            "./status-bar": {
+                "types": "./dist/status-bar/index.d.ts",
+                "import": "./dist/status-bar.js",
+                "default": "./dist/status-bar.js"
+            },
+            "./shared": {
+                "types": "./dist/shared/index.d.ts",
+                "import": "./dist/shared.js",
+                "default": "./dist/shared.js"
+            },
+            "./panel-theme.css": "./dist/panel-theme.css",
+            "./style.css": "./dist/style.css"
+        }
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/HankChenCH/canvas-web.git",
+        "directory": "packages/canvas-editor-vue"
+    },
+    "scripts": {
+        "build": "vite build && cp src/panel-theme.css dist/panel-theme.css",
+        "test": "vitest run",
+        "typecheck": "vue-tsc --noEmit -p tsconfig.json"
+    },
+    "dependencies": {
+        "@hankchen/canvas-editor": "workspace:*",
+        "@lucide/vue": "^1.48.0"
+    },
+    "peerDependencies": {
+        "vue": "^3.5.0"
+    },
+    "devDependencies": {
+        "@vitejs/plugin-vue": "^6.0.9",
+        "@vue/test-utils": "^2.5.1",
+        "jsdom": "^30.1.1",
+        "vite": "^8.3.1",
+        "vite-plugin-dts": "^4.5.0",
+        "vitest": "^5.0.1",
+        "vue-tsc": "^3.3.11"
+    }
+}

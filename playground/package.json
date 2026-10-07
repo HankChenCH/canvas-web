@@ -11,10 +11,10 @@
         "typecheck": "vue-tsc --noEmit -p tsconfig.json"
     },
     "dependencies": {
-        "@hankchen/canvas-next": "workspace:*",
-        "@hankchen/canvas-next-browser-renderer": "workspace:*",
-        "@hankchen/canvas-next-editor": "workspace:*",
-        "@hankchen/canvas-next-editor-vue": "workspace:*",
+        "@hankchen/canvas": "^0.1.0",
+        "@hankchen/canvas-browser-renderer": "workspace:*",
+        "@hankchen/canvas-editor": "workspace:*",
+        "@hankchen/canvas-editor-vue": "workspace:*",
         "vue": "^3.5.43"
     },
     "devDependencies": {

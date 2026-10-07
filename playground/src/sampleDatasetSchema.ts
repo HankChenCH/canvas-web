@@ -4,7 +4,7 @@
  * 载荷形态（D1 钉定）：schema 声明 = `compile(canvas, dataset)` 收到的 data 载荷
  * 形状——顶层键即根上下文候选，信封 id/name 等管理元数据不在此列。样例 = 证书
  * form-data schema（培训机构证书数据源），与工单 08 的内核测试 fixture 同源
- * （packages/canvas-next-editor/tests/shared/certFormDatasetSchema.ts，grilling
+ * （packages/canvas-editor/tests/shared/certFormDatasetSchema.ts，grilling
  * 会话评估样本的等价重写）：draft-07 方言全侧面——$schema/$id 忽略、$ref/
  * definitions（嵌套 orgInfo.contact、前向 chapter→section、菱形共享 imageUrl）、
  * 嵌套对象树、数组、additionalProperties: true 开放映射、format/enum 混杂宽松忽略。

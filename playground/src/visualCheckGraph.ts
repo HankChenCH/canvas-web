@@ -9,7 +9,7 @@
  * - 图片条：PHP 现场生成双色 PNG；此处内联同构图的 SVG data URL（360×40，底
  *   #e8f0e8 + 120×20 色块 #6dc287 @ (10,10)）。
  */
-import { decodeGraph, layerHeight, type Canvas } from '@hankchen/canvas-next'
+import { decodeGraph, layerHeight, type Canvas } from '@hankchen/canvas'
 
 /** 图片条的同构源图：data URL 免网络依赖（物化管线经 Image 元素装载） */
 const STRIP_SVG_DATA_URL =

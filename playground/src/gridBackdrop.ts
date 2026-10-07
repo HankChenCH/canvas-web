@@ -16,7 +16,7 @@
  * 开关态由宿主持有直改（原型会话态，不入内核 store ui 分支），变更后宿主调
  * editor.invalidate('content') 触发内容层重绘。
  */
-import { Canvas2DBackend } from '@hankchen/canvas-next-browser-renderer'
+import { Canvas2DBackend } from '@hankchen/canvas-browser-renderer'
 
 export interface GridBackdropOptions {
     /** 基础步长（场景像素）；屏幕线距不足时倍增 */

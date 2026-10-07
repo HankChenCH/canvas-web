@@ -35,3 +35,6 @@ jobs:
 
             - name: 各包测试
               run: pnpm -r test
+
+            - name: 各包构建（发布产物管线）
+              run: pnpm -r build

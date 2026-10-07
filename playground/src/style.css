@@ -8,7 +8,7 @@
  *   变量——令牌作用域在 .cn-props 根，面板自带主题、可整面换肤。
  */
 @import 'tailwindcss';
-@source '../../packages/canvas-next-editor-vue/src';
+@source '../../packages/canvas-editor-vue/src';
 
 @theme inline {
     --color-cn-bg: var(--cn-bg);

@@ -65,8 +65,8 @@ import {
     drawResourceMarkers,
     exportPreviewPng,
     imageResourceKey,
-} from '@hankchen/canvas-next-browser-renderer'
-import type { ResourceState } from '@hankchen/canvas-next-browser-renderer'
+} from '@hankchen/canvas-browser-renderer'
+import type { ResourceState } from '@hankchen/canvas-browser-renderer'
 import {
     ARM_CREATE_LAYER_TYPES,
     EditorSession,
@@ -75,7 +75,7 @@ import {
     memoizeTextPolicies,
     parseExpressionSchema,
     rootLayerOf,
-} from '@hankchen/canvas-next-editor'
+} from '@hankchen/canvas-editor'
 import type {
     EditorShortcutAction,
     ExpressionSchemaDiagnostic,
@@ -83,7 +83,7 @@ import type {
     LayerType,
     ResourceStatus,
     UploadFile,
-} from '@hankchen/canvas-next-editor'
+} from '@hankchen/canvas-editor'
 import {
     ADD_LAYER_MENU,
     ARM_LAYER_CREATE_HINT,
@@ -102,7 +102,7 @@ import {
     type CanvasSurfaceReady,
     type DropdownMenuEntry,
     type FontPickerContext,
-} from '@hankchen/canvas-next-editor-vue'
+} from '@hankchen/canvas-editor-vue'
 import {
     AlignFloatBar,
     CanvasSurface,
@@ -114,9 +114,9 @@ import {
     LayerPanel,
     PropertyPanel,
     Ruler,
-} from '@hankchen/canvas-next-editor-vue'
-import type { OverlayPainter } from '@hankchen/canvas-next-editor'
-import { createMeasureTextMeasurerFactory, decodeGraph, encodeGraph, forEachLayerBox } from '@hankchen/canvas-next'
+} from '@hankchen/canvas-editor-vue'
+import type { OverlayPainter } from '@hankchen/canvas-editor'
+import { createMeasureTextMeasurerFactory, decodeGraph, encodeGraph, forEachLayerBox } from '@hankchen/canvas'
 
 import { DEMO_GRAPH_JSON } from './demoGraph'
 // 桌面网格底纹（原型）：内容层 begin 后垫网格线（只画纸面外桌面），区分纸面与
