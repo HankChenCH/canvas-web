@@ -17,7 +17,7 @@ import {
     resizeSnapPoints,
     resizableAxesAt,
 } from '../../src/spatial/resize'
-import { cellLayer, imageLayer, rowLayer, tableLayer, textLayer } from '../support/fixtures'
+import { cellLayer, imageLayer, rowLayer, rowTemplateLayer, tableLayer, textLayer } from '../support/fixtures'
 
 const BOX = { x: 100, y: 80, width: 200, height: 120 }
 
@@ -155,6 +155,27 @@ describe('resizableAxesAt / resizeHandlesAt：角色可缩放面', () => {
         const contentPath = ['layers', 0, 'rows', 0, 'cells', 0, 'content'] as const
         expect(resizableAxesAt(doc, contentPath)).toEqual({ width: false, height: false })
         expect(resizeHandlesAt(doc, contentPath)).toEqual([])
+    })
+
+    it('模板格内容宽耦合高豁免：仅纵向（n/s 两柄）——template 段在 len−4 位', () => {
+        const doc: Canvas = {
+            width: 800,
+            height: 600,
+            layers: [tableLayer([], { template: rowTemplateLayer([cellLayer(textLayer())]) })],
+        }
+        const templateContentPath = ['layers', 0, 'template', 'cells', 0, 'content'] as const
+        expect(resizableAxesAt(doc, templateContentPath)).toEqual({ width: false, height: true })
+        expect(resizeHandlesAt(doc, templateContentPath)).toEqual(['n', 's'])
+    })
+
+    it('行模板替身路径：双轴皆禁、无柄', () => {
+        const doc: Canvas = {
+            width: 800,
+            height: 600,
+            layers: [tableLayer([], { template: rowTemplateLayer([cellLayer(null)]) })],
+        }
+        expect(resizableAxesAt(doc, ['layers', 0, 'template'])).toEqual({ width: false, height: false })
+        expect(resizeHandlesAt(doc, ['layers', 0, 'template'])).toEqual([])
     })
 
     it('路径不可解析：无轴无柄', () => {

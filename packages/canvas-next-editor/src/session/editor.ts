@@ -809,7 +809,9 @@ export class EditorSession {
      * 强同步 canonicalize（根表宽联动行宽、格内容宽同步、行高取最高格——行高缩到
      * 最高格以下被不变量顶回属预期）。position 按目标盒反解（锚点偏移随新尺寸
      * 重算，任意锚点/任意父级下落点都精确）：同步完成后以草稿内的解析尺寸与
-     * 父级盒求锚点偏移，position = 目标盒坐标 − 偏移。
+     * 父级盒求锚点偏移，position = 目标盒坐标 − 偏移 − 父级原点（嵌套路径的
+     * position 是父级相对量，父级原点经 gestureParentOrigin 在写前状态反解——
+     * 根层原点恒 (0,0)，行为不变）。
      *
      * 拖不动写不动的同门守卫：无会话、目标层被结构编辑移除（悬空路径）整体
      * 空转（不发事务、不发布命中轴）。
@@ -818,7 +820,8 @@ export class EditorSession {
         const gesture = this.store.ui.resize
         if (!gesture) return
         const doc = this.store.doc
-        if (!doc || resolveLayer(doc, gesture.path) === null) return
+        const current = doc ? resolveLayer(doc, gesture.path) : null
+        if (!doc || !current) return
         const dx = sceneX - gesture.startScene.x
         const dy = sceneY - gesture.startScene.y
         const widthActive = handleResizesWidth(gesture.handle)
@@ -834,6 +837,9 @@ export class EditorSession {
             widthActive ? dx + resolution.dx : dx,
             heightActive ? dy + resolution.dy : dy,
         )
+        // 手势空间父级原点（嵌套路径 position 反解的坐标基准），事务前以求得——
+        // 须用写前状态（盒/position/解析尺寸同源，见 gestureParentOrigin）
+        const origin = this.gestureParentOrigin(gesture.path, current)
         this.store.transact((draft) => {
             const layer = resolveLayer(draft, gesture.path)
             if (!layer) return
@@ -873,10 +879,11 @@ export class EditorSession {
                 resolvedWidth,
                 resolvedHeight,
             )
-            // draft 语义解除 readonly；position = 目标盒坐标 − 锚点偏移（任意锚点下盒精确落位）
+            // draft 语义解除 readonly；position = 目标盒坐标 − 锚点偏移 − 父级原点
+            // （任意锚点/任意父级下盒精确落位；父级原点见 gestureParentOrigin）
             const position = layer.position as { x: number; y: number }
-            position.x = target.x - offset.x
-            position.y = target.y - offset.y
+            position.x = target.x - offset.x - origin.x
+            position.y = target.y - offset.y - origin.y
         }, { mergeKey: RESIZE_MERGE_KEY })
         this.store.setSnapAxes(resolution.axes)
     }
@@ -1008,6 +1015,39 @@ export class EditorSession {
         this.store.setCreate(null)
         this.store.setSnapAxes([])
         this.store.setArmedCreate(null)
+    }
+
+    /**
+     * 手势空间父级原点（嵌套路径 position 反解的坐标基准，resizeTo 专用）：布局
+     * 不变量 box = 父级原点 + 锚点偏移 + position（render.resolveLayerBox 同式）
+     * 对被拖层成立，且父级原点在自身缩放中不动——兄弟/祖先几何不被自身尺寸写回
+     * 牵动（格宽累加/行高累加只受前序兄弟影响）。故以手势同空间（模板子树经预览
+     * 视图解析，与 startBox/startScene 同一坐标系）的当前盒线性反解：原点 = 当前
+     * 盒 − 锚点偏移（手势空间父级盒尺寸入参）− 当前 position。根层恒 (0,0)——
+     * 既有根层语义（父级 = 画布、原点即画布原点）不变；盒不可解析回落实地 (0,0)
+     * （与根层同参，写回仍自洽）。须以写前状态调用：盒/position/解析尺寸三者
+     * 同源才能精确反解。
+     */
+    private gestureParentOrigin(path: LayerPath, layer: Layer): { x: number; y: number } {
+        if (isRootLayerPath(path)) return { x: 0, y: 0 }
+        const doc = this.store.doc
+        if (!doc) return { x: 0, y: 0 }
+        const box = this.boxByPath(path)
+        if (!box) return { x: 0, y: 0 }
+        const parentPath =
+            path[path.length - 1] === 'content' ? path.slice(0, -1) : path.slice(0, -2)
+        const parentBox = this.boxByPath(parentPath as LayerPath)
+        const offset = anchorOffset(
+            layer.position.anchor,
+            parentBox?.width ?? doc.width,
+            parentBox?.height ?? doc.height,
+            layerWidth(layer, this.textPolicies),
+            layerHeight(layer, this.textPolicies),
+        )
+        return {
+            x: box.x - offset.x - layer.position.x,
+            y: box.y - offset.y - layer.position.y,
+        }
     }
 
     /**

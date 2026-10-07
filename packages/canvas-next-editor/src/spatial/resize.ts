@@ -122,7 +122,9 @@ const NO_AXES: ResizeAxes = { width: false, height: false }
  * - row：仅纵向（行宽 = 表宽强同步，面板同门隐藏 width）；
  * - cell：双轴（内容宽/行高随 canonicalize 强同步跟随，面板同门放行）；
  * - content / templateContent：content 双向强同步全隐藏；模板格内容宽度耦合
- *   沿用、高度豁免放行（ADR 0006 同门）→ 仅纵向；
+ *   沿用、高度豁免放行（ADR 0006 同门）→ 仅纵向。模板内容路径形如
+ *   ['layers', i, 'template', 'cells', c, 'content']——'template' 段在
+ *   len−4（len−1 content、len−2 格下标、len−3 'cells'），按尾段回数定位；
  * - 行模板替身（路径尾 'template'）：声明体尺寸不经画布柄改（转换入口/面板
  *   语义面），双轴皆禁。
  */
@@ -130,7 +132,7 @@ export function resizableAxesAt(doc: Canvas, path: LayerPath): ResizeAxes {
     const layer = resolveLayer(doc, path)
     if (!layer) return NO_AXES
     if (path[path.length - 1] === 'content') {
-        const templateContent = path.length > 3 && path[path.length - 3] === 'template'
+        const templateContent = path.length > 4 && path[path.length - 4] === 'template'
         return templateContent ? { width: false, height: true } : NO_AXES
     }
     if (path[path.length - 1] === 'template') return NO_AXES

@@ -12,10 +12,10 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import type { Canvas, Layer, LayerBox, TableLayer } from '@hankchen/canvas-next'
+import { decodeGraph, type Canvas, type Layer, type LayerBox, type TableLayer } from '@hankchen/canvas-next'
 
 import { EditorSession, type FrameScheduler } from '../../src/session/editor'
-import { cellLayer, imageLayer, qrLayer, rowLayer, tableLayer, textLayer } from '../support/fixtures'
+import { cellLayer, imageLayer, qrLayer, rowLayer, shapeWire, tableLayer, textLayer, wireNode } from '../support/fixtures'
 
 const nullScheduler: FrameScheduler = () => () => {}
 
@@ -277,5 +277,82 @@ describe('resizeTo：表格强同步（updateSpec 同门）', () => {
         session.resizeTo(0, -30) // 想缩到 20 < 格高 50
         const row = (session.store.doc!.layers[0] as TableLayer).rows[0]!
         expect(row.shape.height).toBe(50)
+    })
+})
+
+describe('resizeTo：嵌套路径写回（position 反解须减父级原点）', () => {
+    /**
+     * 模板表置于非零原点 (100,80)：表 320×120，模板行 320×60，两格 160×60，
+     * 格 0 带文本内容（160×20）。position 反解的坐标面基准——盒对 position 线性
+     * （box = 父级原点 + 锚点偏移 + position），嵌套路径的父级原点非零，绝对
+     * 目标盒坐标不得直写相对 position。
+     */
+    const templateLayersAtOrigin = (): Layer[] =>
+        decodeGraph({
+            canvas: { width: 800, height: 600 },
+            layers: [
+                wireNode('TableLayer', shapeWire(320, 120), {
+                    priority: 10,
+                    data: { rowsPath: 'order.items' },
+                    template: wireNode('TableRowTemplate', shapeWire(320, 60), {
+                        cells: [
+                            wireNode('TableCellLayer', shapeWire(160, 60), {
+                                content: wireNode('TextLayer', shapeWire(160, 20), {}),
+                            }),
+                            wireNode('TableCellLayer', shapeWire(160, 60), { content: null }),
+                        ],
+                    }),
+                }, { position: { x: 100, y: 80, position: 'top-left' } }),
+            ],
+        }).layers.slice()
+
+    it('模板格内容 s 柄增高：position 保持格内相对值、盒顶缘固定', () => {
+        const session = makeSession(templateLayersAtOrigin())
+        const path = ['layers', 0, 'template', 'cells', 0, 'content'] as const
+        expect(session.layerBoxAt(path)).toMatchObject({ x: 100, y: 80, width: 160, height: 20 })
+        session.beginResize(path, 's', 180, 100)
+        session.resizeTo(180, 130) // dy = 30 → 高 50
+        const table = session.store.doc!.layers[0] as unknown as {
+            template: { cells: { content: { position: { x: number; y: number }; shape: { height: number } } }[] }
+        }
+        expect(table.template.cells[0]!.content!.position).toEqual({ anchor: 'top-left', x: 0, y: 0 })
+        expect(table.template.cells[0]!.content!.shape.height).toBe(50)
+        expect(session.layerBoxAt(path)).toMatchObject({ x: 100, y: 80, width: 160, height: 50 })
+    })
+
+    it('模板格 e 柄增宽：格 position 不被污染、内容宽随格同步', () => {
+        const session = makeSession(templateLayersAtOrigin())
+        const path = ['layers', 0, 'template', 'cells', 0] as const
+        expect(session.layerBoxAt(path)).toMatchObject({ x: 100, y: 80, width: 160, height: 60 })
+        session.beginResize(path, 'e', 260, 110)
+        session.resizeTo(300, 110) // dx = 40 → 格宽 200
+        const table = session.store.doc!.layers[0] as unknown as {
+            template: {
+                cells: { position: { x: number; y: number }; shape: { width: number }; content: { shape: { width: number } } | null }[]
+            }
+        }
+        expect(table.template.cells[0]!.position).toEqual({ anchor: 'top-left', x: 0, y: 0 })
+        expect(table.template.cells[0]!.shape.width).toBe(200)
+        expect(table.template.cells[0]!.content!.shape.width).toBe(200)
+        expect(session.layerBoxAt(path)).toMatchObject({ x: 100, y: 80, width: 200, height: 60 })
+    })
+
+    it('V1 行 s 柄增高（表在非零原点、非首行）：行 position 保持零、盒顶缘固定', () => {
+        const session = makeSession([
+            tableLayer(
+                [
+                    rowLayer([cellLayer(textLayer({ priority: 10 }))], { shape: { height: 60 } }),
+                    rowLayer([cellLayer(textLayer({ priority: 10 }))], { shape: { height: 60 } }),
+                ],
+                { position: { anchor: 'top-left', x: 100, y: 80 } },
+            ),
+        ])
+        const path = ['layers', 0, 'rows', 1] as const
+        expect(session.layerBoxAt(path)).toMatchObject({ x: 100, y: 140, width: 100, height: 60 })
+        session.beginResize(path, 's', 150, 200)
+        session.resizeTo(150, 230) // dy = 30 → 高 90
+        const row = (session.store.doc!.layers[0] as TableLayer).rows[1]!
+        expect(row.position).toEqual({ anchor: 'top-left', x: 0, y: 0 })
+        expect(session.layerBoxAt(path)).toMatchObject({ x: 100, y: 140, width: 100, height: 90 })
     })
 })
