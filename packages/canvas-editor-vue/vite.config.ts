@@ -1,4 +1,6 @@
 import vue from '@vitejs/plugin-vue'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { defineConfig } from 'vite'
 import dts from 'vite-plugin-dts'
 
@@ -13,6 +15,18 @@ export default defineConfig({
             entryRoot: 'src',
             cleanVueFileName: true,
             include: ['src/**/*.ts', 'src/**/*.vue'],
+            // 宿主侧 TS bundler 解析会把 dist/index.d.ts 的裸域 barrel 引用
+            // （from './canvas'）劫持到同名域 js（canvas.js）——d.ts 符号全丢。
+            // 显式补 /index.js 后缀（映射到 canvas/index.d.ts）消解歧义。
+            afterBuild: () => {
+                const file = resolve(__dirname, 'dist/index.d.ts')
+                const domainNames = ['canvas', 'property-panel', 'layer-panel', 'status-bar', 'shared']
+                let source = readFileSync(file, 'utf8')
+                for (const name of domainNames) {
+                    source = source.replaceAll(`from './${name}'`, `from './${name}/index.js'`)
+                }
+                writeFileSync(file, source)
+            },
         }),
     ],
     build: {
