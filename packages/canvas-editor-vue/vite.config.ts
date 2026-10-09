@@ -44,6 +44,9 @@ export default defineConfig({
             cssFileName: 'style',
         },
         rollupOptions: {
+            // peer/运行时依赖必须 external——内嵌 vue 会与宿主形成双 Vue 实例,
+            // 渲染槽位时跨实例读 currentRenderingInstance 为 null 直接崩(0.1.0/0.1.1 踩过)
+            external: ['vue', '@lucide/vue'],
             output: {
                 entryFileNames: '[name].js',
             },

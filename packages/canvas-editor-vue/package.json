@@ -1,6 +1,6 @@
 {
     "name": "@hankchen/canvas-editor-vue",
-    "version": "0.1.1",
+    "version": "0.1.2",
     "license": "MIT",
     "description": "Vue 3 薄绑定：响应式桥、composables、画布表面组件、textarea 文本编辑 overlay、schema 驱动属性面板注册表",
     "type": "module",
