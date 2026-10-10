@@ -17,10 +17,12 @@
  *   window、open 门卫，组件卸载即摘；
  * - Esc 两路关闭：输入框内由本组件键面直关；焦点漂出输入框（点画布等）由
  *   CanvasSurface 窗口级 Escape 监听转发 close（ContextMenu 同款浮层协议）。
+ *   ✕ 关闭钮（find-replace 后续，真机缺陷 2026-10 侧补）：条上常驻鼠标出口，
+ *   与 Esc 同走 close（closeFind + 替换反馈清空）。
  * - 可用态按命中数与游标裁剪：无命中四钮全禁；首处禁上一处、末处禁下一处。
  *   文本编辑态点按钮先经 textarea blur 提交（既有漏斗，无新语义，spec 只注记）。
  */
-import { ChevronDown, ChevronUp } from '@lucide/vue'
+import { ChevronDown, ChevronUp, X } from '@lucide/vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 import type { EditorSession } from '@hankchen/canvas-editor'
@@ -220,6 +222,16 @@ defineExpose({
         >
             全部替换
         </button>
+        <button
+            type="button"
+            class="cn-find-bar__key"
+            data-find-close
+            title="关闭（Esc）"
+            aria-label="关闭查找替换"
+            @click="close"
+        >
+            <PanelIcon :icon="X" />
+        </button>
     </div>
 </template>
 
@@ -301,6 +313,8 @@ defineExpose({
 }
 
 .cn-find-bar__action {
+    /* 条内宽压（✕ 钮加入后更紧）下文字钮不折行——挤压由输入框 flex-shrink 吸收 */
+    white-space: nowrap;
     padding: 4px 10px;
     border: none;
     border-radius: 6px;

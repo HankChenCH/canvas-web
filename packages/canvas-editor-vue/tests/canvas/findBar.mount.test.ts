@@ -88,6 +88,30 @@ describe('FindBar：开合', () => {
         expect((query.element as HTMLInputElement).value).toBe('春季')
         wrapper.unmount()
     })
+
+    it('✕ 关闭钮：closeFind 调用、面板即摘，「已替换 N 处」瞬时反馈随关清、重开不回显', async () => {
+        const editor = makeEditor()
+        editor.beginFind()
+        const spy = vi.spyOn(editor, 'closeFind')
+        const wrapper = mountBar(editor)
+        await nextTick()
+
+        // 造出替换反馈，验证它随 ✕ 关闭清空
+        await wrapper.find('[data-find-query]').setValue('春季')
+        await wrapper.find('[data-find-replace]').setValue('秋季')
+        await wrapper.find('[data-find-replace-all]').trigger('click')
+        expect(wrapper.find('[data-find-note]').exists()).toBe(true)
+
+        await wrapper.find('[data-find-close]').trigger('click')
+        expect(spy).toHaveBeenCalledTimes(1)
+        expect(wrapper.find('[data-find-bar]').exists()).toBe(false)
+
+        editor.beginFind()
+        await nextTick()
+        expect(wrapper.find('[data-find-bar]').exists()).toBe(true)
+        expect(wrapper.find('[data-find-note]').exists()).toBe(false)
+        wrapper.unmount()
+    })
 })
 
 describe('FindBar：输入即扫与计数', () => {
