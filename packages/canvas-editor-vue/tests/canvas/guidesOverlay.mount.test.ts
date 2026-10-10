@@ -8,9 +8,11 @@
  * - 拖出预览与落线：宿主把 Ruler 的 guide-drag-* 四事件转发到 defineExpose 的
  *   同名四方法——预览线随 begin/move 呈现、自身吸附（复用内核吸附数学）、end 落
  *   线（addGuide）、cancel 丢弃中断手势、落点恰在既有同向参考线轴上不重复落线；
- * - 拖回删除：参考线命中条上按下抓取、线随指针原语跟随（不吸附——删除手势不是
- *   再定位）、落点在标尺条上（elementFromPoint 命中 data-ruler-*）调 removeGuide、
- *   落在别处原线复原、pointercancel 保留；
+ * - 拖动再定位与拖回删除：参考线命中条上按下抓取、线随指针吸附跟随（复用拖出
+ *   落线同一吸附数学、排除自身轴防原位粘滞）、落点在标尺条上（elementFromPoint
+ *   命中 data-ruler-*）调 removeGuide、落点恰在既有同向参考线轴上合并删除（防
+ *   同轴双线同门）、其余落点 updateGuide 再定位、原位松手同位空转、
+ *   pointercancel 保留；
  * - 吸附线呈现：读内核命中轴查询（ui.snapAxes 分支）——拖动会话命中时呈现
  *   data-snap-* 瞬时线（带取向/位置/来源），endDrag 清空即消失；与参考线类名互异
  *   （瞬时回显不驻留，视觉可区分）。
@@ -226,8 +228,8 @@ describe('GuidesOverlay：拖出预览与落线（宿主转发 Ruler 四事件�
     })
 })
 
-describe('GuidesOverlay：拖回标尺删除', () => {
-    it('抓取后线随指针原语跟随（不吸附），落点在标尺条上删除（removeGuide）', async () => {
+describe('GuidesOverlay：拖动再定位与拖回删除', () => {
+    it('抓取拖动线随指针吸附跟随（再定位语义），落点在标尺条上删除（removeGuide）', async () => {
         const editor = makeEditor()
         const wrapper = mountOverlay(editor)
         editor.addGuide({ orientation: 'vertical', position: 205 })
@@ -236,10 +238,10 @@ describe('GuidesOverlay：拖回标尺删除', () => {
 
         stubElementFromPoint(ensureRulerBar())
         dispatchPointer(line.element, 'pointerdown', { clientX: 205, clientY: 10, button: 0 })
-        // 203 在层盒缘 200 的吸附阈内：跟随仍取原始指针位——删除手势不是再定位
+        // 203 在层盒缘 200 的吸附阈内：跟随呈吸附位（与拖出落线同一吸附数学）
         dispatchPointer(line.element, 'pointermove', { clientX: 203, clientY: 12 })
         await wrapper.vm.$nextTick()
-        expect(wrapper.find('[data-guide-line="1"]').attributes('data-guide-position')).toBe('203')
+        expect(wrapper.find('[data-guide-line="1"]').attributes('data-guide-position')).toBe('200')
         expect(wrapper.find('[data-guide-line="1"]').attributes('data-guide-dragging')).toBeDefined()
         expect(wrapper.find('[data-guide-line="1"]').classes()).toContain('cn-guides__guide--will-delete')
 
@@ -253,7 +255,7 @@ describe('GuidesOverlay：拖回标尺删除', () => {
         wrapper.unmount()
     })
 
-    it('落在别处（非标尺）原线复原：不删除、位置回原值', async () => {
+    it('落在别处（非标尺）再定位：updateGuide 落位、内核列表同步、不删除', async () => {
         const editor = makeEditor()
         const wrapper = mountOverlay(editor)
         editor.addGuide({ orientation: 'vertical', position: 205 })
@@ -262,9 +264,11 @@ describe('GuidesOverlay：拖回标尺删除', () => {
 
         stubElementFromPoint(null)
         dispatchPointer(line.element, 'pointerdown', { clientX: 205, clientY: 10, button: 0 })
+        // 230 出全部吸附阈（层缘 200 距 30、中轴 400 距 170）：呈原针位
         dispatchPointer(line.element, 'pointermove', { clientX: 230, clientY: 12 })
         await wrapper.vm.$nextTick()
         expect(wrapper.find('[data-guide-line="1"]').attributes('data-guide-dragging')).toBeDefined()
+        expect(wrapper.find('[data-guide-line="1"]').attributes('data-guide-position')).toBe('230')
         expect(wrapper.find('[data-guide-line="1"]').classes()).not.toContain(
             'cn-guides__guide--will-delete',
         )
@@ -274,8 +278,87 @@ describe('GuidesOverlay：拖回标尺删除', () => {
             clientY: 12,
         })
         await wrapper.vm.$nextTick()
+        expect(editor.listGuides()).toEqual([{ id: 1, orientation: 'vertical', position: 230 }])
+        expect(wrapper.find('[data-guide-line="1"]').attributes('data-guide-position')).toBe('230')
+        expect(wrapper.find('[data-guide-line="1"]').attributes('data-guide-dragging')).toBeUndefined()
+        wrapper.unmount()
+    })
+
+    it('自身轴不供吸附（拖离原位不被拉回）：微移 208 停在 208', async () => {
+        const editor = makeEditor()
+        editor.addGuide({ orientation: 'vertical', position: 205 })
+        const wrapper = mountOverlay(editor)
+        await wrapper.vm.$nextTick()
+        const line = wrapper.find('[data-guide-line="1"]')
+
+        stubElementFromPoint(null)
+        dispatchPointer(line.element, 'pointerdown', { clientX: 205, clientY: 10, button: 0 })
+        // 208 距层缘 200 已出阈（8 > 6）：若无自身轴排除会被原位 205 粘回
+        dispatchPointer(wrapper.find('[data-guide-line="1"]').element, 'pointermove', {
+            clientX: 208,
+            clientY: 12,
+        })
+        await wrapper.vm.$nextTick()
+        expect(wrapper.find('[data-guide-line="1"]').attributes('data-guide-position')).toBe('208')
+
+        dispatchPointer(wrapper.find('[data-guide-line="1"]').element, 'pointerup', {
+            clientX: 208,
+            clientY: 12,
+        })
+        await wrapper.vm.$nextTick()
+        expect(editor.listGuides()).toEqual([{ id: 1, orientation: 'vertical', position: 208 }])
+        wrapper.unmount()
+    })
+
+    it('拖到既有同向参考线轴上松手合并（防同轴双线同门）：被拖线删除、留既有线', async () => {
+        const editor = makeEditor()
+        editor.addGuide({ orientation: 'horizontal', position: 310 })
+        editor.addGuide({ orientation: 'horizontal', position: 420 })
+        const wrapper = mountOverlay(editor)
+        await wrapper.vm.$nextTick()
+        const line = wrapper.find('[data-guide-line="1"]')
+
+        stubElementFromPoint(null)
+        dispatchPointer(line.element, 'pointerdown', { clientX: 300, clientY: 310, button: 0 })
+        // 423 在既有线 420 吸附阈内（水平向：画布中轴 300 距 123 已出阈）
+        dispatchPointer(wrapper.find('[data-guide-line="1"]').element, 'pointermove', {
+            clientX: 302,
+            clientY: 423,
+        })
+        await wrapper.vm.$nextTick()
+        expect(wrapper.find('[data-guide-line="1"]').attributes('data-guide-position')).toBe('420')
+
+        dispatchPointer(wrapper.find('[data-guide-line="1"]').element, 'pointerup', {
+            clientX: 302,
+            clientY: 423,
+        })
+        await wrapper.vm.$nextTick()
+        expect(editor.listGuides()).toEqual([{ id: 2, orientation: 'horizontal', position: 420 }])
+        expect(wrapper.find('[data-guide-line="1"]').exists()).toBe(false)
+        expect(wrapper.find('[data-guide-line="2"]').exists()).toBe(true)
+        wrapper.unmount()
+    })
+
+    it('原位松手（点击不拖）同位空转：位置不动、不产生内核通知', async () => {
+        const editor = makeEditor()
+        editor.addGuide({ orientation: 'vertical', position: 205 })
+        const wrapper = mountOverlay(editor)
+        await wrapper.vm.$nextTick()
+        const line = wrapper.find('[data-guide-line="1"]')
+
+        stubElementFromPoint(null)
+        const changes: unknown[] = []
+        editor.subscribe((change) => changes.push(change))
+        // 205 距层缘 200 在吸附阈内：未拖动不得触发吸附再定位（落位取抓取途中
+        // 最后吸附位，未动即内核位，松手不重复求位）
+        dispatchPointer(line.element, 'pointerdown', { clientX: 205, clientY: 10, button: 0 })
+        dispatchPointer(wrapper.find('[data-guide-line="1"]').element, 'pointerup', {
+            clientX: 205,
+            clientY: 10,
+        })
+        await wrapper.vm.$nextTick()
+        expect(changes).toEqual([])
         expect(editor.listGuides()).toEqual([{ id: 1, orientation: 'vertical', position: 205 }])
-        expect(wrapper.find('[data-guide-line="1"]').attributes('data-guide-position')).toBe('205')
         expect(wrapper.find('[data-guide-line="1"]').attributes('data-guide-dragging')).toBeUndefined()
         wrapper.unmount()
     })

@@ -17,21 +17,28 @@ import {
     type GuideOrientation,
 } from '@hankchen/canvas-editor'
 
-/** 参考线拖出/预览位置的吸附求位：返回吸附修正后的场景坐标（无命中即原位） */
+/** 参考线拖出/预览/拖动位置的吸附求位：返回吸附修正后的场景坐标（无命中即原位）。
+ *  excludeGuideId：拖动再定位时点名排除被拖线自身轴——否则指针近原位会被自己
+ *  粘住（原轴仍是供轴源），拖不出手；拖出落线路径不传，既有语义不动。 */
 export function snapGuideAxis(
     editor: EditorSession,
     orientation: GuideOrientation,
     position: number,
+    excludeGuideId?: number,
 ): number {
     const doc = editor.store.doc
     if (!doc) return position
+    const guides =
+        excludeGuideId === undefined
+            ? editor.listGuides()
+            : editor.listGuides().filter((guide) => guide.id !== excludeGuideId)
     const resolution = resolveSnap(
         { x: position, y: position, width: 0, height: 0 },
         snapAxesFromBoxes(
             doc.width,
             doc.height,
             visibleRootBoxes(doc, -1, editor.textPolicies),
-            editor.listGuides(),
+            guides,
         ),
         snapThresholdScene(editor.store.ui.viewport.zoom),
     )

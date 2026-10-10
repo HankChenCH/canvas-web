@@ -1120,6 +1120,22 @@ export class EditorSession {
     }
 
     /**
+     * 移动参考线（抓取拖动再定位的写入口）：按 id 原地改位（取向不变），
+     * ui 分支同门——不进历史、不写 graph（ADR 0012），广播 guides 分支通知
+     * （覆盖层失效重绘）。非有限坐标/未知 id 空转返回 false（不产生通知）；
+     * 同位空转返回 true（无变化不惊动订阅方——抓取未动的松手路径）。
+     */
+    updateGuide(id: number, position: number): boolean {
+        if (!Number.isFinite(position)) return false
+        const guides = this.store.ui.guides
+        const target = guides.find((guide) => guide.id === id)
+        if (target === undefined) return false
+        if (target.position === position) return true
+        this.store.setGuides(guides.map((guide) => (guide.id === id ? { ...guide, position } : guide)))
+        return true
+    }
+
+    /**
      * 清空全部参考线（工具栏「清空参考线」写入口，工单 03 消费）：ui 分支整体置空，
      * 与 removeGuide 同型广播 guides 分支通知（覆盖层失效重绘）。会话级语义同门——
      * 不进历史、不写 graph（ADR 0012），不可撤销；无文档或已空时空转（不产生通知）。

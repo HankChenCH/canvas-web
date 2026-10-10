@@ -93,6 +93,23 @@ describe('snapGuideAxis：排除与回退', () => {
         expect(snapGuideAxis(editor, 'vertical', edge + 3)).toBe(edge + 3)
     })
 
+    it('excludeGuideId 排除自身轴（拖动再定位）：仅自身供轴时 208 不被原位 205 拉回', () => {
+        const editor = makeEditor()
+        const guide = editor.addGuide({ orientation: 'vertical', position: 205 })!
+        // 不排除：自身轴照常供轴（新线吸旧线的既有语义不动）
+        expect(snapGuideAxis(editor, 'vertical', 208)).toBe(205)
+        // 排除后：微移离轴不再被自己粘住
+        expect(snapGuideAxis(editor, 'vertical', 208, guide.id)).toBe(208)
+    })
+
+    it('excludeGuideId 只排除点名那一条：其余参考线照常供轴', () => {
+        const editor = makeEditor()
+        editor.addGuide({ orientation: 'vertical', position: 205 })
+        const other = editor.addGuide({ orientation: 'vertical', position: 420 })!
+        // 排除 420 后指针 208 仍吸到未排除的 205（层缘 200 距 8 已出阈）
+        expect(snapGuideAxis(editor, 'vertical', 208, other.id)).toBe(205)
+    })
+
     it('无文档回退原位', () => {
         const editor = new EditorSession({ scheduleFrame: nullScheduler })
         expect(snapGuideAxis(editor, 'vertical', 123)).toBe(123)

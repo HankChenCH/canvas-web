@@ -58,6 +58,58 @@ describe('参考线 API（addGuide/removeGuide/listGuides）', () => {
     })
 })
 
+describe('移动参考线（updateGuide，拖动再定位写入口）', () => {
+    it('按 id 原地改位：listGuides 回读新位置，发出 guides 分支通知（覆盖层失效重绘）', () => {
+        const session = makeSession()
+        const g = session.addGuide({ orientation: 'vertical', position: 205 })!
+        const changes: EditorChange[] = []
+        session.subscribe((change) => changes.push(change))
+        expect(session.updateGuide(g.id, 300)).toBe(true)
+        expect(session.listGuides()).toEqual([{ id: g.id, orientation: 'vertical', position: 300 }])
+        expect(changes).toEqual([{ scope: 'ui', branch: 'guides' }])
+    })
+
+    it('未知 id 返回 false 且列表不动（无通知）', () => {
+        const session = makeSession()
+        session.addGuide({ orientation: 'vertical', position: 205 })
+        const changes: EditorChange[] = []
+        session.subscribe((change) => changes.push(change))
+        expect(session.updateGuide(999, 300)).toBe(false)
+        expect(session.listGuides()).toEqual([{ id: 1, orientation: 'vertical', position: 205 }])
+        expect(changes).toEqual([])
+    })
+
+    it('非有限坐标空转：返回 false 不产生通知（与 addGuide 同门防御）', () => {
+        const session = makeSession()
+        const g = session.addGuide({ orientation: 'vertical', position: 205 })!
+        const changes: EditorChange[] = []
+        session.subscribe((change) => changes.push(change))
+        expect(session.updateGuide(g.id, Number.NaN)).toBe(false)
+        expect(session.updateGuide(g.id, Number.POSITIVE_INFINITY)).toBe(false)
+        expect(session.listGuides()).toEqual([{ id: g.id, orientation: 'vertical', position: 205 }])
+        expect(changes).toEqual([])
+    })
+
+    it('同位空转：返回 true 不产生通知（无变化不惊动订阅方——点击不拖的松手路径）', () => {
+        const session = makeSession()
+        const g = session.addGuide({ orientation: 'vertical', position: 205 })!
+        const changes: EditorChange[] = []
+        session.subscribe((change) => changes.push(change))
+        expect(session.updateGuide(g.id, 205)).toBe(true)
+        expect(changes).toEqual([])
+    })
+
+    it('历史同门：移动不产生历史步、不写 graph（doc 引用保持原值）', () => {
+        const session = makeSession()
+        const g = session.addGuide({ orientation: 'vertical', position: 205 })!
+        const before = session.store.doc
+        session.updateGuide(g.id, 300)
+        expect(session.canUndo).toBe(false)
+        expect(session.store.history).toHaveLength(0)
+        expect(session.store.doc).toBe(before)
+    })
+})
+
 describe('清空参考线（clearGuides，editor-top-toolbar 工单 01）', () => {
     it('一键清空：listGuides 为空，发出与 removeGuide 同型的 guides 分支通知（覆盖层失效重绘）', () => {
         const session = makeSession()

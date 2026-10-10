@@ -21,9 +21,12 @@
  * 既有同向参考线轴上则跳过（吸附贴合防双线）；guide-drag-cancel（系统接管指针）
  * 丢弃中断手势不落线。
  *
- * 拖回删除：参考线命中条上按下抓取，线随指针原语跟随（不吸附——删除手势不是
- * 再定位）；落点在标尺条上（document.elementFromPoint 命中 data-ruler-*，钩子即
- * 判定面、不感知宿主挂载几何）调 removeGuide，落在别处原线复原。
+ * 拖动再定位：参考线命中条上按下抓取，线随指针吸附跟随（复用拖出落线同一吸附
+ * 数学，excludeGuideId 排除自身轴防原位粘滞）；松手三歧——落点在标尺条上
+ * （document.elementFromPoint 命中 data-ruler-*，钩子即判定面、不感知宿主挂载
+ * 几何）调 removeGuide（拖回删除）；落点恰在既有同向参考线轴上（吸附贴合所致）
+ * 合并删除被拖线（防同轴双线，与拖出落线同门）；其余落点 updateGuide 原位改写
+ * （吸附后位置，未拖动即内核位——点击不拖零副作用）。
  *
  * 与内容层同一呈现视口（读 ui.viewport 分支）：线上轴向位置 = (场景值 − viewport
  * 原点) × zoom。挂载契约同 Ruler：根铺满宿主给的挂载点（与画布内容区重合），
@@ -139,12 +142,12 @@ function cancelGuideDrag(): void {
 
 defineExpose({ beginGuideDrag, moveGuideDrag, endGuideDrag, cancelGuideDrag })
 
-// ---- 拖回标尺删除：参考线命中条上的抓取手势 ----
+// ---- 抓取手势：拖动再定位 + 拖回标尺删除 ----
 
 interface GuideVm {
     readonly id: number
     readonly orientation: GuideOrientation
-    /** 呈现位置：拖回中随指针，其余为内核位 */
+    /** 呈现位置：抓取中随指针（吸附后），其余为内核位 */
     readonly position: number
     readonly dragging: boolean
     readonly overRuler: boolean
@@ -154,6 +157,7 @@ interface DragBackState {
     readonly id: number
     readonly orientation: GuideOrientation
     readonly pointerId: number
+    /** 抓取途中最后吸附位（松手落定值）；未拖动即内核位——点击不拖零副作用 */
     readonly current: number
     readonly overRuler: boolean
 }
@@ -221,8 +225,9 @@ function releaseCapture(e: PointerEvent): void {
 function onGuidePointerDown(e: PointerEvent, guide: GuideVm): void {
     if (e.button !== 0 || dragBack.value !== null) return
     e.preventDefault()
-    // 命中条一次只抓一条（guard 已挡住拖回中的二次按下）；落线写内核只发生在
-    // 抬手（overRuler → removeGuide），抓取途中零内核写入
+    // 命中条一次只抓一条（guard 已挡住抓取中的二次按下）；内核写入只发生在
+    // 抬手（标尺 → removeGuide / 同轴贴合 → 合并删除 / 其余 → updateGuide），
+    // 抓取途中零内核写入
     dragBack.value = {
         id: guide.id,
         orientation: guide.orientation,
@@ -238,7 +243,13 @@ function onGuidePointerMove(e: PointerEvent): void {
     if (active === null || e.pointerId !== active.pointerId) return
     dragBack.value = {
         ...active,
-        current: pointerScene(e, active.orientation),
+        // 吸附跟随（与拖出落线同一求位缝）；排除自身轴防原位粘滞
+        current: snapGuideAxis(
+            props.editor,
+            active.orientation,
+            pointerScene(e, active.orientation),
+            active.id,
+        ),
         overRuler: isOverRuler(e.clientX, e.clientY),
     }
 }
@@ -248,8 +259,22 @@ function onGuidePointerUp(e: PointerEvent): void {
     if (active === null || e.pointerId !== active.pointerId) return
     dragBack.value = null
     releaseCapture(e)
-    // 抬手复判落点（与最后一步 move 同点即同值；中途未动即原位复原）
-    if (isOverRuler(e.clientX, e.clientY)) props.editor.removeGuide(active.id)
+    // 松手三歧（头注）：落点在标尺条上（与最后一步 move 同点即同值）拖回删除；
+    // 落点恰在既有同向参考线轴上（吸附贴合）合并删除防同轴双线；其余再定位
+    if (isOverRuler(e.clientX, e.clientY)) {
+        props.editor.removeGuide(active.id)
+        return
+    }
+    const coincides = props.editor
+        .listGuides()
+        .some(
+            (guide) =>
+                guide.id !== active.id &&
+                guide.orientation === active.orientation &&
+                Math.abs(guide.position - active.current) < 1e-6,
+        )
+    if (coincides) props.editor.removeGuide(active.id)
+    else props.editor.updateGuide(active.id, active.current)
 }
 
 function onGuidePointerCancel(e: PointerEvent): void {
