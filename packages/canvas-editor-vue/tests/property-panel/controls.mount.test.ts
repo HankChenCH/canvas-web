@@ -27,6 +27,7 @@ import SelectField from '../../src/property-panel/fields/SelectField.vue'
 import TextField from '../../src/property-panel/fields/TextField.vue'
 import TextareaField from '../../src/property-panel/fields/TextareaField.vue'
 import ValueTypeSegmented from '../../src/property-panel/fields/ValueTypeSegmented.vue'
+import PropertyField from '../../src/property-panel/PropertyField.vue'
 import type { FieldDef } from '../../src/property-panel/fieldSchema'
 
 const numField: FieldDef = { key: ['position', 'x'], label: 'X', control: 'number', integer: true }
@@ -322,6 +323,21 @@ describe('BooleanField', () => {
         await wrapper.setProps({ modelValue: false })
         await wrapper.vm.$nextTick()
         expect(wrapper.find('input').element.checked).toBe(false)
+    })
+
+    it('原生 input 事件不外溢为提交（可信点击缺陷回归，canvas-web #诊断 2026-10）：开关本体的 emits 只声明 change——漏声明 input 会让 PropertyField 的 @input 绑定按 Vue 规则穿透成原生监听，真实指针点击的浏览器原生 input 冒泡即以 Event 对象误入提交链（updateSpec 收到 Event → 文档字段被污染 → change 读到被回声拉回的勾选态、取消被吞）', async () => {
+        const wrapper = mount(PropertyField, {
+            props: {
+                field: { key: ['autowrap'], label: '自动换行', control: 'boolean' } as FieldDef,
+                value: true,
+            },
+        })
+        // 可信点击的原生信号面：浏览器切换勾选态后先派发冒泡 input、再派发 change；
+        // 此处只发 input（property-panel 层面的 input 语义 = 控件自报的实时值，
+        // 从不来自 DOM 原生事件）
+        const checkbox = wrapper.find('input')
+        checkbox.element.dispatchEvent(new Event('input', { bubbles: true }))
+        expect(wrapper.emitted('input')).toBeUndefined()
     })
 })
 

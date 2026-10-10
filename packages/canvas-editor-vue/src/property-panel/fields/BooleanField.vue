@@ -15,7 +15,15 @@ import type { FieldDef } from '../fieldSchema'
 
 const props = defineProps<{ field: FieldDef; modelValue: boolean }>()
 
-const emit = defineEmits<{ change: [value: boolean] }>()
+/**
+ * emits 必须声明 input（尽管从不发出）：PropertyField 对所有控件统一绑
+ * `@input`/`@change`，漏声明 input 时该绑定按 Vue 规则穿透成**原生** input 监听——
+ * 真实指针点击开关时浏览器的原生切换信号（input 事件）会冒泡进提交链，
+ * commit(Event 对象, false) 把 Event 误写入文档字段，且 Vue 回声在原生 input 与
+ * change 的分派间隙把勾选态拉回、change 读到回声值——取消永远被吞（真机缺陷
+ * 2026-10「自动换行无法取消」）。声明即断开穿透，原生 input 零监听。
+ */
+const emit = defineEmits<{ input: []; change: [value: boolean] }>()
 
 const inputRef = ref<HTMLInputElement | null>(null)
 
