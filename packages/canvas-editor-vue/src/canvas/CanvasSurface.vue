@@ -43,7 +43,7 @@ import { classifyWheel, type EditorSession, type LayerType, type ResizeHandle } 
 import ContextMenu from './ContextMenu.vue'
 import FindBar from './FindBar.vue'
 import { RESIZE_HANDLE_CURSORS } from './resizeHandles'
-import { isEditableEventTarget } from '../shared/editableTarget'
+import { isEditableEventTarget, isTextEntryTarget } from '../shared/editableTarget'
 import TextEditingOverlay from './TextEditingOverlay.vue'
 import { uploadFileFromDom } from '../shared/uploadFile'
 import { useTransientFeedback } from '../shared/useTransientFeedback'
@@ -403,13 +403,16 @@ onMounted(() => {
     const onKeyUp = (e: KeyboardEvent) => {
         if (e.code === 'Space') spaceHeld.value = false
     }
-    // Escape 升级选择归属链（格→行→表→清空）；输入法/输入框内不拦；顺带关右键菜单
-    // 与查找条（浮层先例协议——焦点漂出查找条输入框时 Esc 由窗口监听转发关闭）。
+    // Escape 升级选择归属链（格→行→表→清空）；输入法/文本录入元素内不拦（INPUT/
+    // TEXTAREA/SELECT 的 Esc 属原生控件语义——IME 取消、下拉收起）；按钮焦点不拦
+    // （按钮让路快捷键但不消耗 Esc）——顺带关右键菜单与查找条（浮层先例协议——
+    // 焦点漂出查找条输入框时 Esc 由窗口监听转发关闭；若按 BUTTON 短路，点过工具栏
+    // 任意按钮后查找条即无法用 Esc 关闭，真机缺陷 2026-10）。
     // 武装/画拉态（drag-create 工单 02）守卫前置：Esc 先解除武装/取消画拉即收口
     // ——不走选择升级链、不动浮层（建层或 Esc 即解除，CONTEXT「武装」词条；
     // 「Esc 解除零副作用」验收——选择变更属副作用）
     const onEscape = (e: KeyboardEvent) => {
-        if (e.key !== 'Escape' || isEditableEventTarget(e.target)) return
+        if (e.key !== 'Escape' || isTextEntryTarget(e.target)) return
         if (editor.store.ui.armedCreate !== null || editor.store.ui.create !== null) {
             editor.cancelCreate()
             return

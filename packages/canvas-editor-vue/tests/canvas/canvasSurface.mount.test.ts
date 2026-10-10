@@ -237,6 +237,24 @@ describe('内挂 FindBar：随会话开合与 Esc 转发关闭（find-replace �
         expect(editor.store.ui.find.open).toBe(false)
         cleanup()
     })
+
+    it('焦点在按钮上按 Esc 同样转发关闭（真机：点过工具栏「查找」/菜单钮后焦点落 BUTTON；BUTTON 让路快捷键但不消耗 Esc）', async () => {
+        const { editor, cleanup } = mountSurface()
+        editor.beginFind()
+        await nextTick()
+        expect(document.querySelector('[data-find-bar]')).not.toBeNull()
+
+        // keydown 的 target = 聚焦按钮（真机 keydown 即派发在焦点元素上）
+        const toolbarButton = document.createElement('button')
+        document.body.appendChild(toolbarButton)
+        toolbarButton.focus()
+        toolbarButton.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+        await nextTick()
+        expect(editor.store.ui.find.open).toBe(false)
+        expect(document.querySelector('[data-find-bar]')).toBeNull()
+        toolbarButton.remove()
+        cleanup()
+    })
 })
 
 describe('Alt+拖快速复制：altKey 读取传递（alt-drag-paste 工单 01）', () => {
