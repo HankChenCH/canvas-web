@@ -1,6 +1,6 @@
 {
     "name": "@hankchen/canvas-editor",
-    "version": "0.1.1",
+    "version": "0.2.0",
     "license": "MIT",
     "description": "headless 编辑器内核：observable store、immer patches 双栈历史、工具状态机、选择/视口/命中/吸附/物化状态机/剪贴板——仅依赖 immer",
     "type": "module",
