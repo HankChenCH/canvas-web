@@ -112,7 +112,11 @@ import {
     insertRootLayerInDraft,
     moveRootLayerInDraft,
     moveTableRowInDraft,
+    pickNextTextStylePatch,
+    TEXT_PRESETS,
     type DeletedLayerRef,
+    type NextTextStyle,
+    type TextPresetId,
 } from '../editing/layerPanel'
 import {
     addTableCellInDraft,
@@ -238,6 +242,18 @@ function clampFindCursor(cursor: number, count: number): number {
  * 空片段/路径空段带错误信号，均不算合法片段——表达式会话提交去向（标记写 vs
  * 字面回落）的判定原语，守住不变量「标记 ⟹ ≥1 合法片段」。
  */
+/**
+ * updateSpec 字段路径 → 新层样式槽字段（text-defaults 工单 01）：文本族五键
+ * 映射（shape.lineHeight 是唯一两段键），未命中返回 null——captureNextTextStyle
+ * 的键面白名单。
+ */
+function captureFieldOfKey(key: readonly string[]): keyof NextTextStyle | null {
+    const single = key.length === 1 ? key[0] : null
+    if (single === 'font' || single === 'fontSize' || single === 'fontColor' || single === 'autowrap') return single
+    if (key.length === 2 && key[0] === 'shape' && key[1] === 'lineHeight') return 'lineHeight'
+    return null
+}
+
 function hasValidExpressionFragment(template: string): boolean {
     return scanExpressionFragments(template).parts.some(
         (part) => part.kind === 'fragment' && part.error === null,
@@ -917,8 +933,17 @@ export class EditorSession {
      * 武装建层（面板新增项/层型快捷键的统一入口，CONTEXT「武装」词条）：置 ui
      * 分支待命层型，下一次画布按下即开画拉；建层提交或 Esc 即解除——一次性
      * 待命态，无粘性工具（spec 决策 2）。重复武装同型值等短路零通知。
+     *
+     * preset（text-defaults 工单 01，CONTEXT「文本预设」词条）：文本预设 = 写
+     * 新层样式槽的快捷方式——命中档位先把档位值并入槽（v1 只 fontSize），再
+     * 武装；仅 TextLayer 生效；未知 id = 跳过写槽、武装照常（评审口径统一：
+     * 「空转」只指写槽，武装层型本身仍合法）。
      */
-    armLayerCreate(type: LayerType): void {
+    armLayerCreate(type: LayerType, preset?: TextPresetId): void {
+        if (preset !== undefined && type === 'TextLayer') {
+            const entry = TEXT_PRESETS.find((candidate) => candidate.id === preset)
+            if (entry) this.store.setNextTextStyle({ fontSize: entry.fontSize })
+        }
         this.store.setArmedCreate(type)
     }
 
@@ -1000,7 +1025,8 @@ export class EditorSession {
         const clicked = Math.hypot(dx, dy) <= deadZoneScene
         const index: TxOut<number> = { v: -1 }
         this.store.transact((draft) => {
-            const layer = createDefaultLayer(gesture.type) as Draft<Layer>
+            // 新层样式槽覆盖工厂缺省（text-defaults 工单 01）：工厂仅 TextLayer 臂消费
+            const layer = createDefaultLayer(gesture.type, this.store.ui.nextTextStyle) as Draft<Layer>
             if (clicked) {
                 // 点击兜底：缺省尺寸原样，position 左上角对准点击点（拖文件入画布
                 // 「左上角对准释放点」同门，spec 决策 5）
@@ -1206,16 +1232,23 @@ export class EditorSession {
      */
     getEditorPrefs(): EditorPrefsState {
         const ui = this.store.ui
-        return { rulersVisible: ui.rulersVisible, anchorExpanded: ui.anchorExpanded }
+        return {
+            rulersVisible: ui.rulersVisible,
+            anchorExpanded: ui.anchorExpanded,
+            nextTextStyle: ui.nextTextStyle,
+        }
     }
 
     /**
      * 应用偏好（会话建立时一次性，跨会话恢复 prefs 的写入口）：整体替换
      * rulersVisible/anchorExpanded，不进历史；值等写入经 store 短路零通知。
+     * 新层样式（text-defaults 工单 01）走宽容读逐字段合并（pickNextTextStylePatch
+     * 共享谓词——与捕获同门，缺字/类型不符保留现值）。
      */
     applyEditorPrefs(prefs: EditorPrefsState): void {
         this.store.setRulersVisible(prefs.rulersVisible)
         this.store.setAnchorExpanded(prefs.anchorExpanded)
+        this.store.setNextTextStyle(pickNextTextStylePatch(prefs.nextTextStyle))
     }
 
     // ---- 对齐画布（layer-align-snap 工单 01）：图层盒整体对齐画布几何 ----
@@ -1479,6 +1512,24 @@ export class EditorSession {
             renormalizeAutoHeightInDraft(layer)
             canonicalizeTableSyncInDraft(draft, path, key, this.textPolicies)
         }, options)
+        this.captureNextTextStyle(path, key, value)
+    }
+
+    /**
+     * 新层样式捕获（text-defaults 工单 01，CONTEXT「新层样式」词条）：属性面板
+     * 对 TextLayer 文本族五字段的权威写顺带更新偏好槽——「用户改过一次，下一个
+     * 新层沿用」。捕获口唯一（updateSpec 漏斗）：内容写（updateData）、样式粘贴
+     * （搬运不是偏好）、撤销重做都不经过此口。字段合法性走 editing 域共享谓词
+     * pickNextTextStylePatch（与 prefs 宽容读同门，评审合流不再双写）：目标层非
+     * TextLayer、键不命中或值类型不符即空转，符合字段经值等短路入槽。
+     */
+    private captureNextTextStyle(path: LayerPath, key: readonly string[], value: unknown): void {
+        const layer = this.store.doc ? resolveLayer(this.store.doc, path) : null
+        if (!layer || layer.type !== 'TextLayer') return
+        const field = captureFieldOfKey(key)
+        if (field === null) return
+        const patch = pickNextTextStylePatch({ [field]: value })
+        if (patch[field] !== undefined) this.store.setNextTextStyle(patch)
     }
 
     /**
@@ -1681,7 +1732,8 @@ export class EditorSession {
         if (!this.store.doc) return
         const index: TxOut<number> = { v: -1 }
         this.store.transact((draft) => {
-            index.v = addRootLayerInDraft(draft, type)
+            // 新层样式槽覆盖工厂缺省（text-defaults 工单 01）：工厂仅 TextLayer 臂消费
+            index.v = addRootLayerInDraft(draft, type, this.store.ui.nextTextStyle)
         })
         if (index.v >= 0) this.store.setSelection(['layers', index.v])
     }

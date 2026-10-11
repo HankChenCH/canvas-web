@@ -167,11 +167,71 @@ export function buildLayerOutline(
 // ---- 新增图层：编辑器缺省形态 ----
 
 /**
+ * 新层样式（text-defaults 工单 01，CONTEXT「新层样式」词条）：记忆「下一个新建
+ * 文本层用什么文本样式族」的偏好槽形态——样式粘贴文本族同门的五字段（不含
+ * angle，旋转角不是新层偏好）。字段与 TextLayer 顶层字段/shape.lineHeight 对齐。
+ */
+export interface NextTextStyle {
+    font: string
+    fontSize: number
+    fontColor: string
+    autowrap: boolean
+    lineHeight: number
+}
+
+/** 文本预设档位（CONTEXT「文本预设」词条）：heading 40 / subheading 28 / body 16 */
+export type TextPresetId = 'heading' | 'subheading' | 'body'
+
+/** 文本预设常量（spec 决策 4）：v1 只定字号——字体缺口由新层样式槽补 */
+export const TEXT_PRESETS: readonly { id: TextPresetId; fontSize: number }[] = [
+    { id: 'heading', fontSize: 40 },
+    { id: 'subheading', fontSize: 28 },
+    { id: 'body', fontSize: 16 },
+]
+
+/** 新层样式槽初值：自工厂 TextLayer 形态派生（工厂缺省是单一事实源，槽跟着走） */
+export function defaultNextTextStyle(): NextTextStyle {
+    const base = createDefaultLayer('TextLayer') as TextLayer
+    return {
+        font: base.font,
+        fontSize: base.fontSize,
+        fontColor: base.fontColor,
+        autowrap: base.autowrap,
+        lineHeight: base.shape.lineHeight,
+    }
+}
+
+/**
+ * 新层样式字段的宽容读逐字段收口（text-defaults 工单 01；评审合流——捕获与
+ * prefs 恢复共用同一谓词，不再双写）：合法字段进合并集，缺字/类型不符忽略
+ * （调用方保留现值），未知键忽略。autowrap 严格布尔（票 01 口径「不符跳过」，
+ * 不做真值强转）；lineHeight 须为正有限数。载荷来自属性写入与宿主 JSON 快照，
+ * 类型层信任不了，运行时验。
+ */
+export function pickNextTextStylePatch(raw: unknown): Partial<NextTextStyle> {
+    const out: Partial<NextTextStyle> = {}
+    if (raw === null || typeof raw !== 'object') return out
+    const source = raw as Record<string, unknown>
+    if (typeof source.font === 'string') out.font = source.font
+    if (typeof source.fontSize === 'number' && Number.isFinite(source.fontSize)) out.fontSize = source.fontSize
+    if (typeof source.fontColor === 'string') out.fontColor = source.fontColor
+    if (typeof source.autowrap === 'boolean') out.autowrap = source.autowrap
+    if (typeof source.lineHeight === 'number' && Number.isFinite(source.lineHeight) && source.lineHeight > 0) {
+        out.lineHeight = source.lineHeight
+    }
+    return out
+}
+
+/**
  * 编辑器新建图层的缺省形态：可见尺寸（0×0 无法命中/抓取）、top-left 摆位、
  * 中性配色。与 wire 解码缺省是两回事（那是「手写 JSON 宽进」语义），这里是
  * 编辑器 UX 语义；priority 统一由 addRootLayer 按「置顶 min−1」赋值。
+ *
+ * textDefaults（text-defaults 工单 01）：新层样式槽覆盖参，仅 TextLayer 臂逐
+ * 字段生效（其余层型忽略）——只有画拉 endCreate 与面板新增 addRootLayer 两个
+ * 入口传槽；模板表/表格结构的工厂调用不传，保持确定性缺省（spec 决策 3）。
  */
-export function createDefaultLayer(type: LayerType): Layer {
+export function createDefaultLayer(type: LayerType, textDefaults?: Partial<NextTextStyle>): Layer {
     const base = {
         // name/visible 缺省态（layer-panel-ux 工单 01）：未命名 + 可见，wire 键省略
         name: '',
@@ -191,19 +251,26 @@ export function createDefaultLayer(type: LayerType): Layer {
         position: { anchor: 'top-left', x: 0, y: 0 } as const,
     }
     switch (type) {
-        case 'TextLayer':
-            return {
+        case 'TextLayer': {
+            const layer: TextLayer = {
                 ...base,
                 type,
-                shape: { ...base.shape, width: 200, height: 60 },
+                shape: {
+                    ...base.shape,
+                    width: 200,
+                    height: 60,
+                    lineHeight: textDefaults?.lineHeight ?? base.shape.lineHeight,
+                },
                 text: '文本',
                 expression: null,
-                font: '',
-                fontSize: 24,
-                fontColor: '#111827',
+                font: textDefaults?.font ?? '',
+                fontSize: textDefaults?.fontSize ?? 24,
+                fontColor: textDefaults?.fontColor ?? '#111827',
                 angle: 0,
-                autowrap: false,
+                autowrap: textDefaults?.autowrap ?? false,
             }
+            return layer
+        }
         case 'ImageLayer':
             return { ...base, type, shape: { ...base.shape, width: 200, height: 150 }, src: null, expression: null }
         case 'QrCodeLayer':
@@ -355,10 +422,12 @@ export function moveTableRowInDraft(
 
 /**
  * 新增根层（draft 原位变换）：工厂缺省形态 + priority = min − 1（空画布取 0），
- * push 到数组尾（视觉最上层）。返回新层的数组下标。
+ * push 到数组尾（视觉最上层）。返回新层的数组下标。textDefaults（text-defaults
+ * 工单 01）可选透传工厂覆盖——session 侧 addRootLayer 传新层样式槽，其余调用
+ * 方不传走纯工厂缺省。
  */
-export function addRootLayerInDraft(draft: Draft<Canvas>, type: LayerType): number {
-    return insertRootLayerInDraft(draft, createDefaultLayer(type) as Draft<Layer>)
+export function addRootLayerInDraft(draft: Draft<Canvas>, type: LayerType, textDefaults?: Partial<NextTextStyle>): number {
+    return insertRootLayerInDraft(draft, createDefaultLayer(type, textDefaults) as Draft<Layer>)
 }
 
 /**

@@ -10,6 +10,7 @@
  */
 import type { Guide, GuideOrientation } from '../spatial/snap'
 import type { LayerPath } from '../shared/layerPath'
+import type { NextTextStyle } from '../editing/layerPanel'
 
 /** 快照格式版本：随格式演化单调递增；v1 = 1（宽容读贯彻，restore 不分支此值） */
 export const EDITOR_STATE_SCHEMA_VERSION = 1
@@ -25,10 +26,16 @@ export interface CanvasEditorState {
     lockedPaths: readonly LayerPath[]
 }
 
-/** 编辑器级偏好：跨文档、跨会话内核自持（工程数据快照的 prefs 桶，分类学终裁两项） */
+/** 编辑器级偏好：跨文档、跨会话内核自持（工程数据快照的 prefs 桶，分类学终裁三项） */
 export interface EditorPrefsState {
     rulersVisible: boolean
     anchorExpanded: boolean
+    /**
+     * 新层样式槽（text-defaults 工单 01，CONTEXT「新层样式」词条）：随 prefs 桶
+     * 跨会话持久（per-模板记忆）。schemaVersion 不升——加法演进，旧快照缺字段
+     * 由 applyEditorPrefs 宽容读兜底为现值（会话内即工厂缺省）。
+     */
+    nextTextStyle: NextTextStyle
 }
 
 /** 快照 guide 的恢复形：id 已剥（无持久语义），只余 addGuide 入参两字段 */

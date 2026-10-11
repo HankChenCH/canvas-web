@@ -21,6 +21,7 @@ import type { ResizeHandle } from '../spatial/resize'
 import { pathsEqual, type LayerPath } from '../shared/layerPath'
 import type { ExpressionSchemaNode } from '../shared/expressionSchema'
 import type { ResourceStatusMap } from '../shared/resourceStatus'
+import { defaultNextTextStyle, type NextTextStyle } from '../editing/layerPanel'
 
 enablePatches()
 // 关闭 immer 自动冻结：文档树以「不可变 + 结构共享」语义流转（引用相等即未变），
@@ -154,6 +155,14 @@ export interface EditorUi {
      */
     anchorExpanded: boolean
     /**
+     * 新层样式槽（text-defaults 工单 01，CONTEXT「新层样式」词条）：记忆「下一
+     * 个新建文本层用什么文本样式族」的编辑器级偏好——属性面板对 TextLayer 文本
+     * 族字段的权威写（updateSpec 捕获）更新槽，建层（endCreate/addRootLayer）
+     * 以槽值覆盖工厂缺省。与锚点折叠同款的面板偏好——openDocument 换文档不重
+     * 置，永不进历史；随工程数据 prefs 桶跨会话持久（宿主通道，内核零 localStorage）。
+     */
+    nextTextStyle: NextTextStyle
+    /**
      * 数据源 schema 声明（content-completion 工单 03/08，D2 宿主随会话注入）：
      * 编译产物形状树或降级 null（根级结构性拒绝，注入期经
      * normalizeExpressionSchemaSource 一次性收口 + console 警告；局部故障不拒绝，
@@ -270,6 +279,17 @@ function resourceStatusesEqual(a: ResourceStatusMap, b: ResourceStatusMap): bool
     return true
 }
 
+/** 新层样式内容等（五字段值等，捕获/预设写槽的短路比较） */
+function nextTextStyleEqual(a: NextTextStyle, b: NextTextStyle): boolean {
+    return (
+        a.font === b.font
+        && a.fontSize === b.fontSize
+        && a.fontColor === b.fontColor
+        && a.autowrap === b.autowrap
+        && a.lineHeight === b.lineHeight
+    )
+}
+
 export class EditorStore {
     private docValue: Canvas | null = null
     private uiValue: EditorUi = {
@@ -283,6 +303,7 @@ export class EditorStore {
         editing: null,
         renaming: null,
         anchorExpanded: false,
+        nextTextStyle: defaultNextTextStyle(),
         dataSourceSchema: null,
         guides: [],
         rulersVisible: true,
@@ -320,7 +341,7 @@ export class EditorStore {
 
     /** 打开/替换文档：ui 选择/编辑/重命名会话与双向历史一并重置（新文档不继承旧路径/旧事务）；
      *  参考线/锁定集合/查找会话/建层武装与画拉会话随当次会话清空（对位轴/文档内容防护/
-     *  查询词/待命层型不跨文档），标尺显隐作为偏好保留 */
+     *  查询词/待命层型不跨文档），标尺显隐/锚点折叠/新层样式作为偏好保留 */
     openDocument(canvas: Canvas): void {
         this.docValue = canvas
         this.undoSteps = []
@@ -473,6 +494,17 @@ export class EditorStore {
         if (this.uiValue.anchorExpanded === open) return
         this.uiValue = { ...this.uiValue, anchorExpanded: open }
         this.notify({ scope: 'ui', branch: 'anchorExpanded' })
+    }
+
+    /**
+     * 新层样式槽逐字段合并（text-defaults 工单 01：捕获/预设/prefs 恢复的统一
+     * 写入口）：patch 并入现值，五字段值等短路（重复写同值零通知），不进历史。
+     */
+    setNextTextStyle(patch: Partial<NextTextStyle>): void {
+        const next = { ...this.uiValue.nextTextStyle, ...patch }
+        if (nextTextStyleEqual(this.uiValue.nextTextStyle, next)) return
+        this.uiValue = { ...this.uiValue, nextTextStyle: next }
+        this.notify({ scope: 'ui', branch: 'nextTextStyle' })
     }
 
     /**

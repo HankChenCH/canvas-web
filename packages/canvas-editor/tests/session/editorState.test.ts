@@ -17,11 +17,21 @@ import { EditorSession, type FrameScheduler } from '../../src/session/editor'
 import {
     EDITOR_STATE_SCHEMA_VERSION,
     type CanvasEditorState,
+    type EditorPrefsState,
 } from '../../src/session/editorState'
+import { defaultNextTextStyle } from '../../src/editing/layerPanel'
 import type { EditorChange } from '../../src/session/store'
 import { textLayer } from '../support/fixtures'
 
 const nullScheduler: FrameScheduler = () => () => {}
+
+/** 完整 prefs 形状（text-defaults 工单 01 后 EditorPrefsState 三字段）：槽未动的测试用工厂缺省对表 */
+const prefs = (overrides: Partial<EditorPrefsState> = {}): EditorPrefsState => ({
+    rulersVisible: true,
+    anchorExpanded: false,
+    nextTextStyle: defaultNextTextStyle(),
+    ...overrides,
+})
 
 const doc = (): Canvas => ({
     width: 800,
@@ -84,23 +94,23 @@ describe('exportEditorState：当前画布切片', () => {
 })
 
 describe('prefs 读写成对（getEditorPrefs / applyEditorPrefs）', () => {
-    it('缺省偏好：标尺常显、锚点区收起', () => {
-        expect(makeSession().getEditorPrefs()).toEqual({ rulersVisible: true, anchorExpanded: false })
+    it('缺省偏好：标尺常显、锚点区收起、新层样式为工厂缺省', () => {
+        expect(makeSession().getEditorPrefs()).toEqual(prefs())
     })
 
     it('整体替换：会话内翻转态被写入值覆盖', () => {
         const session = makeSession()
         session.toggleRulers() // → false
         session.store.setAnchorExpanded(true)
-        session.applyEditorPrefs({ rulersVisible: true, anchorExpanded: false })
-        expect(session.getEditorPrefs()).toEqual({ rulersVisible: true, anchorExpanded: false })
+        session.applyEditorPrefs(prefs({ rulersVisible: true, anchorExpanded: false }))
+        expect(session.getEditorPrefs()).toEqual(prefs({ rulersVisible: true, anchorExpanded: false }))
     })
 
     it('写偏好不进历史、不写 graph（同门红线）', () => {
         const session = makeSession()
         const before = session.store.doc
-        session.applyEditorPrefs({ rulersVisible: false, anchorExpanded: true })
-        expect(session.getEditorPrefs()).toEqual({ rulersVisible: false, anchorExpanded: true })
+        session.applyEditorPrefs(prefs({ rulersVisible: false, anchorExpanded: true }))
+        expect(session.getEditorPrefs()).toEqual(prefs({ rulersVisible: false, anchorExpanded: true }))
         expect(session.canUndo).toBe(false)
         expect(session.store.history).toHaveLength(0)
         expect(session.store.doc).toBe(before)
@@ -108,9 +118,9 @@ describe('prefs 读写成对（getEditorPrefs / applyEditorPrefs）', () => {
 
     it('openDocument 换文档偏好保留（内核自持，prefs 不随切帧重放）', () => {
         const session = makeSession()
-        session.applyEditorPrefs({ rulersVisible: false, anchorExpanded: true })
+        session.applyEditorPrefs(prefs({ rulersVisible: false, anchorExpanded: true }))
         session.openDocument(doc())
-        expect(session.getEditorPrefs()).toEqual({ rulersVisible: false, anchorExpanded: true })
+        expect(session.getEditorPrefs()).toEqual(prefs({ rulersVisible: false, anchorExpanded: true }))
     })
 })
 
@@ -324,13 +334,13 @@ describe('openDocument(canvas, state?)：开了就恢复的组合应用', () => 
 
     it('单参调用零破坏：reset 语义不变（切片清空、偏好保留）', () => {
         const session = seededSession()
-        session.applyEditorPrefs({ rulersVisible: false, anchorExpanded: true })
+        session.applyEditorPrefs(prefs({ rulersVisible: false, anchorExpanded: true }))
 
         session.openDocument(doc())
 
         expect(session.listGuides()).toEqual([])
         expect(session.store.ui.lockedPaths).toEqual([])
-        expect(session.getEditorPrefs()).toEqual({ rulersVisible: false, anchorExpanded: true })
+        expect(session.getEditorPrefs()).toEqual(prefs({ rulersVisible: false, anchorExpanded: true }))
         expect(session.canUndo).toBe(false)
     })
 

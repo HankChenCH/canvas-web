@@ -446,14 +446,16 @@ describe('copyStyle / pasteStyle：会话私有槽与粘贴事务', () => {
 
     it('无样式源不占槽：行模板替身复制失败，先前快照保留可用', () => {
         const session = makeTemplateSessionWithLayer()
-        session.updateSpec(['layers', 1], ['fontSize'], 32) // 新层缺省 24，改出差异
+        session.updateSpec(['layers', 1], ['fontSize'], 32) // 进捕获面：新层从槽继承 32
+        session.updateSpec(['layers', 1], ['shape', 'backgroundColor'], '#336699') // 皮肤不在捕获面，贴出真实 diff
         expect(session.copyStyle(['layers', 1])).toBe(true)
         // 行模板替身无样式面：复制空转、槽不被清
         expect(session.copyStyle(['layers', 0, 'template'])).toBe(false)
-        session.addRootLayer('TextLayer') // ['layers', 2]，自动选中
+        session.addRootLayer('TextLayer') // ['layers', 2]，自动选中（新层样式已随槽携带 32）
         expect(session.canPasteStyle).toBe(true)
-        expect(session.pasteStyle(['layers', 2])).toBe(true)
+        expect(session.pasteStyle(['layers', 2])).toBe(true) // backgroundColor 落地
         expect((session.store.doc!.layers[2] as TextLayer).fontSize).toBe(32) // 先前快照
+        expect((session.store.doc!.layers[2] as TextLayer).shape.backgroundColor).toBe('#336699')
     })
 
     it('守卫：无文档/悬空路径/无样式面/空槽空转，零副作用', () => {
