@@ -4,4 +4,11 @@
  */
 export { default as LayerPanel } from './LayerPanel.vue'
 export { isUpperHalf, useLayerPanel, type LayerPanelBinding } from './useLayerPanel'
-export { ADD_LAYER_MENU, ADD_MENU, type AddMenuKind } from './addMenu'
+export {
+    ADD_LAYER_MENU,
+    ADD_MENU,
+    ADD_TEXT_PRESET_MENU,
+    PANEL_ADD_MENU,
+    type AddMenuKind,
+    type AddTextPresetKind,
+} from './addMenu'

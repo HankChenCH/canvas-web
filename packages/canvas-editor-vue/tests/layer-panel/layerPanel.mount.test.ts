@@ -201,6 +201,21 @@ describe('LayerPanel：渲染与联动', () => {
         wrapper.unmount()
     })
 
+    it('文本预设点击 = armLayerCreate 带 preset（text-defaults 工单 02，spec 决策 4/5）：写槽（heading→fontSize 40）+ 武装 + 菜单收起 + 瞬时提示', async () => {
+        const editor = makeEditor([])
+        const wrapper = mount(LayerPanel, { props: { editor } })
+
+        await wrapper.find('[data-add-menu]').trigger('click')
+        await wrapper.find('[data-text-preset="heading"]').trigger('click')
+        // 预设 = 写新层样式槽的快捷方式：槽先行（fontSize 40），文档零变化
+        expect(editor.store.history).toHaveLength(0)
+        expect(editor.store.ui.nextTextStyle.fontSize).toBe(40)
+        expect(editor.store.ui.armedCreate).toBe('TextLayer')
+        expect(wrapper.find('[data-add-layer]').exists()).toBe(false)
+        expect(useTransientFeedback().message.value).toBe('画拉或点击落层，Esc 取消')
+        wrapper.unmount()
+    })
+
     it('新增菜单连续武装换型：先文本后二维码，armedCreate 跟随最后一次武装（同型值等短路归内核）', async () => {
         const editor = makeEditor([])
         const wrapper = mount(LayerPanel, { props: { editor } })
@@ -339,7 +354,7 @@ describe('LayerPanel：表格容器结构编辑（工单 12）', () => {
 })
 
 describe('LayerPanel：V2 绑定面（工票 03）', () => {
-    it('新增菜单五入口（spec §2.1）：四类图层 + 模板表（行模板不单卖，template-table 是表的创建形态）', async () => {
+    it('新增菜单八入口（text-defaults 工单 02）：四类图层 + 文本预设三项（插在「文本层」之后）+ 模板表（行模板不单卖，template-table 是表的创建形态）', async () => {
         const editor = makeEditor([])
         const wrapper = mount(LayerPanel, { props: { editor } })
 
@@ -347,10 +362,24 @@ describe('LayerPanel：V2 绑定面（工票 03）', () => {
         const adds = wrapper.findAll('[data-add-layer]')
         expect(adds.map((button) => button.attributes('data-add-layer'))).toEqual([
             'TextLayer',
+            'TextLayer',
+            'TextLayer',
+            'TextLayer',
             'ImageLayer',
             'QrCodeLayer',
             'TableLayer',
             'template-table',
+        ])
+        // 文本预设三项带面板专用标识 data-text-preset（spec 决策 5）
+        expect(adds.map((button) => button.attributes('data-text-preset') ?? null)).toEqual([
+            null,
+            'heading',
+            'subheading',
+            'body',
+            null,
+            null,
+            null,
+            null,
         ])
         wrapper.unmount()
     })

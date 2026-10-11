@@ -51,7 +51,7 @@ import { rowsPathCompletionSource } from '../shared/rowsPathCompletionSource'
 import { usePathCompletion } from '../shared/usePathCompletion'
 import ExpressionCompletionPopup from '../shared/ExpressionCompletionPopup.vue'
 import type { CompletionSource } from '../shared/completion'
-import { ADD_MENU } from './addMenu'
+import { PANEL_ADD_MENU } from './addMenu'
 import { isUpperHalf, useLayerPanel } from './useLayerPanel'
 const props = defineProps<{ editor: EditorSession }>()
 
@@ -79,8 +79,8 @@ interface FlatRow {
 
 /** 新增菜单（工单 05 迁 DropdownMenu 底座）：本组件持菜单项数据面 + rowsPath
  *  表单态（#body 受控插槽承载表单视图——issues/05 拍板受控插槽方案，表单留场
- *  菜单内不变）；开合/点外收/Esc 收/键盘导航归底座。菜单数据面（ADD_MENU/类型）
- *  在 ./addMenu——工具栏「＋插入▾」同源消费（工单 03） */
+ *  菜单内不变）；开合/点外收/Esc 收/键盘导航归底座。菜单数据面（PANEL_ADD_MENU/
+ *  类型）在 ./addMenu——面板完整序（层型 + 文本预设 + 模板表，text-defaults 工单 02） */
 const templateFormOpen = ref(false)
 const templateRowsPath = ref('')
 const templateRowsPathInvalid = ref(false)
@@ -94,11 +94,12 @@ function resetTemplateForm(): void {
 
 /** 菜单项：模板表项 keepsOpen 交换出表单体（items 清空、菜单留场），图层四项
  *  武装画拉（drag-create 工单 03：点击 = 武装一次画拉，落库归画拉 endCreate）
- *  + 状态栏瞬时提示（与快捷键入口同句），分发即收归底座 */
+ *  + 状态栏瞬时提示（与快捷键入口同句），分发即收归底座；文本预设项（text-defaults
+ *  工单 02）= 内核 armLayerCreate 带 preset——先写新层样式槽再武装 */
 const addMenuItems = computed<DropdownMenuEntry[]>(() =>
     templateFormOpen.value
         ? []
-        : ADD_MENU.map((kind): DropdownMenuEntry =>
+        : PANEL_ADD_MENU.map((kind): DropdownMenuEntry =>
               kind.kind === 'layer'
                   ? {
                         label: kind.label,
@@ -109,15 +110,25 @@ const addMenuItems = computed<DropdownMenuEntry[]>(() =>
                             useTransientFeedback().show(ARM_LAYER_CREATE_HINT)
                         },
                     }
-                  : {
-                        label: kind.label,
-                        title: kind.title,
-                        dataAttrs: { 'data-add-layer': 'template-table' },
-                        keepsOpen: true,
-                        run: () => {
-                            templateFormOpen.value = true
-                        },
-                    },
+                  : kind.kind === 'text-preset'
+                    ? {
+                          label: kind.label,
+                          title: kind.title,
+                          dataAttrs: { 'data-add-layer': 'TextLayer', 'data-text-preset': kind.preset },
+                          run: () => {
+                              props.editor.armLayerCreate('TextLayer', kind.preset)
+                              useTransientFeedback().show(ARM_LAYER_CREATE_HINT)
+                          },
+                      }
+                    : {
+                          label: kind.label,
+                          title: kind.title,
+                          dataAttrs: { 'data-add-layer': 'template-table' },
+                          keepsOpen: true,
+                          run: () => {
+                              templateFormOpen.value = true
+                          },
+                      },
           ),
 )
 
