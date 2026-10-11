@@ -37,3 +37,10 @@ export {
     type TransactOptions,
     MAX_HISTORY_STEPS,
 } from './store'
+// 编辑器状态切片与偏好（project-data 工单 01，spec §3/§5）：单画布切片 + 偏好 +
+// 版本常量经根 barrel 出内核，frames 容器（帧名 → 切片）归宿主拼装
+export {
+    EDITOR_STATE_SCHEMA_VERSION,
+    type CanvasEditorState,
+    type EditorPrefsState,
+} from './editorState'

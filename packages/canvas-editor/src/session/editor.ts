@@ -129,6 +129,11 @@ import {
 } from '../editing/tableEditing'
 import { EditorStore, type DragGesture, type EditorChange, type TransactOptions } from './store'
 import { ARM_CREATE_LAYER_TYPES, type EditorShortcutAction } from './shortcuts'
+import {
+    parseCanvasEditorState,
+    type CanvasEditorState,
+    type EditorPrefsState,
+} from './editorState'
 import { FontCatalog, type FontCatalogEntry } from '../editing/fontCatalog'
 import {
     UploadHandlerMissingError,
@@ -366,9 +371,16 @@ export class EditorSession {
 
     // ---- 相机动作（视口 {x, y, zoom} 走 ui 分支，不进历史） ----
 
-    /** 打开/替换文档（转发 store；解码在宿主侧完成，内核只消费领域结构） */
-    openDocument(canvas: Canvas): void {
+    /**
+     * 打开/替换文档（转发 store；解码在宿主侧完成，内核只消费领域结构）。
+     * state 传切片即按 restoreEditorState 同一管线原子应用（reset → apply 切片 →
+     * prune）——「开了就恢复」，宿主切帧处不可能忘记重放；切片形状不合法整体拒
+     * （画布照常以默认态打开），现网单参调用零破坏。
+     */
+    openDocument(canvas: Canvas, state?: CanvasEditorState): void {
         this.store.openDocument(canvas)
+        if (state === undefined) return
+        this.restoreEditorState(state)
     }
 
     /**
@@ -1154,6 +1166,56 @@ export class EditorSession {
     /** 标尺显隐开关（⇧R 分派口）：翻转 ui 偏好，不进历史 */
     toggleRulers(): void {
         this.store.setRulersVisible(!this.store.ui.rulersVisible)
+    }
+
+    // ---- 编辑器状态导出与恢复（project-data 工单 01，spec §5）：与 addGuide/toggleLayerLock 同门——ui 分支写、不进历史、不写 graph ----
+
+    /**
+     * 导出当前打开画布的编辑器状态切片：guides 原样带出（id 是会话内自增值，
+     * 宿主不持久化其语义——restore 端重排重取号）、lockedPaths 原样。无文档也可
+     * 导出（ui 分支自成事实，addGuide 无 doc 守卫同门）。内核帧盲：宿主把各帧
+     * 切片按帧名组装成 frames 容器，加上 schemaVersion（EDITOR_STATE_SCHEMA_VERSION）
+     * 与 getEditorPrefs() 才是完整工程数据快照，经宿主层存储——容器不进内核。
+     */
+    exportEditorState(): CanvasEditorState {
+        return { guides: this.store.ui.guides, lockedPaths: this.store.ui.lockedPaths }
+    }
+
+    /**
+     * 恢复当前画布的状态切片（prefs 不在此——内核跨 openDocument 自持）：轻结构
+     * 校验（形状不合法整体拒，返 false 宿主记因）→ 整体替换 lockedPaths →
+     * pruneDanglingPaths（悬空锁路径剔除——合法但内容悬空不算拒，prune 兜底）→
+     * guide id 重排（清空后逐条 addGuide 重取号：快照 id 无持久语义，原样入栈必
+     * 与新会话 guideIdSeq 撞号致 removeGuide 误删）。不进历史、不写 graph（红线
+     * 同门）。
+     */
+    restoreEditorState(state: CanvasEditorState): boolean {
+        const slice = parseCanvasEditorState(state)
+        if (slice === null) return false
+        this.store.setLockedPaths(slice.lockedPaths)
+        this.pruneDanglingPaths()
+        if (this.store.ui.guides.length > 0) this.store.setGuides([])
+        for (const guide of slice.guides) this.addGuide(guide)
+        return true
+    }
+
+    /**
+     * 只读偏好（保存 prefs 的读取口）：与 store.ui 同源，给宿主一个不用下钻
+     * store 的口。读 = getEditorPrefs，写 = applyEditorPrefs，对称成对；帧切片
+     * 走 restoreEditorState，两不相混。
+     */
+    getEditorPrefs(): EditorPrefsState {
+        const ui = this.store.ui
+        return { rulersVisible: ui.rulersVisible, anchorExpanded: ui.anchorExpanded }
+    }
+
+    /**
+     * 应用偏好（会话建立时一次性，跨会话恢复 prefs 的写入口）：整体替换
+     * rulersVisible/anchorExpanded，不进历史；值等写入经 store 短路零通知。
+     */
+    applyEditorPrefs(prefs: EditorPrefsState): void {
+        this.store.setRulersVisible(prefs.rulersVisible)
+        this.store.setAnchorExpanded(prefs.anchorExpanded)
     }
 
     // ---- 对齐画布（layer-align-snap 工单 01）：图层盒整体对齐画布几何 ----
