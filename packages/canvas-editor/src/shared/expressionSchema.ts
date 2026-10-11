@@ -4,13 +4,19 @@
  * D6 钉定：注入边界一次性转译为内部形状树（不在查询期惰性解析原始 schema，
  * 行业惯例见 schema-completion-research.md）。方言子集 = JSON Schema draft-07 的
  * 结构关键词（`properties` / `items` / `type`）+ 注解关键词（`description` /
- * `title` / `additionalProperties: true`）+ 引用关键词（`$ref` 内部 JSON Pointer、
- * `definitions`/`$defs` 命名池）；其余关键词（`required`/`format`/`enum`/`const`/
- * `allOf` 族/`patternProperties`/`$schema`/`$id` 及一切未识别键）宽松忽略，节点按
- * 已识别字段归一（可能变叶子）。
+ * `title` / `additionalProperties: true` / 白名单 `format`，见下）+ 引用关键词
+ * （`$ref` 内部 JSON Pointer、`definitions`/`$defs` 命名池）；其余关键词
+ * （`required`/`enum`/`const`/`allOf` 族/`patternProperties`/`$schema`/`$id` 及
+ * 一切未识别键）宽松忽略，节点按已识别字段归一（可能变叶子）。
  *
  * 声明契约（D1 钉定）：schema 声明即 `compile(canvas, dataset)` 收到的 data
  * 载荷形状——根上下文候选 = 载荷顶层键；根必须是带 properties 的对象声明。
+ *
+ * format 注解（expression-type-methods 工单 11/12，content-completion spec D13）：
+ * draft-07 `format` 从宽松忽略清单开口——仅精确匹配小写 `date` / `date-time`
+ * （draft-07 格式词表子集）且节点 type 归一后为 string 才挂注解；其余值（大小写
+ * 变体/其他词表值/自定义值）/非 string 节点/形态不符维持宽松忽略，**无诊断**。
+ * 注解只影响建议面（date() 建议分桶），求值器/graph/wire 三端零感知。
  *
  * 降级分级（D7）：
  * - **整份拒绝**仅保留根级结构性问题（在原始文档上判定，拒绝面与 walker 时代
@@ -57,6 +63,11 @@ export interface ExpressionSchemaNode {
     description?: string
     /** 开放映射标记（D10）：`additionalProperties: true`；动态字段实际键由宿主合入 properties */
     open?: boolean
+    /**
+     * 日期标记注解（工单 11，D13）：`format: "date" | "date-time"` 白名单两值、
+     * 仅 type 归一为 string 的节点挂；只影响 date() 建议分桶，永不触发诊断
+     */
+    format?: 'date' | 'date-time'
     properties?: ReadonlyMap<string, ExpressionSchemaNode>
     items?: ExpressionSchemaNode
 }
@@ -96,7 +107,10 @@ function normalizeSchemaType(value: string | readonly string[]): string | undefi
 }
 
 /** 节点注解子形状（降级叶子 = 仅注解） */
-type SchemaAnnotations = Pick<ExpressionSchemaNode, 'type' | 'description' | 'title'>
+type SchemaAnnotations = Pick<ExpressionSchemaNode, 'type' | 'description' | 'title' | 'format'>
+
+/** format 注解白名单（工单 11：精确匹配小写两值，其余宽松忽略） */
+const FORMAT_ANNOTATIONS: ReadonlySet<string> = new Set(['date', 'date-time'])
 
 /** 节点注解的宽松提取：形态不符的键视同未识别忽略（工单 08 宽松面） */
 function annotationsOf(raw: Record<string, unknown>): SchemaAnnotations {
@@ -114,6 +128,12 @@ function annotationsOf(raw: Record<string, unknown>): SchemaAnnotations {
     if (typeof rawDescription === 'string') node.description = rawDescription
     const rawTitle = raw['title']
     if (typeof rawTitle === 'string') node.title = rawTitle
+    // format 注解（D13）：白名单两值 + 节点归一 type 为 string 才挂；其余值/形态
+    // 不符宽松忽略无诊断（只影响建议面，求值三端零感知）
+    const rawFormat = raw['format']
+    if (node.type === 'string' && typeof rawFormat === 'string' && FORMAT_ANNOTATIONS.has(rawFormat)) {
+        node.format = rawFormat as ExpressionSchemaNode['format']
+    }
     return node
 }
 

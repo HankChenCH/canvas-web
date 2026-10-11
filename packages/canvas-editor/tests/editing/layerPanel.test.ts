@@ -214,6 +214,23 @@ describe('expressionPrefix：表达式前置投影（layer-panel-expression-pref
         expect(outline[0]!.expressionPrefix).toBe('{{certCode}}')
     })
 
+    // 工单 12（expression-type-methods）：调用片段按 expr 原文重构——引号/逗号
+    // 经 trim 保值往返，闭合片段原文照显（投影只认 {{expr}} 外壳，不解析片段文法）
+    it('调用片段投影兼容：date(...) 闭合片段按 expr 原文照显，与路径片段同门', () => {
+        const doc = {
+            width: 800,
+            height: 600,
+            layers: [
+                textLayer({
+                    priority: 10,
+                    expression: "发证日 {{ date(row.issueDate, 'YYYY年MM月DD日') }} 金额 {{number(row.amount, 2)}}",
+                }),
+            ],
+        }
+        const outline = buildLayerOutline(doc)
+        expect(outline[0]!.expressionPrefix).toBe("{{date(row.issueDate, 'YYYY年MM月DD日')}} {{number(row.amount, 2)}}")
+    })
+
     it('未标记与非内容层恒空串：全角色节点照带字段（判据看层型 + 标记，不看 role）', () => {
         const outline = buildLayerOutline({ width: 800, height: 600, layers: [tableDoc()] })
         const flat: LayerOutlineNode[] = []

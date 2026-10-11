@@ -15,9 +15,11 @@
  *   候选源携带 open 信号（开放映射节点，工单 10）——浮层照开渲染「动态字段，
  *   键由模板定义」占位提示行（不可接受、不进导航序，仅解释无候选的原因，
  *   行业惯例：无候选但不阻断），上述关闭路径照常收口。
- * - 接受：↑↓ 循环导航、Enter/Tab、鼠标点选；在片段表达式末尾把 partial 换成
- *   候选段（completion.ts 手术），随后对宿主派发既有 input（实时合步）+
- *   change（收口一步历史）事件——与手工输入同路，提交管线零改动。
+ * - 接受：↑↓ 循环导航、Enter/Tab、鼠标点选；在**光标锚位**把替换域换成候选段
+ *   （completion.ts 手术——工单 12 起光标锚定：调用片段的参数位编辑在中段，
+ *   替换/插入都锚定刷新时的光标；尾部输入位与旧末尾锚定全等），随后对宿主派发
+ *   既有 input（实时合步）+ change（收口一步历史）事件——与手工输入同路，提交
+ *   管线零改动。
  * - IME 守卫在事件入口最前沿：合成期（compositionstart 起）及
  *   isComposing/keyCode 229 的键全是候选确认/预编辑操作，接受、导航、刷新
  *   一律不触发（延伸 TextareaField/TextField 既有 composing 守卫语义）；
@@ -39,6 +41,7 @@ import { nextTick, onMounted, onScopeDispose, reactive, toValue, watch, type May
 
 import {
     expressionFragmentAtCursor,
+    phpTrim,
     scanExpressionFragments,
     type ExpressionScanFragment,
     type ExpressionScanOpen,
@@ -109,7 +112,7 @@ export function useExpressionCompletion(options: {
     let el: HTMLTextAreaElement | HTMLInputElement | null = null
     let composing = false
     /** 最近一次刷新时的片段与 partial（接受手术的锚；每次刷新重算） */
-    let current: { fragment: ExpressionScanFragment | ExpressionScanOpen; partial: string } | null = null
+    let current: { fragment: ExpressionScanFragment | ExpressionScanOpen; partial: string; cursor: number } | null = null
 
     function close(): void {
         popup.open = false
@@ -164,12 +167,19 @@ export function useExpressionCompletion(options: {
             close() // 光标离开片段（含输入 }} 后）→ 关闭
             return
         }
-        const result = options.resolve(fragment.expr)
+        // 工单 12：expr = 片段内容的**光标前缀**（phpTrim 六字符集同源）——调用
+        // 片段的编辑位常在中段（date(row.x, '|'），参数位建议按光标处槽位路由；
+        // 尾部输入位（既有主流程）与整段 expr 全等，路径面零回归。光标落在外壳区
+        // （}} 之前的壳内，skip-close 惯例位）时钳到内容区终点——外壳字符不入 expr
+        const contentEnd = fragment.kind === 'open' ? fragment.end : fragment.end - 2
+        const result = options.resolve(phpTrim(value.slice(fragment.start + 2, Math.min(cursor, contentEnd))))
         if (!result) {
             close()
             return
         }
-        const shown = full ? result.candidates : result.candidates.filter((item) => item.segment.startsWith(result.partial))
+        const shown = full
+            ? result.candidates
+            : result.candidates.filter((item) => (item.filterKey ?? item.segment).startsWith(result.partial))
         // 开放映射（D10，工单 10）：open 信号在场即开浮层——候选空（含 partial 过滤
         // 后空）由占位提示行解释原因（无候选但不阻断），关闭路径照常；非 open 空
         // 候选维持现状（不开）
@@ -177,7 +187,7 @@ export function useExpressionCompletion(options: {
             close()
             return
         }
-        current = { fragment, partial: result.partial }
+        current = { fragment, partial: result.partial, cursor }
         if (!popup.open && !openAllowed) return
         popup.items = shown
         popup.activeIndex = 0
@@ -194,7 +204,7 @@ export function useExpressionCompletion(options: {
         if (!popup.open || composing || !node || !current) return
         const item = popup.items[index ?? popup.activeIndex]
         if (!item) return
-        const applied = applyCompletion(node.value, current.fragment, current.partial, item.segment)
+        const applied = applyCompletion(node.value, current.fragment, current.cursor, current.partial, item)
         if (!applied) {
             close() // 值与浮层状态漂移：手术拒绝，安全收口
             return

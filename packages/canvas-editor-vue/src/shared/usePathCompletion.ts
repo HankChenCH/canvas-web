@@ -171,7 +171,8 @@ export function usePathCompletion(options: {
         const item = popup.items[index ?? popup.activeIndex]
         if (!item) return
         const input = node.value.slice(0, node.selectionStart ?? node.value.length)
-        const applied = applyCompletion(node.value, wholeInputFragment(input), partial, item.segment)
+        // 工单 12 手术签名（光标锚定）：锚位 = 输入串终点（本面候选恒按光标处段落）
+        const applied = applyCompletion(node.value, wholeInputFragment(input), input.length, partial, item)
         if (!applied) {
             close() // 值与浮层状态漂移：手术拒绝，安全收口
             return

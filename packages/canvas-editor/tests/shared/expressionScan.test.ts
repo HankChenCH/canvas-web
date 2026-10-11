@@ -263,3 +263,32 @@ describe('expressionFragmentAtCursor', () => {
         expect(expressionFragmentAtCursor(scanExpressionFragments('纯文本'), 1)).toBeNull()
     })
 })
+
+describe('调用片段（expression-type-methods 工单 12，spec §1.2 ⑤⑨）', () => {
+    it('合法调用片段 error = null：结构面识别、名单面不校验（未知函数不标红）', () => {
+        expect(expressionPartsToFixtureShape(scanExpressionFragments("发证日：{{ date(row.issueDate, 'YYYY年MM月DD日') }}").parts)).toEqual([
+            { kind: 'literal', text: '发证日：' },
+            { kind: 'fragment', raw: " date(row.issueDate, 'YYYY年MM月DD日') ", expr: "date(row.issueDate, 'YYYY年MM月DD日')", error: null },
+        ])
+        expect(scanExpressionFragments('{{foo(row.x)}}').parts[0]).toMatchObject({ error: null }) // 未知函数名 JS 不标红
+        expect(scanExpressionFragments('{{number(row.amount, 2)}}').parts[0]).toMatchObject({ error: null })
+    })
+
+    it('结构错照 expression_syntax_error 同码标红：括号不平衡 / 空参数位 / 字符串未闭合 / 首参非路径', () => {
+        expect(scanExpressionFragments('{{date(row.x}}').parts[0]).toMatchObject({ error: 'expression_syntax_error' })
+        expect(scanExpressionFragments('{{date(row.x,)}}').parts[0]).toMatchObject({ error: 'expression_syntax_error' })
+        expect(scanExpressionFragments("{{date(row.x, 'a}}").parts[0]).toMatchObject({
+            kind: 'fragment',
+            expr: "date(row.x, 'a",
+            error: 'expression_syntax_error', // 串内 }} 收口 → 字符串未闭合（结构面）
+        })
+        expect(scanExpressionFragments("{{date('123')}}").parts[0]).toMatchObject({ error: 'expression_syntax_error' })
+    })
+
+    it('⑤ 首个 }} 收口、扫描器引号不感知：串内 }} 截断片段（片段内禁 }} 字面）', () => {
+        expect(expressionPartsToFixtureShape(scanExpressionFragments("{{date(row.x, 'a}}b')}}").parts)).toEqual([
+            { kind: 'fragment', raw: "date(row.x, 'a", expr: "date(row.x, 'a", error: 'expression_syntax_error' },
+            { kind: 'literal', text: "b')}}" },
+        ])
+    })
+})

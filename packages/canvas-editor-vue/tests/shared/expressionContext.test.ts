@@ -171,7 +171,16 @@ describe('expressionCompletionSource：枚举器适配（CompletionSource 契约
 
         const typing = source('row.na')!
         expect(typing.partial).toBe('na')
-        expect(typing.candidates.map((c) => c.segment)).toEqual(['name', 'quantity', 'lines'])
+        // 工单 12 分桶：partial 非空（字段收敛中）→ number 字段 quantity 追加数字族
+        // 调用插入候选（filterKey = 键名，与同键路径候选一起过浮层前缀过滤）
+        expect(typing.candidates.map((c) => c.filterKey ?? c.segment)).toEqual([
+            'name',
+            'quantity',
+            'quantity',
+            'quantity',
+            'quantity',
+            'lines',
+        ])
     })
 
     it('元信息透出：description + 类型徽标（schema 声明原样）', () => {

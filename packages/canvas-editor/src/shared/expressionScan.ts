@@ -4,7 +4,9 @@
  * 语义逐条对齐 php-canvas-next `InterpolationEvaluator::evaluate` 扫描循环（只读
  * 对齐，不改求值器）：首个未闭合 `{{` 起剩余全字面、片段内容 trim、`{{}}` 不嵌套
  * （首个 `}}` 收口，内容含 `{{`）、片段外字面直通；空片段/路径空段 =
- * `expression_syntax_error` 信号（与求值器同码，经 parseExpressionPath 判定）。
+ * `expression_syntax_error` 信号（与求值器同码）。切片语义对调用片段零改动
+ * （spec §1.2 ⑤：首个 `}}` 收口、扫描器引号不感知——片段内禁 `}}` 字面）；闭合
+ * 片段的错误信号按 ⑦ 分类分流（路径/调用，expression-type-methods 工单 12）。
  *
  * 与求值器的一处表示分叉（编辑器侧补全所需）：未闭合 `{{` 在求值期按字面直通，
  * 在扫描结果里另立 **open 片段**（kind: 'open'）——这正是「输入 `{{` 自动弹出」的
@@ -17,6 +19,7 @@
  *
  * 全模块纯函数、无 DOM（editor-shared-isolation）。
  */
+import { isCallFragment, parseExpressionCall } from './expressionCall'
 import { parseExpressionPath, type ExpressionSyntaxError } from './expressionPath'
 
 /** 字面直通段（不含任何 `{{`） */
@@ -61,12 +64,31 @@ export interface ExpressionScan {
  *  编辑器侧补全的接受手术同用此集（导出防按值复刻漂移，工单 04） */
 export const PHP_TRIM_CHARS = ' \t\n\r\0\x0B'
 
-function phpTrim(value: string): string {
+/**
+ * PHP trim() 语义（六字符集）：片段 trim 与 vue 侧补全的 expr 前缀截取同用此集
+ * （光标定位参数位，expression-type-methods 工单 12——单一事实源，勿按值复刻；
+ * JS `String.trim()` 含全角空格等 Unicode 空白，会造成与 PHP 的双端漂移）。
+ */
+export function phpTrim(value: string): string {
     let start = 0
     let end = value.length
     while (start < end && PHP_TRIM_CHARS.includes(value[start] as string)) start += 1
     while (end > start && PHP_TRIM_CHARS.includes(value[end - 1] as string)) end -= 1
     return value.slice(start, end)
+}
+
+/**
+ * 片段错误信号（工单 12 适配调用片段）：⑦ 分类分流——路径走既有
+ * parseExpressionPath；调用走最小结构面解析（括号不平衡/空参数位/字符串未闭合/
+ * 首参非路径 = expression_syntax_error 同码；未知函数名不标红，名单面不校验）。
+ * 空片段按路径分支落错（空片段/空路径段同码，与求值器一致）。
+ */
+function fragmentSyntaxError(expr: string): ExpressionSyntaxError | null {
+    if (expr === '') return 'expression_syntax_error'
+    if (isCallFragment(expr)) {
+        return parseExpressionCall(expr).ok ? null : ('expression_syntax_error' as const)
+    }
+    return parseExpressionPath(expr).ok ? null : ('expression_syntax_error' as const)
 }
 
 /** 扫描模板串的片段切分：闭合/未闭合/多片段/错误信号，语义对齐求值器扫描循环 */
@@ -92,7 +114,7 @@ export function scanExpressionFragments(template: string): ExpressionScan {
         }
         const raw = template.slice(open + 2, close)
         const expr = phpTrim(raw)
-        const error = parseExpressionPath(expr).ok ? null : ('expression_syntax_error' as const)
+        const error = fragmentSyntaxError(expr)
         parts.push({ kind: 'fragment', start: open, end: close + 2, raw, expr, error })
         pos = close + 2
         open = template.indexOf('{{', pos)

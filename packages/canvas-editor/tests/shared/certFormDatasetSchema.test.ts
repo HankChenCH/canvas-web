@@ -104,6 +104,10 @@ describe('证书 form-data schema（真实 fixture，工单 08）', () => {
         expect(schemaNodeAtPath(schema, ['printSettings', 'watermark'])).toMatchObject({ type: 'string', description: '图片资源 URL' })
     })
 
+    it('发证日期：format: "date" 白名单注解入形状树（expression-type-methods 工单 11——真实 schema 实证转正为回归目标）', () => {
+        expect(schemaNodeAtPath(schema, ['issueDate'])).toMatchObject({ type: 'string', format: 'date', description: '发证日期' })
+    })
+
     it('title 透出：根与分支 title 入形状树（展示回落归浮层，工单 10）', () => {
         expect(schema.title).toBe('证书 form-data 载荷')
         expect(schemaNodeAtPath(schema, ['printSettings'])?.title).toBe('打印设置')

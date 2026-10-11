@@ -73,6 +73,45 @@ const titleSource: CompletionSource = (expr) => {
     return null
 }
 
+/** 调用片段桩源（expression-type-methods 工单 12）：模拟内核枚举器的调用面路由
+ * ——函数名候选 / 首参槽字段建议（带桶候选）/ date 格式串槽快捷项 */
+const FORMAT_ITEMS: CompletionItem[] = [
+    { path: 'date', segment: 'date', description: '预设 → YYYY-MM-DD', type: '格式' },
+    { path: 'datetime', segment: 'datetime', description: '预设 → YYYY-MM-DD HH:mm:ss', type: '格式' },
+    { path: 'YYYY年MM月DD日', segment: 'YYYY年MM月DD日', description: '中文模板（写即所得）', type: '格式' },
+]
+const callSource: CompletionSource = (expr) => {
+    if (expr === '') return { partial: '', candidates: HEAD_ITEMS }
+    if (expr === 'da') {
+        return {
+            partial: 'da',
+            candidates: [
+                { path: 'date(path[, format])', segment: 'date()', cursorBack: 1, description: '日期格式化', type: '函数' },
+            ],
+        }
+    }
+    if (expr === 'date(') return { partial: '', candidates: ROW_ITEMS }
+    if (expr === 'date(row.na') {
+        return {
+            partial: 'na',
+            candidates: [
+                { path: 'row.name', segment: 'name', description: '行名', type: 'string' },
+                {
+                    path: "date(row.name, '')",
+                    segment: "date(row.name, '')",
+                    cursorBack: 2,
+                    replaceLen: expr.length,
+                    filterKey: 'name',
+                    type: '函数',
+                },
+            ],
+        }
+    }
+    if (expr === "date(row.name, '") return { partial: '', candidates: FORMAT_ITEMS }
+    if (expr === "date(row.name, 'Y") return { partial: 'Y', candidates: FORMAT_ITEMS }
+    return null
+}
+
 /* ---------------------------------------------------------------- 测试宿主 */
 
 type FieldTag = 'textarea' | 'input'
@@ -741,5 +780,62 @@ describe('portal 与锚点重算（jsdom 布局为零，rect 经 mock 钉坐标�
         window.dispatchEvent(new Event('resize'))
         await nextTick()
         expect(popup.style.top).toBe('226.4px')
+    })
+})
+
+/* ------------------------------------------------- 调用片段补全（工单 12） */
+
+describe('调用片段补全（expression-type-methods 工单 12）', () => {
+    it('函数名候选接受：date() 插入 + cursorBack 落括号内，input+change 同路派发', async () => {
+        const harness = mountHost('textarea', callSource)
+        await type(harness, '{{da', 4)
+        expect(harness.source).toHaveBeenLastCalledWith('da')
+        expect(optionSegments()).toEqual(['date()'])
+        harness.events.length = 0
+        await pressKey(harness, 'Enter')
+        expect(harness.field().value).toBe('{{date()')
+        expect(harness.field().selectionStart).toBe(7) // cursorBack 1：括号内参数位
+        expect(harness.events.map((event) => event.kind)).toEqual(['input', 'change'])
+    })
+
+    it('首参槽字段建议 + 桶候选接受：replaceLen 重写「前缀 + 部分段」，光标落 format 引号内', async () => {
+        const harness = mountHost('textarea', callSource)
+        await type(harness, '{{date(row.na', 13)
+        harness.events.length = 0
+        expect(harness.source).toHaveBeenLastCalledWith('date(row.na')
+        expect(optionSegments()).toEqual(['name', "date(row.name, '')"])
+        // 导航到桶候选（第二项）接受
+        await pressKey(harness, 'ArrowDown')
+        await pressKey(harness, 'Enter')
+        expect(harness.field().value).toBe("{{date(row.name, '')")
+        expect(harness.field().selectionStart).toBe(18) // 引号内 format 参数占位（cursorBack 2）
+        expect(harness.events.map((event) => event.kind)).toEqual(['input', 'change'])
+    })
+
+    it('filterKey 过滤：桶候选与同键路径候选一起按 partial 前缀呈现，异键候选不混入', async () => {
+        const harness = mountHost('textarea', callSource)
+        await type(harness, '{{date(row.na', 13)
+        // 'name' 与 'date(row.name, '')'（filterKey = name）同现；桩源无异键候选可断言全等
+        expect(optionSegments()).toEqual(['name', "date(row.name, '')"])
+    })
+
+    it('date 格式串槽：预设/模板快捷项呈现，接受落在引号内（写即所得）', async () => {
+        const harness = mountHost('textarea', callSource)
+        await type(harness, "{{date(row.name, '')", 18) // 光标在 '' 之间（format 参数占位）
+        expect(harness.source).toHaveBeenLastCalledWith("date(row.name, '")
+        expect(optionSegments()).toEqual(['date', 'datetime', 'YYYY年MM月DD日'])
+        await pressKey(harness, 'ArrowDown') // → datetime
+        await pressKey(harness, 'ArrowDown') // → YYYY年MM月DD日
+        await pressKey(harness, 'Enter')
+        expect(harness.field().value).toBe("{{date(row.name, 'YYYY年MM月DD日')")
+        expect(harness.field().selectionStart).toBe(29) // 18 + 11 码元（中文模板写即所得）
+    })
+
+    it('非建议槽位（数字面/闭合调用）无候选浮层不开，手输不受阻', async () => {
+        const harness = mountHost('textarea', callSource)
+        await type(harness, '{{date(row.name, 2', 18) // 数字槽：callSource 未列 → null
+        expect(popupEl()).toBeNull()
+        await type(harness, '{{date(row.name)', 16) // 调用闭合：无建议
+        expect(popupEl()).toBeNull()
     })
 })

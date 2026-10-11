@@ -625,3 +625,71 @@ describe('title / open 入形状树（工单 08，D8/D10）', () => {
         expect(openWithKeys?.properties?.has('known')).toBe(true)
     })
 })
+
+describe('format 注解入形状树（expression-type-methods 工单 11/12，D13）', () => {
+    it('白名单两值（date / date-time）在 string 节点挂 format 注解', () => {
+        const parsed = parseOk({
+            properties: {
+                issueDate: { type: 'string', format: 'date', description: '发证日期' },
+                issuedAt: { type: 'string', format: 'date-time' },
+            },
+        })
+        expect(parsed.schema.properties?.get('issueDate')).toMatchObject({ type: 'string', format: 'date' })
+        expect(parsed.schema.properties?.get('issuedAt')).toMatchObject({ type: 'string', format: 'date-time' })
+        expect(parsed.diagnostics).toEqual([]) // D13：永不触发诊断
+    })
+
+    it('白名单外值一律宽松忽略不标（大小写敏感，draft-07 词表子集）', () => {
+        const parsed = parseOk({
+            properties: {
+                upper: { type: 'string', format: 'Date' },
+                allCaps: { type: 'string', format: 'DATE' },
+                other: { type: 'string', format: 'email' },
+                custom: { type: 'string', format: 'x-cert-date' },
+            },
+        })
+        for (const key of ['upper', 'allCaps', 'other', 'custom']) {
+            expect(parsed.schema.properties?.get(key)?.format).toBeUndefined()
+        }
+        expect(parsed.diagnostics).toEqual([])
+    })
+
+    it('非 string 节点的 format = 形态不符宽松忽略（无诊断、无注解）；type 数组取首个非 null 归一后判定', () => {
+        const parsed = parseOk({
+            properties: {
+                count: { type: 'number', format: 'date' },
+                flagged: { type: ['null', 'string'], format: 'date' },
+                untyped: { format: 'date', description: '未声明 type 不挂' },
+            },
+        })
+        expect(parsed.schema.properties?.get('count')?.format).toBeUndefined()
+        expect(parsed.schema.properties?.get('flagged')?.format).toBe('date') // 归一 type = string
+        expect(parsed.schema.properties?.get('untyped')?.format).toBeUndefined()
+        expect(parsed.diagnostics).toEqual([])
+    })
+
+    it('format 值非字符串形态宽松忽略；校验面 format（uuid 等）维持忽略无注解（工单 08 钉测试延伸）', () => {
+        const parsed = parseOk({
+            properties: {
+                malformed: { type: 'string', format: 42 },
+                paperSize: { type: 'string', format: 'uuid' },
+            },
+        })
+        expect(parsed.schema.properties?.get('malformed')?.format).toBeUndefined()
+        expect(parsed.schema.properties?.get('paperSize')?.format).toBeUndefined()
+    })
+
+    it('$ref 目标的 format 注解随目标编译入树；引用点兄弟 format 按 draft-07 忽略', () => {
+        const parsed = parseOk({
+            definitions: { dated: { type: 'string', format: 'date' } },
+            properties: {
+                viaRef: { $ref: '#/definitions/dated' },
+                sibling: { $ref: '#/definitions/dated', format: 'date-time' },
+            },
+        })
+        expect(parsed.diagnostics).toEqual([])
+        expect(schemaNodeAtPath(parsed.schema, ['viaRef'])).toMatchObject({ type: 'string', format: 'date' })
+        // 兄弟关键词仅 description 覆盖偏离（D7），format 不例外
+        expect(schemaNodeAtPath(parsed.schema, ['sibling'])).toMatchObject({ type: 'string', format: 'date' })
+    })
+})

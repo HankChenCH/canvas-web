@@ -16,25 +16,39 @@
  *   机制，类型徽标仍显示 array 本身）。开放映射（open）节点的枚举结果携带 open
  *   信号（结果面扩展，不污染候选条目契约），供工单 10 浮层占位提示（D10）。
  *
- * 消费契约（工单 04 浮层）：
- * - 入参 expr 是片段表达式（trim 后，来自 expressionScan）；**单个尾点 = 补全点
- *   标记**，先剥再解析（对齐工单 01 备注：`row.` 按求值语义是空段错误，剥点后
- *   `row` 才是可下钻前缀）；剥点后为空且原 expr 非空 = 孤点前缀，无合法续写 →
- *   expression_syntax_error 信号。
- * - 结果 `partial` 恒为 expr 的后缀（尾点态 = 空后缀）：接受 = 在 expr 末尾把
+ * 消费契约（工单 04 浮层 + 工单 12 调用面扩展）：
+ * - 入参 expr 是**光标前缀**（trim 后，来自 expressionScan + 光标切片——调用片段
+ *   编辑位常在中段，工单 12）；**单个尾点 = 补全点标记**，先剥再解析（对齐工单 01
+ *   备注：`row.` 按求值语义是空段错误，剥点后 `row` 才是可下钻前缀）；剥点后为空
+ *   且原 expr 非空 = 孤点前缀，无合法续写 → expression_syntax_error 信号。
+ * - 结果 `partial` 恒为 expr 的后缀（尾点态 = 空后缀）：接受 = 在光标锚位把
  *   partial 替换为候选 segment；候选给**全量合法子项**、不按 partial 预过滤，
  *   前缀过滤/高亮归浮层（Ctrl+Space 全量展示语义亦归浮层）。
  * - 元信息：path（补全后的完整点路径）+ schema description/title（D8 两字段分离
  *   透传，展示回落 description ?? title 归浮层）+ 类型徽标数据（type 归一）。
  *   `$root`/`row`/`$index` 结构头是下钻踏脚石（`{{$root}}`/
  *   `{{row}}` 单独求值无意义），元信息仅有行 schema 声明时的 row 携带。
+ * - 内建函数建议面（工单 12，spec §1.2 ⑨「已知名单只喂补全建议」）：
+ *   ① 函数名候选——片段以名字形态开头（非空裸名）时给 `名字()` 插入项
+ *   （cursorBack 落括号内）；空 expr 与尾点下钻位不给（字段列表零噪音）。
+ *   ② 建议分桶（工单 11 ②）——partial 非空（字段收敛中）时按子节点形状追加
+ *   调用插入候选：format 标记 string → `date(path, '')`（光标落引号内 = format
+ *   参数占位）、number → 数字族三函数；普通 string 不特供。桶候选携带
+ *   replaceLen = 整段 expr（接受时重写整个前缀+部分段）与 filterKey = 键名
+ *   （与字段候选同前缀过滤）。
+ *   ③ 调用槽位路由——expr 已是调用形态（⑦）时按光标槽位分派：首参路径槽复用
+ *   路径枚举（关桶/函数建议：调用不嵌套）；date 字符串槽给具名预设 + 中文模板
+ *   快捷项（spec §3.4）；其余槽位/闭合调用空候选。结构红标归扫描面，此处不判。
  *
  * 降级语义：schema null（声明被拒/形态非法，经 normalizeExpressionSchemaSource
  * 收口）→ 全部无候选；schema 合法而行 schema 未解析（rowsPath 无 items 声明）→
  * 结构头 row 仍在、行子树无候选——辅助声明不作权威，全程不抛错。
  *
- * 全模块纯函数、无 DOM；层内依赖仅 expressionSchema / expressionPath。
+ * 全模块纯函数、无 DOM；层内依赖仅 expressionSchema / expressionPath /
+ * expressionCall / expressionFunctions。
  */
+import { isCallFragment, expressionCallSlotAtEnd } from './expressionCall'
+import { DATE_FORMAT_SUGGESTIONS, EXPRESSION_FUNCTIONS, NUMBER_FUNCTION_SUGGESTIONS } from './expressionFunctions'
 import { parseExpressionPath, type ExpressionPathHead, type ExpressionSyntaxError } from './expressionPath'
 import {
     schemaChildEntries,
@@ -48,7 +62,7 @@ export type ExpressionContextKind = 'root' | 'row'
 
 /** 一条补全候选：路径 + schema 元信息（description/title/类型徽标，展示回落归浮层） */
 export interface ExpressionCandidate {
-    /** 补全后的完整点路径（前缀 + 本段；头部候选即头部名），如 row.user.city */
+    /** 补全后的完整点路径（前缀 + 本段；头部候选即头部名；调用候选 = 插入文本） */
     path: string
     /** 本段名——接受时替换 partial / 追加到前缀后的文本 */
     segment: string
@@ -56,8 +70,23 @@ export interface ExpressionCandidate {
     description?: string
     /** schema title（D8 形状树两字段分离透传，未声明为 undefined）——浮层展示取 description ?? title */
     title?: string
-    /** 类型徽标数据（schema type 归一；未声明为 undefined） */
+    /** 类型徽标数据（schema type 归一；未声明为 undefined；函数/格式候选为建议类别） */
     type?: string
+    /**
+     * 插入后光标从插入文本末端回退的码元数（工单 12）：date() 调用 = 2（落引号内
+     * format 参数占位）、`名字()` 函数名候选 = 1（落括号内）；缺省 0（落插入末尾）
+     */
+    cursorBack?: number
+    /**
+     * 接受时从光标锚位回退替换的长度（工单 12；缺省 = partial 长度）：桶候选携带
+     * 整段 expr 长度——调用插入重写「前缀 + 部分段」全量
+     */
+    replaceLen?: number
+    /**
+     * 前缀过滤键（工单 12；缺省 = segment）：桶候选 = 字段键名——与同键路径候选
+     * 一起被浮层按 partial 过滤（segment 是整段调用文本，直接过滤永不匹配）
+     */
+    filterKey?: string
 }
 
 export interface ExpressionCandidateQuery {
@@ -108,14 +137,79 @@ function childCandidate(entry: ExpressionSchemaChildEntry, prefix: string): Expr
     return { path, segment: entry.key, ...candidateMeta(entry.node) }
 }
 
+/**
+ * 建议分桶（工单 11 ②消费，工单 12 落地）：按子节点形状在路径候选后追加调用
+ * 插入候选——format 标记 string → `date(path, '')`（cursorBack 2 = 光标落引号内
+ * format 参数占位，预设/模板快捷项由调用槽位路由接棒）；number → 数字族三函数
+ * （裸调用走缺省参）；其余形状不特供。只影响建议面，求值三端零感知。
+ * replaceLen = 整段 expr：接受时重写「前缀 + 部分段」（调用包住已输入的路径）；
+ * filterKey = 键名：与同键路径候选一起按 partial 前缀过滤。
+ */
+function callCandidatesFor(entry: ExpressionSchemaChildEntry, path: string, exprLen: number): ExpressionCandidate[] {
+    const extras: ExpressionCandidate[] = []
+    if (entry.node.format === 'date' || entry.node.format === 'date-time') {
+        extras.push({
+            path: `date(${path}, '')`,
+            segment: `date(${path}, '')`,
+            cursorBack: 2,
+            replaceLen: exprLen,
+            filterKey: entry.key,
+            description: '日期格式化',
+            type: '函数',
+        })
+    } else if (entry.node.type === 'number') {
+        for (const fn of NUMBER_FUNCTION_SUGGESTIONS) {
+            extras.push({
+                path: `${fn.name}(${path})`,
+                segment: `${fn.name}(${path})`,
+                replaceLen: exprLen,
+                filterKey: entry.key,
+                description: fn.summary,
+                type: '函数',
+            })
+        }
+    }
+    return extras
+}
+
+/** 子键候选（路径候选 + 按形状分桶的调用插入候选）；exprLen = 整段 expr 长度 */
+function childCandidates(entry: ExpressionSchemaChildEntry, prefix: string, exprLen: number, withBuckets: boolean): ExpressionCandidate[] {
+    const base = childCandidate(entry, prefix)
+    if (!withBuckets) return [base]
+    return [base, ...callCandidatesFor(entry, base.path, exprLen)]
+}
+
+/** 函数名候选（spec ⑨：已知名单只喂补全建议——`名字()` 插入 + 光标落括号内） */
+function functionCandidates(): ExpressionCandidate[] {
+    return EXPRESSION_FUNCTIONS.map((fn) => ({
+        path: fn.signature,
+        segment: `${fn.name}()`,
+        cursorBack: 1,
+        description: fn.summary,
+        type: '函数',
+    }))
+}
+
+/** date 格式串快捷项（spec §3.4：具名预设 + 中文模板，写即所得） */
+function dateFormatCandidates(): ExpressionCandidate[] {
+    return DATE_FORMAT_SUGGESTIONS.map((suggestion) => ({
+        path: suggestion.segment,
+        segment: suggestion.segment,
+        description: suggestion.description,
+        type: '格式',
+    }))
+}
+
 /** 上下文头部候选：裸键（声明序）+ $root；行上下文追加 row/$index（结构头，踏脚石）；open 信号随根节点透出 */
 function headCandidates(
     schema: ExpressionSchemaNode,
     context: ExpressionContextKind,
     rowSchema: ExpressionSchemaNode | null | undefined,
+    exprLen: number,
+    withBuckets: boolean,
 ): { candidates: readonly ExpressionCandidate[]; open?: boolean } {
     const view = schemaChildEntries(schema)
-    const candidates = view.entries.map((entry) => childCandidate(entry, ''))
+    const candidates = view.entries.flatMap((entry) => childCandidates(entry, '', exprLen, withBuckets))
     candidates.push({ path: '$root', segment: '$root' })
     if (context === 'row') {
         candidates.push(rowSchema ? { path: 'row', segment: 'row', ...candidateMeta(rowSchema) } : { path: 'row', segment: 'row' })
@@ -125,24 +219,59 @@ function headCandidates(
 }
 
 /**
- * 枚举当前片段表达式的合法候选。schema null（声明降级态）直接无候选；
- * 其余按 spec §2 规则表分上下文路由（见模块头注），分支不可达/节点为叶子
- * 一律空候选，不抛错。
+ * 调用槽位路由（工单 12，spec ⑨）：expr 已是调用形态（⑦ 分类）时按光标槽位
+ * 分派建议面。结构红标归扫描面（fragmentSyntaxError），此处只产候选：
+ * - 首参路径槽：字段建议复用路径枚举（**关桶/函数建议**——调用不嵌套，参数位只
+ *   该写字段）；槽文本语法残缺/行外 row. 等枚举不出 = 空候选，不阻断不标红。
+ * - date 字符串槽（第二参起）：具名预设 + 中文模板快捷项（spec §3.4）。
+ * - 其余槽位（数字面/闭合后/嵌套调用形态）：空候选。
  */
-export function enumerateExpressionCandidates(
-    schema: ExpressionSchemaNode | null,
+function callSlotResult(
+    schema: ExpressionSchemaNode,
     query: ExpressionCandidateQuery,
+): ExpressionCandidateResult {
+    const slot = expressionCallSlotAtEnd(query.expr)
+    if (slot === null) {
+        return { ok: true, prefix: '', partial: '', candidates: [] }
+    }
+    if (slot.stringSlot && slot.index >= 1 && slot.name === 'date') {
+        return { ok: true, prefix: '', partial: slot.text, candidates: dateFormatCandidates() }
+    }
+    if (slot.index === 0 && !isCallFragment(slot.text)) {
+        const sub = enumeratePathCandidates(schema, query, slot.text, false)
+        if (!sub.ok) return { ok: true, prefix: '', partial: '', candidates: [] }
+        return sub
+    }
+    return { ok: true, prefix: '', partial: '', candidates: [] }
+}
+
+/**
+ * 枚举当前片段表达式的合法候选（工单 12 起入口按 ⑦ 分类分流：调用形态走
+ * callSlotResult 槽位路由，路径形态走本函数既有规则表分派——见模块头注；
+ * 分支不可达/节点为叶子一律空候选，不抛错。allowCallSuggestions = 函数名建议与
+ * 建议分桶的开关：调用参数位递归关闭——调用不嵌套、参数位只该写字段）。
+ */
+function enumeratePathCandidates(
+    schema: ExpressionSchemaNode,
+    query: ExpressionCandidateQuery,
+    expr: string,
+    allowCallSuggestions: boolean,
 ): ExpressionCandidateResult {
     if (schema === null) {
         return { ok: true, prefix: '', partial: '', candidates: [] }
     }
 
     // 单个尾点 = 补全点标记（工单 01 备注）；孤点前缀无合法续写
-    const hadTrailingDot = query.expr.endsWith('.')
-    const stripped = hadTrailingDot ? query.expr.slice(0, -1) : query.expr
+    const hadTrailingDot = expr.endsWith('.')
+    const stripped = hadTrailingDot ? expr.slice(0, -1) : expr
     if (stripped === '') {
-        if (query.expr === '') {
-            return { ok: true, prefix: '', partial: '', ...headCandidates(schema, query.context, query.rowSchema) }
+        if (expr === '') {
+            return {
+                ok: true,
+                prefix: '',
+                partial: '',
+                ...headCandidates(schema, query.context, query.rowSchema, expr.length, false),
+            }
         }
         return { ok: false, reason: 'expression_syntax_error' }
     }
@@ -168,8 +297,22 @@ export function enumerateExpressionCandidates(
         partial = headName(head)
     }
 
+    // 桶候选随字段收敛出现（工单 11 ②「选字段后」）：partial 非空 = 正在收敛到
+    // 某字段；空 expr / 尾点未过滤位保持既有列表零噪音
+    const withBuckets = allowCallSuggestions && partial !== ''
+
     if (prefixPath.length === 0) {
-        return { ok: true, prefix: '', partial, ...headCandidates(schema, query.context, query.rowSchema) }
+        const view = headCandidates(schema, query.context, query.rowSchema, expr.length, withBuckets)
+        // 函数名候选（spec ⑨「片段以名字+( 形态开头时建议函数名」）：非空裸名位给，
+        // 空 expr / 尾点下钻位不给（字段列表零噪音；名单面只喂建议不校验）
+        const fns = allowCallSuggestions && expr !== '' ? functionCandidates() : []
+        return {
+            ok: true,
+            prefix: '',
+            partial,
+            candidates: [...view.candidates, ...fns],
+            ...(view.open === true ? { open: true } : {}),
+        }
     }
 
     // 头路由对齐求值器 resolveFragment 的 match 分支。base 与下钻段：
@@ -204,7 +347,21 @@ export function enumerateExpressionCandidates(
         ok: true,
         prefix,
         partial,
-        candidates: view.entries.map((entry) => childCandidate(entry, prefix)),
+        candidates: view.entries.flatMap((entry) => childCandidates(entry, prefix, expr.length, withBuckets)),
         ...(view.open === true ? { open: true } : {}),
     }
+}
+
+export function enumerateExpressionCandidates(
+    schema: ExpressionSchemaNode | null,
+    query: ExpressionCandidateQuery,
+): ExpressionCandidateResult {
+    if (schema === null) {
+        return { ok: true, prefix: '', partial: '', candidates: [] }
+    }
+    // ⑦ 分类分流（工单 12）：调用形态前缀 → 光标槽位路由；否则既有路径枚举
+    if (isCallFragment(query.expr)) {
+        return callSlotResult(schema, query)
+    }
+    return enumeratePathCandidates(schema, query, query.expr, true)
 }

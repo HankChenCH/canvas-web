@@ -136,7 +136,7 @@ describe('enumerateExpressionCandidates（头部候选分表）', () => {
 })
 
 describe('enumerateExpressionCandidates（点下钻刷新）', () => {
-    it('row. → 行键树子候选，path 带 row. 前缀、元信息透出', () => {
+    it('row. → 行键树子候选，path 带 row. 前缀、元信息透出（未过滤位不给桶候选——分桶随字段收敛出现）', () => {
         const result = enumerateExpressionCandidates(payloadSchema, { context: 'row', expr: 'row.', rowSchema })
         if (!result.ok) throw new Error('应枚举成功')
         expect(result.prefix).toBe('row')
@@ -147,12 +147,18 @@ describe('enumerateExpressionCandidates（点下钻刷新）', () => {
         ])
     })
 
-    it('row 多层下钻 + 部分段：row.lab → prefix=row、partial=lab（行键树 label）', () => {
+    it('row 多层下钻 + 部分段：row.lab → prefix=row、partial=lab（行键树 label；partial 非空 → weight 的数字族桶候选在场）', () => {
         const result = enumerateExpressionCandidates(payloadSchema, { context: 'row', expr: 'row.lab', rowSchema })
         if (!result.ok) throw new Error('应枚举成功')
         expect(result.prefix).toBe('row')
         expect(result.partial).toBe('lab')
-        expect(result.candidates.map((candidate) => candidate.segment)).toEqual(['label', 'weight'])
+        expect(result.candidates.map((candidate) => candidate.filterKey ?? candidate.segment)).toEqual([
+            'label',
+            'weight',
+            'weight',
+            'weight',
+            'weight',
+        ])
     })
 
     it('裸键下钻走 properties 树：customer. → 子键', () => {
@@ -315,7 +321,7 @@ describe('宿主示例信封 schema 的载荷形态用例（评估文档 §1.1�
         expect(drill).toMatchObject({ ok: true, candidates: [] })
     })
 
-    it('data 位声明具体 properties 后候选有实感：data. 给出载荷键树', () => {
+    it('data 位声明具体 properties 后候选有实感：data. 给出载荷键树（未过滤位不给桶候选）', () => {
         const parsed = parseExpressionSchema(envelopeRaw(true))
         if (!parsed.ok) throw new Error('应解析通过')
         const drill = enumerateExpressionCandidates(parsed.schema, { context: 'root', expr: 'data.' })
@@ -323,6 +329,14 @@ describe('宿主示例信封 schema 的载荷形态用例（评估文档 §1.1�
         expect(drill.candidates).toEqual([
             { path: 'data.orderNo', segment: 'orderNo', description: '订单号', type: 'string' },
             { path: 'data.total', segment: 'total', description: '订单金额', type: 'number' },
+        ])
+        // partial 非空（data.tot 收敛中）→ total 的数字族桶候选出现
+        const narrowing = enumerateExpressionCandidates(parsed.schema, { context: 'root', expr: 'data.tot' })
+        if (!narrowing.ok) throw new Error('应枚举成功')
+        expect(narrowing.candidates.filter((candidate) => candidate.type === '函数').map((fn) => fn.segment)).toEqual([
+            'number(data.total)',
+            'fixed(data.total)',
+            'percent(data.total)',
         ])
     })
 
@@ -338,5 +352,123 @@ describe('宿主示例信封 schema 的载荷形态用例（评估文档 §1.1�
             'remark',
             '$root',
         ])
+    })
+})
+
+describe('enumerateExpressionCandidates（内建函数建议面，expression-type-methods 工单 12，spec §1.2 ⑨）', () => {
+    /** 分桶样例：format 标记的日期串 + 数字 + 普通 string 三桶齐备 */
+    const bucketRowRaw = {
+        type: 'object',
+        properties: {
+            issueDate: { type: 'string', format: 'date', description: '发证日期' },
+            amount: { type: 'number', description: '金额' },
+            name: { type: 'string', description: '姓名' },
+        },
+    }
+    const parsedBucketRow = parseExpressionSchema(bucketRowRaw)
+    if (!parsedBucketRow.ok) throw new Error('分桶样例 schema 应合法')
+    const bucketRow: ExpressionSchemaNode = parsedBucketRow.schema
+
+    it('函数名候选只喂补全建议：片段以名字形态开头（非空裸名）时给四函数', () => {
+        const result = enumerateExpressionCandidates(payloadSchema, { context: 'root', expr: 'tag' })
+        if (!result.ok) throw new Error('应枚举成功')
+        const fns = result.candidates.filter((candidate) => candidate.type === '函数')
+        expect(fns.map((fn) => fn.segment)).toEqual(['date()', 'number()', 'fixed()', 'percent()'])
+        expect(fns[0]).toMatchObject({
+            segment: 'date()',
+            cursorBack: 1,
+            path: 'date(path[, format])',
+            description: '日期格式化（moment 风格 token，预设 date/datetime）',
+        })
+    })
+
+    it('空 expr / 尾点下钻位不给函数名候选（片段以名字开头才建议；字段列表零噪音）', () => {
+        const empty = enumerateExpressionCandidates(payloadSchema, { context: 'root', expr: '' })
+        if (!empty.ok) throw new Error('应枚举成功')
+        expect(empty.candidates.some((candidate) => candidate.type === '函数')).toBe(false)
+        const drill = enumerateExpressionCandidates(payloadSchema, { context: 'root', expr: 'customer.' })
+        if (!drill.ok) throw new Error('应枚举成功')
+        expect(drill.candidates.some((candidate) => candidate.type === '函数')).toBe(false)
+    })
+
+    it('分桶：format 标记 string → date() 插入调用（参数占位 + 光标回退引号内）；replaceLen = 整段 expr', () => {
+        const result = enumerateExpressionCandidates(bucketRow, { context: 'root', expr: 'issueDate' })
+        if (!result.ok) throw new Error('应枚举成功')
+        expect(result.partial).toBe('issueDate')
+        const plain = result.candidates.find((candidate) => candidate.segment === 'issueDate')
+        expect(plain).toMatchObject({ path: 'issueDate', type: 'string' }) // 路径候选照给
+        const call = result.candidates.find((candidate) => candidate.filterKey === 'issueDate')
+        expect(call).toMatchObject({
+            segment: "date(issueDate, '')",
+            cursorBack: 2,
+            replaceLen: 9,
+            filterKey: 'issueDate',
+            type: '函数',
+        })
+    })
+
+    it('分桶：number → 数字族三函数；普通 string 不特供任何日期/数字建议（工单 11 ②）', () => {
+        const amount = enumerateExpressionCandidates(bucketRow, { context: 'root', expr: 'amount' })
+        if (!amount.ok) throw new Error('应枚举成功')
+        expect(amount.candidates.filter((candidate) => candidate.filterKey === 'amount').map((fn) => fn.segment)).toEqual([
+            'number(amount)',
+            'fixed(amount)',
+            'percent(amount)',
+        ])
+        const name = enumerateExpressionCandidates(bucketRow, { context: 'root', expr: 'name' })
+        if (!name.ok) throw new Error('应枚举成功')
+        // 普通 string 自身无桶（head 层全量列表可含其他字段的桶，按 filterKey 区分）
+        expect(name.candidates.some((candidate) => candidate.filterKey === 'name')).toBe(false)
+    })
+
+    it('分桶在下钻层同样生效（replaceLen 覆盖含前缀的整段 expr）', () => {
+        const drill = enumerateExpressionCandidates(bucketRow, {
+            context: 'row',
+            expr: 'row.iss',
+            rowSchema: bucketRow,
+        })
+        if (!drill.ok) throw new Error('应枚举成功')
+        expect(drill.partial).toBe('iss')
+        const call = drill.candidates.find((candidate) => candidate.filterKey === 'issueDate')
+        expect(call).toMatchObject({ segment: "date(row.issueDate, '')", replaceLen: 7 })
+    })
+
+    it('调用首参槽：字段建议复用路径枚举（上下文同源），桶候选与函数名候选不在参数位给（调用不嵌套）', () => {
+        const heads = enumerateExpressionCandidates(bucketRow, { context: 'root', expr: 'date(' })
+        if (!heads.ok) throw new Error('应枚举成功')
+        expect(heads.candidates.map((candidate) => candidate.segment)).toEqual(['issueDate', 'amount', 'name', '$root'])
+        expect(heads.partial).toBe('')
+
+        const drill = enumerateExpressionCandidates(bucketRow, {
+            context: 'row',
+            expr: 'date(row.iss',
+            rowSchema: bucketRow,
+        })
+        if (!drill.ok) throw new Error('应枚举成功')
+        expect(drill.partial).toBe('iss')
+        expect(drill.candidates.map((candidate) => candidate.segment)).toEqual(['issueDate', 'amount', 'name']) // 纯路径候选
+    })
+
+    it('date 格式串槽：具名预设 + 中文模板快捷项（spec §3.4，与求值面预设解耦）', () => {
+        const result = enumerateExpressionCandidates(bucketRow, { context: 'root', expr: "date(issueDate, 'Y" })
+        if (!result.ok) throw new Error('应枚举成功')
+        expect(result.partial).toBe('Y')
+        expect(result.candidates).toEqual([
+            { path: 'date', segment: 'date', description: '预设 → YYYY-MM-DD', type: '格式' },
+            { path: 'datetime', segment: 'datetime', description: '预设 → YYYY-MM-DD HH:mm:ss', type: '格式' },
+            { path: 'YYYY年MM月DD日', segment: 'YYYY年MM月DD日', description: '中文模板（写即所得）', type: '格式' },
+        ])
+    })
+
+    it('非建议槽位/闭合调用/嵌套调用形态：空候选（ok 不变，不抛错）', () => {
+        for (const expr of ['date(issueDate)', 'number(amount, ', "date(issueDate, '')", 'date(foo(']) {
+            const result = enumerateExpressionCandidates(bucketRow, { context: 'root', expr })
+            expect(result).toMatchObject({ ok: true, candidates: [] })
+        }
+    })
+
+    it('行外 row. 出现在调用首参槽同样不给（row. 行外报错语义不因调用面松动）', () => {
+        const result = enumerateExpressionCandidates(bucketRow, { context: 'root', expr: 'date(row.' })
+        expect(result).toMatchObject({ ok: true, candidates: [] })
     })
 })
