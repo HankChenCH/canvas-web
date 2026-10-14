@@ -120,6 +120,56 @@ describe('parseExpressionCall（结构面解析：实参表 + 首参路径，名
     })
 })
 
+describe('parseExpressionCall 结构错诊断（kind + at：expr 内坐标，end 独占；expression-syntax-diagnostics 工单 01）', () => {
+    it('字符串字面量未闭合：at 覆盖起始引号到片段尾（用户实案：date 格式串缺收尾引号）', () => {
+        const expr = "date(row.end_date, 'YYYY年MM月DD日)"
+        const parsed = parseExpressionCall(expr)
+        expect(parsed).toMatchObject({ ok: false, error: 'expression_syntax_error', kind: 'unterminated_string' })
+        if (parsed.ok) throw new Error('unreachable')
+        expect(expr.slice(parsed.at.start, parsed.at.end)).toBe("'YYYY年MM月DD日)")
+    })
+
+    it('括号不平衡：实参表缺右括号，at 自左括号起到片段尾', () => {
+        expect(parseExpressionCall('date(x')).toMatchObject({ ok: false, kind: 'unbalanced_paren', at: { start: 4, end: 6 } })
+        expect(parseExpressionCall('date(x,')).toMatchObject({ ok: false, kind: 'unbalanced_paren', at: { start: 4, end: 7 } })
+        expect(parseExpressionCall('date(x, y')).toMatchObject({ ok: false, kind: 'unbalanced_paren' })
+    })
+
+    it('空参数位：尾逗号空位 / 首参前空位，at 为空位零宽位（选中即光标落点）', () => {
+        expect(parseExpressionCall('date(x,)')).toMatchObject({ ok: false, kind: 'empty_arg_slot', at: { start: 7, end: 7 } })
+        expect(parseExpressionCall('date(,x)')).toMatchObject({ ok: false, kind: 'empty_arg_slot', at: { start: 5, end: 5 } })
+    })
+
+    it('调用实参语法错：数字截断后的非法分隔位，at 指向该字符', () => {
+        expect(parseExpressionCall('date(x, 1.)')).toMatchObject({ ok: false, kind: 'bad_arg_syntax', at: { start: 9, end: 10 } })
+        expect(parseExpressionCall('date(x, 1.2.3)')).toMatchObject({ ok: false, kind: 'bad_arg_syntax' })
+    })
+
+    it('调用后有多余内容：at 自多余首字符起到片段尾', () => {
+        expect(parseExpressionCall('date(x))')).toMatchObject({ ok: false, kind: 'trailing_after_call', at: { start: 7, end: 8 } })
+        expect(parseExpressionCall('date(x) x')).toMatchObject({ ok: false, kind: 'trailing_after_call', at: { start: 8, end: 9 } })
+    })
+
+    it('首参必须为路径：at 覆盖首实参整体（含引号外壳）', () => {
+        expect(parseExpressionCall("date('123')")).toMatchObject({ ok: false, kind: 'first_arg_not_path', at: { start: 5, end: 10 } })
+        expect(parseExpressionCall('number(1)')).toMatchObject({ ok: false, kind: 'first_arg_not_path', at: { start: 7, end: 8 } })
+    })
+
+    it('路径实参非法：at 覆盖该实参', () => {
+        expect(parseExpressionCall('date(row..x)')).toMatchObject({ ok: false, kind: 'invalid_path_arg', at: { start: 5, end: 11 } })
+    })
+
+    it('缺左括号 / 非调用形态直入（防御面）：结构错 kind 不缺位', () => {
+        expect(parseExpressionCall('date x')).toMatchObject({ ok: false, kind: 'missing_open_paren' })
+        expect(parseExpressionCall('.x(')).toMatchObject({ ok: false, kind: 'invalid_path' })
+    })
+
+    it('ok 分支不带诊断字段（增量只落失败分支）', () => {
+        const parsed = parseExpressionCall('date(row.x)')
+        expect(Object.keys(parsed).sort()).toEqual(['args', 'name', 'ok'])
+    })
+})
+
 describe('expressionCallSlotAtEnd（光标槽位定位：容忍截断前缀，供补全路由）', () => {
     it('首参路径槽：date( / 部分路径文本', () => {
         expect(expressionCallSlotAtEnd('date(')).toEqual({ name: 'date', index: 0, text: '', stringSlot: false })

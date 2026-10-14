@@ -19,7 +19,7 @@
  *
  * 全模块纯函数、无 DOM（editor-shared-isolation）。
  */
-import { isCallFragment, parseExpressionCall } from './expressionCall'
+import { isCallFragment, parseExpressionCall, type ExpressionCallErrorKind, type ExpressionErrorRange } from './expressionCall'
 import { parseExpressionPath, type ExpressionSyntaxError } from './expressionPath'
 
 /** 字面直通段（不含任何 `{{`） */
@@ -39,6 +39,25 @@ export interface ExpressionScanFragment {
     expr: string
     /** 空片段/路径空段信号（与求值器 expression_syntax_error 同码）；合法为 null */
     error: ExpressionSyntaxError | null
+    /**
+     * 结构错诊断（expression-syntax-diagnostics 工单 01）：kind + 出错子范围，
+     * 模板坐标（expr 坐标平移），at 供选中/定位；合法为 null。error 非空 ⟺
+     * diagnostic 非空（同一判定的两投影，error 供 fixture/既有消费面不动）。
+     */
+    diagnostic: ExpressionFragmentDiagnostic | null
+}
+
+/** 片段诊断 kind（结构面呈现轴，spec §1.2 ⑨ JS 本端；= 调用面子类 + 空片段） */
+export type ExpressionFragmentErrorKind = ExpressionCallErrorKind | 'empty_fragment'
+
+/** 闭合片段的结构错诊断：位置由本端派生（不入跨端 fixture），措辞映射在 vue 层 */
+export interface ExpressionFragmentDiagnostic {
+    kind: ExpressionFragmentErrorKind
+    /** 片段外壳范围（模板坐标：start 含 {{，end 含 }}） */
+    start: number
+    end: number
+    /** 出错子范围（模板坐标，end 独占）——选中/定位用 */
+    at: ExpressionErrorRange
 }
 
 /** 未闭合 `{{` 起的输入中片段（求值期按字面；编辑器侧补全触发态） */
@@ -78,17 +97,28 @@ export function phpTrim(value: string): string {
 }
 
 /**
- * 片段错误信号（工单 12 适配调用片段）：⑦ 分类分流——路径走既有
- * parseExpressionPath；调用走最小结构面解析（括号不平衡/空参数位/字符串未闭合/
- * 首参非路径 = expression_syntax_error 同码；未知函数名不标红，名单面不校验）。
- * 空片段按路径分支落错（空片段/空路径段同码，与求值器一致）。
+ * 片段错误判定（工单 12 适配调用片段 + expression-syntax-diagnostics 工单 01
+ * 增诊断轴）：⑦ 分类分流——路径走既有 parseExpressionPath；调用走最小结构面
+ * 解析（结构错 = expression_syntax_error 同码；未知函数名不标红，名单面不校验）。
+ * 空片段按路径分支落错（空片段/空路径段同码，与求值器一致）。返回 expr 坐标的
+ * kind + at（平移到模板坐标由 scanExpressionFragments 组装时完成）。
  */
-function fragmentSyntaxError(expr: string): ExpressionSyntaxError | null {
-    if (expr === '') return 'expression_syntax_error'
+function fragmentDiagnostic(expr: string): { kind: ExpressionFragmentErrorKind; at: ExpressionErrorRange } | null {
+    if (expr === '') return { kind: 'empty_fragment', at: { start: 0, end: 0 } }
     if (isCallFragment(expr)) {
-        return parseExpressionCall(expr).ok ? null : ('expression_syntax_error' as const)
+        const parsed = parseExpressionCall(expr)
+        if (parsed.ok) return null
+        return { kind: parsed.kind, at: parsed.at }
     }
-    return parseExpressionPath(expr).ok ? null : ('expression_syntax_error' as const)
+    if (parseExpressionPath(expr).ok) return null
+    return { kind: 'invalid_path', at: { start: 0, end: expr.length } }
+}
+
+/** raw 的前导 trim 宽度（expr 首字符在 raw 中的下标）：expr 坐标 → 模板坐标平移用 */
+function leadingPhpTrim(value: string): number {
+    let start = 0
+    while (start < value.length && PHP_TRIM_CHARS.includes(value[start] as string)) start += 1
+    return start
 }
 
 /** 扫描模板串的片段切分：闭合/未闭合/多片段/错误信号，语义对齐求值器扫描循环 */
@@ -114,8 +144,26 @@ export function scanExpressionFragments(template: string): ExpressionScan {
         }
         const raw = template.slice(open + 2, close)
         const expr = phpTrim(raw)
-        const error = fragmentSyntaxError(expr)
-        parts.push({ kind: 'fragment', start: open, end: close + 2, raw, expr, error })
+        let diagnostic: ExpressionFragmentDiagnostic | null = null
+        const found = fragmentDiagnostic(expr)
+        if (found) {
+            const exprStart = open + 2 + leadingPhpTrim(raw)
+            diagnostic = {
+                kind: found.kind,
+                start: open,
+                end: close + 2,
+                at: { start: exprStart + found.at.start, end: exprStart + found.at.end },
+            }
+        }
+        parts.push({
+            kind: 'fragment',
+            start: open,
+            end: close + 2,
+            raw,
+            expr,
+            error: diagnostic !== null ? 'expression_syntax_error' : null,
+            diagnostic,
+        })
         pos = close + 2
         open = template.indexOf('{{', pos)
     }

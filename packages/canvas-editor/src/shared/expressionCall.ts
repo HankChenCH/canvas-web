@@ -51,7 +51,35 @@ export interface ExpressionCallArg {
 
 export type ExpressionCallParse =
     | { ok: true; name: string; args: readonly ExpressionCallArg[] }
-    | { ok: false; error: ExpressionSyntaxError }
+    | { ok: false; error: ExpressionSyntaxError; kind: ExpressionCallErrorKind; at: ExpressionErrorRange }
+
+/**
+ * 结构错子类（编辑器诊断面，expression-syntax-diagnostics 工单 01）：呈现轴，
+ * 不入跨端 fixture（位置本就由本端派生并由单测锁死）；中文措辞映射在 vue 层
+ * useExpressionDiagnostics。分类对齐权威端 InterpolationEvaluator 的消息面
+ * （spec §5.2），缺左括号从「括号不平衡」单列便于提示。
+ */
+export type ExpressionCallErrorKind =
+    | 'missing_open_paren' // 名字后缺 (
+    | 'unbalanced_paren' // 实参表缺右括号（含尾逗号后即串尾）
+    | 'unterminated_string' // 字符串字面量未闭合
+    | 'empty_arg_slot' // 尾逗号空位 / 空路径参数位
+    | 'bad_arg_syntax' // 实参位出现非法字符（数字截断后的分隔位等）
+    | 'trailing_after_call' // 调用后有多余内容
+    | 'first_arg_not_path' // 首参非路径（§1.2 ① 文法层）
+    | 'invalid_path_arg' // 路径实参空段/非法
+    | 'invalid_path' // 非调用形态直入（防御面：形态分类归调用方，此处对齐路径分支）
+
+/** 出错子范围（expr 内坐标，end 独占） */
+export interface ExpressionErrorRange {
+    start: number
+    end: number
+}
+
+/** 失败分支统一构造（error 码恒 expression_syntax_error，零新 code） */
+function fail(kind: ExpressionCallErrorKind, start: number, end: number): ExpressionCallParse {
+    return { ok: false, error: 'expression_syntax_error', kind, at: { start, end } }
+}
 
 /**
  * ⑦ 片段分类：首 token 后紧跟可选空白与 `(` 即调用。expr 须已 trim（片段扫描
@@ -73,29 +101,34 @@ export function isCallFragment(expr: string): boolean {
 export function parseExpressionCall(expr: string): ExpressionCallParse {
     let head = 0
     while (head < expr.length && !HEAD_STOP_CHARS.includes(expr[head] as string)) head += 1
-    if (head === 0) return { ok: false, error: 'expression_syntax_error' }
+    if (head === 0) return fail('invalid_path', 0, expr.length) // 防御面（对齐路径分支语义）
     const name = expr.slice(0, head)
 
     // 实参表骨架（镜像 parseCallArgs）：skipWs 四字符后必须 (，尾随内容即结构错
     let pos = skipWs(expr, head)
-    if (pos >= expr.length || expr[pos] !== '(') return { ok: false, error: 'expression_syntax_error' }
+    if (pos >= expr.length || expr[pos] !== '(') return fail('missing_open_paren', head, expr.length)
+    const openParen = pos
     pos = skipWs(expr, pos + 1)
 
     const args: ExpressionCallArg[] = []
+    // 实参范围并行表（expr 坐标）：首参/路径实参诊断的出错子范围取材
+    const spans: ExpressionErrorRange[] = []
     if (pos < expr.length && expr[pos] === ')') {
         pos += 1
     } else {
         for (;;) {
-            if (pos >= expr.length) return { ok: false, error: 'expression_syntax_error' }
+            if (pos >= expr.length) return fail('unbalanced_paren', openParen, expr.length)
             const arg = parseCallArg(expr, pos)
             if (!arg.ok) return arg
             args.push(arg.value)
+            spans.push({ start: arg.start, end: arg.end })
             pos = skipWs(expr, arg.end)
-            if (pos >= expr.length) return { ok: false, error: 'expression_syntax_error' }
+            if (pos >= expr.length) return fail('unbalanced_paren', openParen, expr.length)
             if (expr[pos] === ',') {
+                const comma = pos
                 pos = skipWs(expr, pos + 1)
                 if (pos < expr.length && expr[pos] === ')') {
-                    return { ok: false, error: 'expression_syntax_error' } // 空参数位
+                    return fail('empty_arg_slot', comma + 1, pos) // 空参数位
                 }
                 continue
             }
@@ -103,37 +136,48 @@ export function parseExpressionCall(expr: string): ExpressionCallParse {
                 pos += 1
                 break
             }
-            return { ok: false, error: 'expression_syntax_error' } // 调用实参语法错
+            return fail('bad_arg_syntax', pos, pos + 1) // 调用实参语法错
         }
     }
 
-    if (skipWs(expr, pos) !== expr.length) return { ok: false, error: 'expression_syntax_error' } // 调用后有多余内容
+    pos = skipWs(expr, pos)
+    if (pos !== expr.length) return fail('trailing_after_call', pos, expr.length) // 调用后有多余内容（首个非空白字符起）
 
     // 首参文法层钉死为路径（§1.2 ①）：'格式化常量' 是伪场景，误用更早一层被抓住
-    if (args[0] !== undefined && args[0].type !== 'path') return { ok: false, error: 'expression_syntax_error' }
+    if (args[0] !== undefined && args[0].type !== 'path') {
+        const span = spans[0] as ExpressionErrorRange
+        return fail('first_arg_not_path', span.start, span.end)
+    }
     // 路径实参空段与求值器同码（resolveCallArgValue 的 explode + 空段检查前移至此）
-    for (const arg of args) {
+    for (let i = 0; i < args.length; i += 1) {
+        const arg = args[i] as ExpressionCallArg
+        const span = spans[i] as ExpressionErrorRange
         if (arg.type === 'path' && !parseExpressionPath(arg.value).ok) {
-            return { ok: false, error: 'expression_syntax_error' }
+            return fail('invalid_path_arg', span.start, span.end)
         }
     }
 
     return { ok: true, name, args }
 }
 
-type CallArgParse = { ok: true; value: ExpressionCallArg; end: number } | { ok: false; error: ExpressionSyntaxError }
+type CallArgParse =
+    | { ok: true; value: ExpressionCallArg; start: number; end: number }
+    | { ok: false; error: ExpressionSyntaxError; kind: ExpressionCallErrorKind; at: ExpressionErrorRange }
 
 /** 单实参解析（镜像 parseCallArg 三分派）：' 串 / 数字 / 路径吞至 ,/) 止后 trim */
 function parseCallArg(expr: string, pos: number): CallArgParse {
     const len = expr.length
+    const start = pos
     const ch = expr[pos] as string
 
-    // 字符串字面量：仅单引号，'' 翻倍转义；未闭合 = 结构错
+    // 字符串字面量：仅单引号，'' 翻倍转义；未闭合 = 结构错（at 自引号起到片段尾）
     if (ch === "'") {
         let cursor = pos + 1
         let buf = ''
         for (;;) {
-            if (cursor >= len) return { ok: false, error: 'expression_syntax_error' }
+            if (cursor >= len) {
+                return { ok: false, error: 'expression_syntax_error', kind: 'unterminated_string', at: { start, end: len } }
+            }
             if (expr[cursor] === "'") {
                 if (cursor + 1 < len && expr[cursor + 1] === "'") {
                     buf += "'"
@@ -146,12 +190,11 @@ function parseCallArg(expr: string, pos: number): CallArgParse {
             buf += expr[cursor]
             cursor += 1
         }
-        return { ok: true, value: { type: 'string', value: buf }, end: cursor }
+        return { ok: true, value: { type: 'string', value: buf }, start, end: cursor }
     }
 
     // 数字字面量：无符号十进制 数字+ ['.' 数字+]，无指数（`.` 仅在后随数字时消费）
     if (ch >= '0' && ch <= '9') {
-        const start = pos
         const isDigitAt = (index: number): boolean => {
             const c = expr[index]
             return c !== undefined && c >= '0' && c <= '9'
@@ -161,15 +204,16 @@ function parseCallArg(expr: string, pos: number): CallArgParse {
             pos += 1
             while (isDigitAt(pos)) pos += 1
         }
-        return { ok: true, value: { type: 'number', value: expr.slice(start, pos) }, end: pos }
+        return { ok: true, value: { type: 'number', value: expr.slice(start, pos) }, start, end: pos }
     }
 
     // 路径：至顶层 ',' 或 ')' 止后 trim（段内空白属于键名，缺逗号非结构错）
-    const start = pos
     while (pos < len && expr[pos] !== ',' && expr[pos] !== ')') pos += 1
     const raw = phpTrim(expr.slice(start, pos))
-    if (raw === '') return { ok: false, error: 'expression_syntax_error' } // 空参数位
-    return { ok: true, value: { type: 'path', value: raw }, end: pos }
+    if (raw === '') {
+        return { ok: false, error: 'expression_syntax_error', kind: 'empty_arg_slot', at: { start, end: pos } } // 空参数位
+    }
+    return { ok: true, value: { type: 'path', value: raw }, start, end: pos }
 }
 
 /** 光标槽位（补全路由消费）：光标 = expr 末尾（调用方喂片段的光标前缀） */

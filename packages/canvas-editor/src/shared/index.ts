@@ -28,6 +28,8 @@ export {
     PHP_TRIM_CHARS,
     phpTrim,
     scanExpressionFragments,
+    type ExpressionFragmentDiagnostic,
+    type ExpressionFragmentErrorKind,
     type ExpressionScan,
     type ExpressionScanFragment,
     type ExpressionScanLiteral,
@@ -35,13 +37,17 @@ export {
     type ExpressionScanPart,
 } from './expressionScan'
 
+export { expressionDiagnostics } from './expressionDiagnostics'
+
 export {
     expressionCallSlotAtEnd,
     isCallFragment,
     parseExpressionCall,
     type ExpressionCallArg,
+    type ExpressionCallErrorKind,
     type ExpressionCallParse,
     type ExpressionCallSlotContext,
+    type ExpressionErrorRange,
 } from './expressionCall'
 
 export {

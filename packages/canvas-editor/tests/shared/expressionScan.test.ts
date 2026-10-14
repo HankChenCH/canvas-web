@@ -292,3 +292,47 @@ describe('调用片段（expression-type-methods 工单 12，spec §1.2 ⑤⑨�
         ])
     })
 })
+
+describe('片段诊断（expression-syntax-diagnostics 工单 01：kind + 模板坐标出错子范围；error 字段语义不变）', () => {
+    /** 收窄取片段诊断（literal/open 无此字段） */
+    function diagnosticOf(template: string) {
+        const part = scanExpressionFragments(template).parts[0]
+        if (part?.kind !== 'fragment') throw new Error(`非闭合片段：${template}`)
+        return { part, diagnostic: part.diagnostic }
+    }
+
+    it('合法片段 diagnostic = null（error 同步为 null，单一推导）', () => {
+        expect(diagnosticOf('{{row.name}}').part).toMatchObject({ error: null, diagnostic: null })
+    })
+
+    it('结构错片段携带诊断：at 为模板坐标（slice 可回验），外壳范围含 {{ }}', () => {
+        const template = "{{ date(row.end_date, 'YYYY年MM月DD日) }}"
+        const { diagnostic } = diagnosticOf(template)
+        expect(diagnostic).toMatchObject({ kind: 'unterminated_string', start: 0, end: template.length })
+        if (!diagnostic) throw new Error('unreachable')
+        // at 定义在 expr 坐标（尾随空白已被 trim），平移后恰为未闭合字面量本体
+        expect(template.slice(diagnostic.at.start, diagnostic.at.end)).toBe("'YYYY年MM月DD日)")
+    })
+
+    it('trim 片段的 at 含前导空白偏移（expr 坐标平移到模板坐标）', () => {
+        const { diagnostic } = diagnosticOf('{{ row..x }}')
+        expect(diagnostic).toMatchObject({ kind: 'invalid_path' })
+        if (!diagnostic) throw new Error('unreachable')
+        expect(diagnostic.at).toMatchObject({ start: 3, end: 9 }) // 'row..x'（前导空格偏移 +1）
+    })
+
+    it('空片段：empty_fragment，at 为 }} 前零宽位', () => {
+        const { diagnostic } = diagnosticOf('{{}}')
+        expect(diagnostic).toMatchObject({ kind: 'empty_fragment', at: { start: 2, end: 2 } })
+    })
+
+    it('调用片段结构错：kind 直通解析面（unbalanced_paren）', () => {
+        expect(diagnosticOf('{{date(row.x}}').diagnostic).toMatchObject({ kind: 'unbalanced_paren' })
+    })
+
+    it('open 片段无诊断（求值期字面直通，输入 {{ 的中间态不标红）', () => {
+        const part = scanExpressionFragments('你好 {{row.nam').parts[1]
+        expect(part?.kind).toBe('open')
+        expect(part && 'diagnostic' in part).toBe(false)
+    })
+})
