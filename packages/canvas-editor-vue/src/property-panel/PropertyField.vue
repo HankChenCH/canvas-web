@@ -133,6 +133,10 @@ const expressionErrors = computed<readonly ExpressionFragmentDiagnostic[]>(() =>
 )
 const expressionErrorHint = computed(() => expressionDiagnosticHint(expressionErrors.value))
 
+/** 点击定位的可用面：textarea/text 控件根是可 selection 的输入元素；imageSrc
+ *  全形态根是 div（选区无从落），提示行退化为纯展示（不渲染可点击暗示） */
+const diagnosticLocatable = computed(() => props.field.control === 'textarea' || props.field.control === 'text')
+
 /** 点击提示：聚焦控件并选中出错子范围（value 即模板串，at 模板坐标可直接落 selection） */
 function locateFirstError(): void {
     const first = expressionErrors.value[0]
@@ -245,8 +249,9 @@ function relaySubCommit(field: FieldDef, value: unknown, final: boolean): void {
              （错误行在其后，视觉 danger 色） -->
         <span
             v-if="expressionErrorHint"
-            class="cn-prop-field__hint cn-prop-field__hint--error col-span-2 block cursor-pointer text-[11px] leading-4 text-cn-danger"
-            title="点击选中出错片段"
+            class="cn-prop-field__hint cn-prop-field__hint--error col-span-2 block text-[11px] leading-4 text-cn-danger"
+            :class="{ 'cursor-pointer': diagnosticLocatable }"
+            :title="diagnosticLocatable ? '点击选中出错片段' : undefined"
             @click="locateFirstError"
         >{{ expressionErrorHint }}</span>
     </component>

@@ -38,6 +38,7 @@ export {
     type ExpressionFieldContext,
 } from './expressionContext'
 export { useExpressionCompletion, type ExpressionCompletionState } from './useExpressionCompletion'
+export { expressionDiagnosticHint, useExpressionDiagnostics } from './useExpressionDiagnostics'
 export { usePathCompletion } from './usePathCompletion'
 export { rowsPathCompletionSource } from './rowsPathCompletionSource'
 export { useHistory, type HistoryAvailability } from './useHistory'
