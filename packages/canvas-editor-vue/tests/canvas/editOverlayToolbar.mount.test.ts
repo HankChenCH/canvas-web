@@ -1,26 +1,35 @@
 // @vitest-environment jsdom
 /**
  * 编辑浮层工具条 + 表达式补全画布接线集成测试（canvas-web-edit-overlay-toolbar
- * 工单 03；前身 contentPill.mount.test.ts——内容类型切换浮层原地演进为工具条首段）。
+ * 工单 03/04；前身 contentPill.mount.test.ts——内容类型切换浮层原地演进为工具条首段）。
  *
- * 全链路（真实候选源 = 内核枚举器，非桩）：工具条骨架随编辑会话开合（此时仅内容
- * 类型一段，选中态不显示）；切换仅翻会话标志（零文档变更零历史步、textarea 实况
- * 保持）；屏幕恒定定位换算（图层框上缘中点的屏幕折算锚点、无 scale 变换——尺寸
- * 恒定可读可点，锚点随相机/缩放跟随；上缘放不下翻框下缘、水平钳制画布视口）；
- * 豁免集两目标（textarea + 整条工具条）；Esc 双态分流（浮层开着只关浮层）与
- * Ctrl/Cmd+Enter 提交优先于候选接受（监听次序钉住）；补全绑定 enabled 随会话
- * 模式翻转与候选源同源；锚点 scale 折算消费（zoom 传入 measureCursorAnchor）。
+ * 全链路（真实候选源 = 内核枚举器，非桩）：工具条随编辑会话开合（七段单行，选中态
+ * 不显示）；切换仅翻会话标志（零文档变更零历史步、textarea 实况保持）；屏幕恒定
+ * 定位换算（图层框上缘中点的屏幕折算锚点、无 scale 变换——尺寸恒定可读可点，锚点
+ * 随相机/缩放跟随；上缘放不下翻框下缘、水平钳制画布视口）；豁免集两目标（textarea +
+ * 整条工具条）；Esc 双态分流（浮层开着只关浮层）与 Ctrl/Cmd+Enter 提交优先于候选
+ * 接受（监听次序钉住）；补全绑定 enabled 随会话模式翻转与候选源同源；锚点 scale
+ * 折算消费（zoom 传入 measureCursorAnchor）。
+ *
+ * 工单 04（五组样式控件）：字体下拉｜字号步进｜字色拾色｜水平对齐三键｜垂直对齐
+ * 三键｜自动换行开关——面板同门权威写（updateSpec + `sel:path:key` mergeKey），
+ * 编辑框实时跟随；连续操作合并一步历史（步进 nudge 同门开放键、拾色拖动 input
+ * 合并 change 收口）；字号读数恒场景值；新层样式槽随权威写捕获；表格格内容会话
+ * 同等适用；工具条输入件夺焦引发 blur 被豁免（会话保持）。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { nextTick } from 'vue'
+import { nextTick, shallowRef } from 'vue'
 import { mount } from '@vue/test-utils'
 
 import {
     createTemplateTable,
     EditorSession,
+    resolveLayer,
     type FrameScheduler,
     type LayerPath,
 } from '@hankchen/canvas-editor'
+
+import { FONT_PICKER_KEY, type FontPickerContext } from '../../src/shared/fontPicker'
 
 // 锚点测量打桩透传（包真实实现）：钉「画布 zoom 进 scale 参数」的接线面——
 // 折算公式归 completionAnchor.test（工单 02），本文件只钉 composable 的消费
@@ -29,6 +38,8 @@ vi.mock('../../src/shared/completionAnchor', async (importOriginal) => {
     return { ...actual, measureCursorAnchor: vi.fn(actual.measureCursorAnchor) }
 })
 import { measureCursorAnchor } from '../../src/shared/completionAnchor'
+
+import type { DOMWrapper } from '@vue/test-utils'
 
 import { textLayer } from '../../../canvas-editor/tests/support/fixtures'
 import CanvasSurface from '../../src/canvas/CanvasSurface.vue'
@@ -119,11 +130,16 @@ function makeEditor(layers: Parameters<EditorSession['openDocument']>[0]['layers
     return editor
 }
 
-function mountOverlay(editor: EditorSession) {
+function mountOverlay(editor: EditorSession, options: { fontPicker?: FontPickerContext } = {}) {
     // 挂进宿主容器：getHost = 根元素 parentElement（真实装配里宿主 = surface 根 div）
     const hostEl = document.createElement('div')
     document.body.appendChild(hostEl)
-    const wrapper = mount(TextEditingOverlay, { props: { editor }, attachTo: hostEl })
+    const wrapper = mount(TextEditingOverlay, {
+        props: { editor },
+        attachTo: hostEl,
+        // 字体清单缝（工单 04 字体下拉段的注入形态；playground 同款 provide 面）
+        global: options.fontPicker ? { provide: { [FONT_PICKER_KEY as symbol]: options.fontPicker } } : undefined,
+    })
     wrappers.push(wrapper)
     return wrapper
 }
@@ -132,12 +148,14 @@ function mountOverlay(editor: EditorSession) {
  * 进入编辑并等初值注入落定：进入 watch 的 async 续体（textarea 挂载后写初值/
  * 聚焦/全选）比首个 nextTick 晚一拍微任务——textEditingOverlay.mount.test
  * 「全选保持」用例同款 setTimeout 口径；落定后才允许直写 textarea 实况
- * （非受控契约：晚到的初值注入不得覆盖编辑内容，测试亦然）。
+ * （非受控契约：晚到的初值注入不得覆盖编辑内容，测试亦然）。返回 textarea
+ * 包装（工单 04 起样式联动断言直接消费）。
  */
-async function beginEditing(wrapper: OverlayWrapper, path: LayerPath): Promise<void> {
+async function beginEditing(wrapper: OverlayWrapper, path: LayerPath): Promise<DOMWrapper<HTMLTextAreaElement>> {
     expect(wrapper.vm.beginTextEdit(path)).toBe(true)
     await nextTick()
     await new Promise((resolve) => setTimeout(resolve, 0))
+    return wrapper.find('textarea')
 }
 
 /** 模拟在编辑 textarea 输入：直设 DOM 值 + 光标再派发 input（面板接线测试同款） */
@@ -200,8 +218,8 @@ describe('工具条骨架随编辑会话开合（此时仅内容类型一段）'
         expect(toolbar(wrapper).exists()).toBe(true)
         expect(toolbar(wrapper).attributes('role')).toBe('toolbar')
         expect(pill(wrapper).exists()).toBe(true)
-        // 骨架期单段：工具条内只有内容类型段一组子件（工单 04 续接五组样式段）
-        expect(toolbar(wrapper).element.children).toHaveLength(1)
+        // 工单 04 起七段单行（段数断言见「五组样式段」describe）
+        expect(toolbar(wrapper).element.children).toHaveLength(7)
         expect(wrapper.find('textarea').exists()).toBe(true)
         expect(pillButton(wrapper, 'static').attributes('aria-pressed')).toBe('true')
         expect(pillButton(wrapper, 'expression').attributes('aria-pressed')).toBe('false')
@@ -223,6 +241,43 @@ describe('工具条骨架随编辑会话开合（此时仅内容类型一段）'
         expect(editor.store.ui.editing).toEqual({ path: ['layers', 0], expression: true })
         expect(pillButton(wrapper, 'expression').attributes('aria-pressed')).toBe('true')
         expect(pillButton(wrapper, 'static').attributes('aria-pressed')).toBe('false')
+    })
+
+    it('字面层进入编辑：工具条七段单行（工单 04 五组样式段续接内容类型段）', async () => {
+        const editor = makeEditor([textLayer()])
+        const wrapper = mountOverlay(editor)
+
+        await beginEditing(wrapper, ['layers', 0])
+
+        // 七段左→右：内容类型｜字体｜字号步进｜字色｜水平对齐三键｜垂直对齐三键｜自动换行
+        const root = toolbar(wrapper).element
+        expect(root.children).toHaveLength(7)
+        expect(wrapper.find('[data-content-pill]').element).toBe(root.children[0])
+        expect(wrapper.find('[data-toolbar-font]').exists()).toBe(true)
+        expect(wrapper.find('[data-toolbar-font-size]').exists()).toBe(true)
+        expect(wrapper.find('[data-toolbar-font-size-dec]').exists()).toBe(true)
+        expect(wrapper.find('[data-toolbar-font-size-inc]').exists()).toBe(true)
+        expect(wrapper.find('[data-toolbar-font-color]').exists()).toBe(true)
+        expect(wrapper.find('[data-toolbar-align-horizontal]').exists()).toBe(true)
+        expect(wrapper.find('[data-toolbar-align-vertical]').exists()).toBe(true)
+        expect(wrapper.find('[data-toolbar-autowrap]').exists()).toBe(true)
+        // 对齐为两段三键（各三键），非九宫格
+        expect(wrapper.findAll('[data-toolbar-align-horizontal] button')).toHaveLength(3)
+        expect(wrapper.findAll('[data-toolbar-align-vertical] button')).toHaveLength(3)
+    })
+
+    it('对齐现值高亮（aria-pressed）与自动换行开关随文档现值', async () => {
+        const editor = makeEditor([
+            textLayer({ align: { horizontal: 'center', vertical: 'bottom' }, autowrap: true }),
+        ])
+        const wrapper = mountOverlay(editor)
+        await beginEditing(wrapper, ['layers', 0])
+
+        expect(wrapper.find('[data-align-h="center"]').attributes('aria-pressed')).toBe('true')
+        expect(wrapper.find('[data-align-h="left"]').attributes('aria-pressed')).toBe('false')
+        expect(wrapper.find('[data-align-v="bottom"]').attributes('aria-pressed')).toBe('true')
+        expect(wrapper.find('[data-align-v="top"]').attributes('aria-pressed')).toBe('false')
+        expect(wrapper.find('[data-toolbar-autowrap]').attributes('aria-pressed')).toBe('true')
     })
 })
 
@@ -444,6 +499,295 @@ describe('豁免集：textarea + 整条工具条（表面组件指针分流用�
         expect(surfaceEditor.store.ui.selection).toEqual(['layers', 1]) // 未点选换层
         expect(surfaceEditor.store.ui.drag).toBeNull() // 未开拖动会话
         expect(surfaceEditor.store.history).toHaveLength(0)
+    })
+})
+
+// ---- 工单 04：五组样式控件（面板同门权威写 + 实时联动） ----
+
+describe('样式段权威写：面板同门（updateSpec + sel:path:key mergeKey）', () => {
+    it('水平/垂直对齐三键：点按写 align、textarea 实时跟随、一次点击收口一步；已选中再点零历史', async () => {
+        const editor = makeEditor([textLayer()])
+        const wrapper = mountOverlay(editor)
+        const textarea = await beginEditing(wrapper, ['layers', 0])
+
+        await wrapper.find('[data-align-h="center"]').trigger('click')
+        await nextTick()
+        let layer = editor.store.doc!.layers[0]!
+        expect(layer.type === 'TextLayer' && layer.align.horizontal).toBe('center')
+        expect(textarea.element.style.textAlign).toBe('center')
+        expect(editor.store.history).toHaveLength(1)
+        expect(editor.store.history[0]!.mergeKey).toBeNull() // 一次点击 = change 收口一步
+
+        await wrapper.find('[data-align-v="bottom"]').trigger('click')
+        await nextTick()
+        layer = editor.store.doc!.layers[0]!
+        expect(layer.type === 'TextLayer' && layer.align.vertical).toBe('bottom')
+        expect(editor.store.history).toHaveLength(2)
+
+        // 已选中分段再点：不上报（免冗余历史步，AlignField 同门）
+        await wrapper.find('[data-align-h="center"]').trigger('click')
+        expect(editor.store.history).toHaveLength(2)
+    })
+
+    it('自动换行开关：切换写 autowrap，whiteSpace pre ↔ pre-wrap 随动', async () => {
+        const editor = makeEditor([textLayer()])
+        const wrapper = mountOverlay(editor)
+        const textarea = await beginEditing(wrapper, ['layers', 0])
+        const toggle = wrapper.find('[data-toolbar-autowrap]')
+
+        await toggle.trigger('click')
+        await nextTick()
+        expect(editor.store.doc!.layers[0]).toMatchObject({ autowrap: true })
+        expect(textarea.element.style.whiteSpace).toBe('pre-wrap')
+        expect(toggle.attributes('aria-pressed')).toBe('true')
+        expect(editor.store.history).toHaveLength(1)
+
+        await toggle.trigger('click')
+        await nextTick()
+        expect(editor.store.doc!.layers[0]).toMatchObject({ autowrap: false })
+        expect(textarea.element.style.whiteSpace).toBe('pre')
+        expect(editor.store.history).toHaveLength(2)
+    })
+
+    it('字色拾色：input 拖动实时合并（开放键）、change 收口一步历史', async () => {
+        const editor = makeEditor([textLayer()])
+        const wrapper = mountOverlay(editor)
+        const textarea = await beginEditing(wrapper, ['layers', 0])
+        const color = wrapper.find<HTMLInputElement>('[data-toolbar-font-color]')
+
+        color.element.value = '#ff0000'
+        await color.trigger('input')
+        await nextTick()
+        expect(textarea.element.style.color).toBe('rgb(255, 0, 0)')
+        expect(editor.store.history).toHaveLength(1)
+        expect(editor.store.history[0]!.mergeKey).toBe('sel:layers.0:fontColor') // 拖动中开放
+
+        // 继续拖动：并入同一步
+        color.element.value = '#00ff00'
+        await color.trigger('input')
+        expect(editor.store.history).toHaveLength(1)
+
+        // 抬手收口：一步闭合
+        await color.trigger('change')
+        expect(editor.store.doc!.layers[0]).toMatchObject({ fontColor: '#00ff00' })
+        expect(editor.store.history).toHaveLength(1)
+        expect(editor.store.history[0]!.mergeKey).toBeNull()
+    })
+
+    it('字体下拉（注入清单缝）：内置默认 + 清单项 + 清单外当前引用；change 写 font 一步', async () => {
+        const editor = makeEditor([textLayer({ font: 'https://fonts.example/other.woff2' })])
+        const wrapper = mountOverlay(editor, {
+            fontPicker: {
+                entries: shallowRef([{ label: '手写体', ref: 'https://fonts.example/hand.ttf' }]),
+                canUpload: false,
+                uploadFont: async () => '',
+            },
+        })
+        const textarea = await beginEditing(wrapper, ['layers', 0])
+        const select = wrapper.find<HTMLSelectElement>('[data-toolbar-font]')
+
+        const options = Array.from(select.element.options)
+        expect(options.map((option) => option.value)).toEqual([
+            '',
+            'https://fonts.example/hand.ttf',
+            'https://fonts.example/other.woff2',
+        ])
+
+        select.element.value = 'https://fonts.example/hand.ttf'
+        await select.trigger('change')
+        await nextTick()
+        expect(editor.store.doc!.layers[0]).toMatchObject({ font: 'https://fonts.example/hand.ttf' })
+        expect(textarea.element.style.fontFamily).toContain('canvas-font-')
+        expect(editor.store.history).toHaveLength(1)
+        expect(editor.store.history[0]!.mergeKey).toBeNull()
+    })
+
+    it('字体下拉（未注入清单缝）：退化内置默认 + 当前引用两态可选', async () => {
+        const editor = makeEditor([textLayer({ font: 'https://fonts.example/other.woff2' })])
+        const wrapper = mountOverlay(editor)
+        await beginEditing(wrapper, ['layers', 0])
+        const select = wrapper.find<HTMLSelectElement>('[data-toolbar-font]')
+
+        const options = Array.from(select.element.options)
+        expect(options.map((option) => option.value)).toEqual(['', 'https://fonts.example/other.woff2'])
+
+        select.element.value = ''
+        await select.trigger('change')
+        expect(editor.store.doc!.layers[0]).toMatchObject({ font: '' })
+        expect(editor.store.history).toHaveLength(1)
+    })
+
+    it('字号步进 +/-：连续点按合并一步历史（nudge 同门开放键）、编辑框实时跟随', async () => {
+        const editor = makeEditor([textLayer()])
+        const wrapper = mountOverlay(editor)
+        const textarea = await beginEditing(wrapper, ['layers', 0])
+
+        await wrapper.find('[data-toolbar-font-size-inc]').trigger('click')
+        await wrapper.find('[data-toolbar-font-size-inc]').trigger('click')
+        await wrapper.find('[data-toolbar-font-size-inc]').trigger('click')
+        await nextTick()
+
+        expect(editor.store.doc!.layers[0]).toMatchObject({ fontSize: 19 })
+        expect(textarea.element.style.fontSize).toBe('19px')
+        // 连续点按合并为一步；开放键 nudge 同门（靠收口/其它事务断开，不即时闭合）
+        expect(editor.store.history).toHaveLength(1)
+        expect(editor.store.history[0]!.mergeKey).toBe('sel:layers.0:fontSize')
+        // 读数跟随（未聚焦草稿随文档同步）
+        expect((wrapper.find('[data-toolbar-font-size]').element as HTMLInputElement).value).toBe('19')
+
+        // 跨控件插入事务断开：再次步进另起一步
+        await wrapper.find('[data-toolbar-autowrap]').trigger('click')
+        await wrapper.find('[data-toolbar-font-size-dec]').trigger('click')
+        expect(editor.store.history).toHaveLength(3)
+        expect(editor.store.doc!.layers[0]).toMatchObject({ fontSize: 18 })
+    })
+
+    it('字号输入框：input 实时合并、change 收口；非法中间态不提交且回显', async () => {
+        const editor = makeEditor([textLayer()])
+        const wrapper = mountOverlay(editor)
+        const textarea = await beginEditing(wrapper, ['layers', 0])
+        const size = wrapper.find('[data-toolbar-font-size]')
+        const input = size.element as HTMLInputElement
+
+        input.value = '20'
+        await size.trigger('input')
+        await nextTick()
+        expect(textarea.element.style.fontSize).toBe('20px')
+        expect(editor.store.history).toHaveLength(1)
+        expect(editor.store.history[0]!.mergeKey).toBe('sel:layers.0:fontSize')
+
+        // 非法中间态（空串会被 Number 归 0，须排除）：不提交
+        input.value = ''
+        await size.trigger('input')
+        expect(editor.store.doc!.layers[0]).toMatchObject({ fontSize: 20 })
+        await size.trigger('change')
+        expect(input.value).toBe('20') // 回显文档值
+
+        // 合法收口：一步闭合
+        input.value = '24'
+        await size.trigger('input')
+        await size.trigger('change')
+        expect(editor.store.doc!.layers[0]).toMatchObject({ fontSize: 24 })
+        expect(editor.store.history).toHaveLength(1)
+        expect(editor.store.history[0]!.mergeKey).toBeNull()
+    })
+
+    it('双入口交替操作：工具条步进后面板同键写并入同一步；面板写后工具条读数跟随', async () => {
+        const editor = makeEditor([textLayer()])
+        const wrapper = mountOverlay(editor)
+        await beginEditing(wrapper, ['layers', 0])
+        const size = wrapper.find('[data-toolbar-font-size]')
+        const input = size.element as HTMLInputElement
+
+        // 工具条 + 1（开放键）→ 面板 live 写同键 → 并入同一步 → 面板收口
+        await wrapper.find('[data-toolbar-font-size-inc]').trigger('click')
+        editor.updateSpec(['layers', 0], ['fontSize'], 24, { mergeKey: 'sel:layers.0:fontSize' })
+        expect(editor.store.history).toHaveLength(1)
+        editor.store.closeMerge('sel:layers.0:fontSize')
+        expect(editor.store.history[0]!.mergeKey).toBeNull()
+        expect(editor.store.doc!.layers[0]).toMatchObject({ fontSize: 24 })
+
+        // 面板写（同门权威写）→ 工具条读数实时跟随（layout 现算）
+        editor.updateSpec(['layers', 0], ['fontSize'], 32, { mergeKey: 'sel:layers.0:fontSize' })
+        await nextTick()
+        expect(input.value).toBe('32')
+
+        // 反向续接：面板开放键上工具条点按并入同一步（同门写不分叉）
+        await wrapper.find('[data-toolbar-font-size-dec]').trigger('click')
+        expect(editor.store.history).toHaveLength(2)
+        expect(editor.store.history[1]!.mergeKey).toBe('sel:layers.0:fontSize')
+        expect(editor.store.doc!.layers[0]).toMatchObject({ fontSize: 31 })
+    })
+})
+
+describe('字号框显示场景像素值（屏幕恒定尺寸下读数仍是场景值）', () => {
+    it('zoom 2×/0.5×：字号框读数恒为文档场景值，不随缩放折算', async () => {
+        const editor = makeEditor([textLayer()])
+        const wrapper = mountOverlay(editor)
+        await beginEditing(wrapper, ['layers', 0])
+        const input = wrapper.find('[data-toolbar-font-size]').element as HTMLInputElement
+
+        expect(input.value).toBe('16')
+        editor.zoomAt(0, 0, 2)
+        await nextTick()
+        expect(input.value).toBe('16')
+
+        editor.zoomAt(0, 0, 0.5)
+        await nextTick()
+        expect(input.value).toBe('16')
+    })
+})
+
+describe('新层样式槽随工具条权威写更新（与面板写不分叉）', () => {
+    it('工具条改字色/字号/换行 → nextTextStyle 捕获；新建文本层继承', async () => {
+        const editor = makeEditor([textLayer()])
+        const wrapper = mountOverlay(editor)
+        await beginEditing(wrapper, ['layers', 0])
+
+        const color = wrapper.find<HTMLInputElement>('[data-toolbar-font-color]')
+        color.element.value = '#ff0000'
+        await color.trigger('change')
+        await wrapper.find('[data-toolbar-font-size-inc]').trigger('click')
+        await wrapper.find('[data-toolbar-autowrap]').trigger('click')
+        await nextTick()
+
+        expect(editor.store.ui.nextTextStyle).toMatchObject({ fontColor: '#ff0000', fontSize: 17, autowrap: true })
+
+        // 调整样式后新建文本层继承（addRootLayer 消费槽，text-defaults 同门）
+        const before = editor.store.doc!.layers[0]
+        editor.addRootLayer('TextLayer')
+        const added = editor.store.doc!.layers.find((l) => l !== before && l.type === 'TextLayer')
+        expect(added).toMatchObject({ fontColor: '#ff0000', fontSize: 17, autowrap: true })
+    })
+})
+
+describe('表格格内容文本会话同等适用（工具条与写入路径）', () => {
+    it('模板格内容编辑：工具条在场，对齐/字色写落在格内容层且编辑框实时跟随', async () => {
+        const editor = makeEditor([createTemplateTable({ rowsPath: 'order.items' })])
+        const wrapper = mountOverlay(editor)
+        const contentPath: LayerPath = ['layers', 0, 'template', 'cells', 0, 'content']
+        const textarea = await beginEditing(wrapper, contentPath)
+
+        expect(toolbar(wrapper).exists()).toBe(true)
+        expect(wrapper.find('[data-toolbar-font-size]').exists()).toBe(true)
+
+        await wrapper.find('[data-align-h="center"]').trigger('click')
+        await nextTick()
+        const content = resolveLayer(editor.store.doc!, contentPath)
+        expect(content !== null && content.type === 'TextLayer' && content.align.horizontal).toBe('center')
+        expect(textarea.element.style.textAlign).toBe('center')
+        // 一次点击 = 收口一步（mergeKey 同门 `sel:path:key`，收口后置 null）
+        expect(editor.store.history).toHaveLength(1)
+        expect(editor.store.history[0]!.mergeKey).toBeNull()
+    })
+})
+
+describe('工具条输入件夺焦：blur 豁免（会话保持）', () => {
+    it('pointerdown 字体下拉后 textarea blur：不提交不退出；pointerup 复位后恢复既有提交路径', async () => {
+        const editor = makeEditor([textLayer()])
+        const wrapper = mountOverlay(editor)
+        const textarea = await beginEditing(wrapper, ['layers', 0])
+        textarea.element.value = '未提交的草稿'
+        await textarea.trigger('input')
+        const select = wrapper.find<HTMLSelectElement>('[data-toolbar-font]')
+
+        // 下拉夺焦（窗口捕获桥置豁免 → blur 不提交，点面板同门）
+        await select.trigger('pointerdown')
+        textarea.element.blur()
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        expect(editor.store.history).toHaveLength(0)
+        expect(editor.store.ui.editing).toEqual({ path: ['layers', 0], expression: false })
+        expect(wrapper.find('textarea').exists()).toBe(true)
+
+        // pointerup 复位豁免：焦点先落回 textarea，再 blur 走既有提交路径（一步、
+        // 草稿落库）——textarea 已失焦后的二次 blur 不再发事件，故先 focus 复原
+        textarea.element.focus()
+        await select.trigger('pointerup')
+        textarea.element.blur()
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        expect(editor.store.history).toHaveLength(1)
+        expect(editor.store.doc!.layers[0]).toMatchObject({ text: '未提交的草稿' })
+        expect(editor.store.ui.editing).toBeNull()
     })
 })
 

@@ -152,8 +152,9 @@ defineExpose({
     commitEditing: () => binding.commitNow(),
     /** 编辑态查询 */
     isEditing: () => editing.value !== null,
-    /** 指针目标是否属于编辑中的 textarea 或内容类型 pill（表面组件分流：
-     *  两者的指针都归编辑面——textarea 编辑光标、pill 切换，不点选/拖动/提交） */
+    /** 指针目标是否属于编辑中的 textarea 或整条工具条（表面组件分流：
+     *  两者的指针都归编辑面——textarea 编辑光标、工具条样式段点按，
+     *  不点选/拖动/提交） */
     ownsEventTarget: (target: EventTarget | null) => binding.ownsEventTarget(target),
 })
 </script>
@@ -174,16 +175,26 @@ defineExpose({
             @compositionstart="binding.setComposing(true)"
             @compositionend="binding.setComposing(false)"
         ></textarea>
-        <!-- 编辑浮层工具条（工单 03，原 pill 面原地演进为首段）：随编辑会话开合
-             （与 textarea 同生共死），悬挂图层框上缘中点、屏幕恒定尺寸（换算在
-             useTextEditing.toolbarStyle）；激活态随会话模式，切换仅翻会话标志
+        <!-- 编辑浮层工具条（工单 03 骨架 + 工单 04 五组样式段，原 pill 面原地演进
+             为首段）：随编辑会话开合（与 textarea 同生共死），悬挂图层框上缘中点、
+             屏幕恒定尺寸（换算在 useTextEditing.toolbarStyle）；显示值全部投影自
+             内核 textEditLayout（与面板同源无分叉，字号读数恒场景像素），写入上抛
+             updateStyleField（面板同门权威写：updateSpec + sel:path:key mergeKey，
+             新层样式槽随权威写自动捕获）；激活态随会话模式，切换仅翻会话标志
              （零文档变更零历史步） -->
         <EditOverlayToolbar
             v-if="editing && toolbarStyle"
             ref="toolbarRef"
             :style="toolbarStyle"
             :mode="expressionMode ? 'expression' : 'static'"
+            :font="layout?.font ?? ''"
+            :font-size="layout?.fontSize ?? 16"
+            :font-color="layout?.fontColor ?? '#000000'"
+            :horizontal-align="layout?.horizontalAlign ?? 'left'"
+            :vertical-align="layout?.verticalAlign ?? 'top'"
+            :autowrap="layout?.autowrap ?? false"
             @change="binding.setExpressionMode($event === 'expression')"
+            @style-write="(w) => binding.updateStyleField(w.key, w.value, w.final)"
         />
         <!-- 表达式语法诊断提示条（expression-syntax-diagnostics 工单 02；锚点改挂
              edit-overlay-toolbar 工单 03）：挂工具条左端外侧、背离图层盒一侧（翻转

@@ -28,7 +28,11 @@
  *   则取消（窗口捕获阶段 pointerdown 标记豁免、pointerup 恢复）；
  * - 豁免集（工单 03）：ownsEventTarget 收 textarea + 整条工具条两目标——表面
  *   组件 pointerdown 对两者的指针不提交不点选不拖动；setExpressionMode 仅翻
- *   会话标志（零文档变更零历史步）。
+ *   会话标志（零文档变更零历史步）；窗口指针桥对工具条目标置 blur 豁免（工单
+ *   04：字体下拉/字号输入/拾色器等输入件夺焦引发的 blur 不提交——点面板同门）；
+ * - 工具条样式段权威写（工单 04）：updateStyleField 与面板 commit 的 spec 分支
+ *   同门（updateSpec + `sel:path:key` mergeKey + final 收口），编辑框随文档写
+ *   经 layout 现算实时联动，新层样式槽随权威写在内核漏斗自动捕获。
  */
 import { computed, onMounted, onScopeDispose, shallowRef, watch, type CSSProperties, type ComputedRef } from 'vue'
 
@@ -44,6 +48,7 @@ import {
 
 import { useDpr } from './useDpr'
 import { useViewport } from '../shared/useViewport'
+import { selectionFieldMergeKey } from '../shared/mergeKey'
 
 export interface TextEditingHosts {
     /** 编辑中的 textarea（提交漏斗从这里取 live 文本；内核无 DOM） */
@@ -106,6 +111,13 @@ export interface TextEditingBinding {
      * 零文档变更零历史步）；非编辑态或目标即现态零操作
      */
     setExpressionMode(expression: boolean): void
+    /**
+     * 工具条样式段权威写（edit-overlay-toolbar 工单 04）：与属性面板同门——
+     * updateSpec + `sel:path:key` mergeKey（usePropertyPanel.commit 的 spec 分支
+     * 同一约定），连续操作合并一步历史；final = 收口（closeMerge）。新层样式槽
+     * 随权威写在内核 updateSpec 漏斗自动捕获（与面板写不分叉）。非编辑态零操作。
+     */
+    updateStyleField(key: readonly string[], value: unknown, final: boolean): void
     /** blur 延迟提交：外部指针交互豁免、焦点落回取消（语义见模块头注释） */
     armBlurCommit(): void
     /** 编辑态查询：目标是否属于编辑中的 textarea 或整条工具条（表面组件的指针分流用） */
@@ -350,6 +362,22 @@ export function useTextEditing(editor: EditorSession, hosts: TextEditingHosts): 
         editor.store.setEditing({ ...current, expression })
     }
 
+    /**
+     * 工具条样式段权威写（工单 04）：面板 commit 的 spec 分支同门——同漏斗
+     * （updateSpec）、同键约定（selectionFieldMergeKey，与面板写互为同键，双入口
+     * 连续操作天然并步）、同收口（final → closeMerge）。样式字段永不走 data 门
+     * （fieldSchema 无 data 标记的字段族），无表达式分键分支；新层样式槽捕获
+     * 在 updateSpec 漏斗内自动发生（captureNextTextStyle）。非编辑态零操作
+     * （控件只在会话期在场，防御同门）。
+     */
+    const updateStyleField = (key: readonly string[], value: unknown, final: boolean): void => {
+        const path = editor.store.ui.editing?.path
+        if (!path) return
+        const mergeKey = selectionFieldMergeKey(path, key)
+        editor.updateSpec(path, key, value, { mergeKey })
+        if (final) editor.store.closeMerge(mergeKey)
+    }
+
     // ---- 提交漏斗与 blur 延迟提交 ----
 
     let blurTimer: ReturnType<typeof setTimeout> | null = null
@@ -423,9 +451,18 @@ export function useTextEditing(editor: EditorSession, hosts: TextEditingHosts): 
 
     // 窗口捕获阶段的指针桥：编辑中在画布外按下（属性面板/工具栏/页面其他处）
     // → 豁免紧随的 blur 提交，pointerup 恢复（按下未成焦点的场景也复位）。
-    // 画布内点按不在此处理——表面组件的 pointerdown 显式走 commitNow。
+    // 工具条目标（工单 04）：字体下拉/字号输入/拾色器等输入件会真实夺焦（按钮
+    // 类由根拦 pointerdown 不夺焦），其引发的 textarea blur 与「点面板」同门
+    // 豁免——否则点开下拉/聚焦输入框即触发延迟提交、会话当场退出。画布内点按
+    // 不在此处理——表面组件的 pointerdown 显式走 commitNow。
     const onWindowPointerDown = (e: PointerEvent) => {
-        if (editing.value === null || ownsEventTarget(e.target)) return
+        if (editing.value === null) return
+        const toolbar = hosts.getToolbar?.() ?? null
+        if (toolbar !== null && e.target instanceof Node && toolbar.contains(e.target)) {
+            suppressNextBlur = true
+            return
+        }
+        if (ownsEventTarget(e.target)) return
         const host = hosts.getHost()
         if (host !== null && host.contains(e.target as Node)) return
         suppressNextBlur = true
@@ -455,6 +492,7 @@ export function useTextEditing(editor: EditorSession, hosts: TextEditingHosts): 
         beginTextEdit,
         commitNow,
         setExpressionMode,
+        updateStyleField,
         armBlurCommit,
         ownsEventTarget,
     }

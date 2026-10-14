@@ -1,7 +1,9 @@
 /**
- * 字体选择控件的宿主注入缝（工单 13）：控件需要宿主级的字体清单与上传实现，
- * 而属性控件的 props 契约只有 field/modelValue——清单经 provide/inject 接线
- * （宿主 provide 一次，控件树任意深度可取）。宿主未注入时控件退化为文本输入。
+ * 字体选择控件的宿主注入缝（工单 13；edit-overlay-toolbar 工单 04 起两域共用迁
+ * shared）：控件需要宿主级的字体清单与上传实现，而属性控件的 props 契约只有
+ * field/modelValue——清单经 provide/inject 接线（宿主 provide 一次，控件树任意
+ * 深度可取）。宿主未注入时控件退化（面板字体控件退文本输入、工具条字体段退化
+ * 内置默认+当前引用两态下拉）。
  *
  * 数据源接线内核（canvas-editor）：entries 来自 FontCatalog（内置清单可
  * 配置 + 上传追加），uploadFont 即 EditorSession.uploadFont（经注入的

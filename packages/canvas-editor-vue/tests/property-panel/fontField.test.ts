@@ -12,7 +12,7 @@ import { nextTick, ref } from 'vue'
 import type { FontCatalogEntry } from '@hankchen/canvas-editor'
 
 import FontField from '../../src/property-panel/fields/FontField.vue'
-import { FONT_PICKER_KEY, type FontPickerContext } from '../../src/property-panel/fontPicker'
+import { FONT_PICKER_KEY, type FontPickerContext } from '../../src/shared/fontPicker'
 import type { FieldDef } from '../../src/property-panel/fieldSchema'
 
 const field: FieldDef = { key: ['font'], label: '字体', control: 'font' }

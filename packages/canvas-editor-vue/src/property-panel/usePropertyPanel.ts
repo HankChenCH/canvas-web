@@ -37,6 +37,7 @@ import {
     expressionCompletionSource,
     expressionFieldContext,
 } from '../shared/expressionContext'
+import { selectionFieldMergeKey } from '../shared/mergeKey'
 import { rowsPathCompletionSource } from '../shared/rowsPathCompletionSource'
 import type { CompletionSource } from '../shared/completion'
 
@@ -230,13 +231,14 @@ export function usePropertyPanel(editor: EditorSession): PropertyPanelBinding {
             return
         }
         // live 与 final 都带同键：final 值若与最后一次 live 不同则并入本会话，
-        // 随后收口——一个输入会话至多一步历史
-        const mergeKey = `sel:${path.join('.')}:${field.key.join('.')}`
+        // 随后收口——一个输入会话至多一步历史。键格式收口 shared（工具条权威写
+        // 同键，edit-overlay-toolbar 工单 04——双入口交替操作并步的根基）
+        const mergeKey = selectionFieldMergeKey(path, field.key)
         if (field.data) {
             if (isDataMarked(field)) {
                 // 表达式态：编辑保持标记（expression + 镜像同改），mergeKey 与
                 // 字面态分键——跨态切换不并入同一步（spec §2）
-                const expressionKey = `sel:${path.join('.')}:data.expression`
+                const expressionKey = selectionFieldMergeKey(path, ['data', 'expression'])
                 editor.updateDataExpression(path, value as string | null, { mergeKey: expressionKey })
                 if (final) editor.store.closeMerge(expressionKey)
                 return

@@ -10,7 +10,10 @@
  * 02：复用同门 Popup/Anchor/applyCompletion，触发语义分轨——裸路径输入即弹）、
  * rowsPath 候选源组装 rowsPathCompletionSource（工单 03/04：「行数组」文案置入
  * 的公共合流点）与 schema 声明切片桥 useDataSourceSchema（工单 04 自 status-bar
- * 收口——状态栏读数段与建表表单两域共用）。
+ * 收口——状态栏读数段与建表表单两域共用）与字体清单注入缝 fontPicker（
+ * edit-overlay-toolbar 工单 04 自属性面板域迁入——面板字体控件与编辑浮层工具条
+ * 字体段两域共用）与字段权威写 mergeKey 约定 mergeKey（面板与工具条双入口同键
+ * 合并的格式单点）。
  * 这是唯一允许被各域引用的层——域间横向 import 被依赖红线
  * （editor-vue-*-isolation）禁止，跨域消费一律收口到这里。
  */
@@ -48,5 +51,7 @@ export { useShortcuts } from './useShortcuts'
 export { useShortcutsHelp, type ShortcutsHelp } from './useShortcutsHelp'
 export { useTransientFeedback, type TransientFeedback } from './useTransientFeedback'
 export { uploadFileFromDom } from './uploadFile'
+export { FONT_PICKER_KEY, injectFontPicker, type FontPickerContext } from './fontPicker'
+export { selectionFieldMergeKey } from './mergeKey'
 export { useViewport } from './useViewport'
 export { default as PanelIcon } from './PanelIcon.vue'
