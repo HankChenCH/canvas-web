@@ -94,16 +94,26 @@ export interface CreateGesture {
  * textarea（非受控），提交经 commitTextEdit 一次性落文档——「每个拼音音节一个
  * undo」被会话缓冲天然避免（impl 研究 §2.4）。
  *
- * expression 是内容类型会话标志（canvas-web-expression-editing 工单 01，spec 决策
- * 2）：beginTextEdit 按进入瞬间 `layer.expression !== null` 锚定的会话快照（与
- * verticalAnchorY「进入时计、编辑中稳定」同门），裁决提交去向（表达式会话含合法
- * 片段走标记写，字面会话恒字面写）与补全 enabled。住 ui 分支不进历史；面板编辑
- * 中改动 layer.expression 不回写标志（打标是显式动作，快照是提交去向的裁决依据）；
- * 内容类型 pill 切换仅翻转本标志（零文档变更零历史步）。
+ * expression 是内容模式**活标志**（canvas-web-expression-editing 工单 01 锚定；
+ * canvas-web-edit-overlay-toolbar 工单 02 + ADR 0019 改造为活标志，取代旧「进入
+ * 时快照冻结」）：初值按进入瞬间 `layer.expression !== null` 取定，此后不再冻结
+ * ——画布 pill 切换与内核 toggleDataMode 在会话期被调用都只翻本标志（零文档变更
+ * 零历史步，防御性路由），旁门内容写（updateData/updateDataExpression 命中编辑层）
+ * **不**翻标志、走草稿接管。会话在场时内容模式显示以本标志为单一事实源（pill、
+ * 属性面板锁定段、textEditLayout.expressionMode 同源），提交去向由退出时现态
+ * 裁决。住 ui 分支不进历史。
  */
 export interface TextEditingSession {
     path: LayerPath
     expression: boolean
+    /**
+     * 草稿接管序号（工单 02，会话内容独占的内核底线面）：旁门内容写（查找替换等
+     * 程序化写）命中编辑层且文档确实变更时递增——绑定层监听该序号全量替换
+     * textarea 草稿为新文档值并刷新表达式诊断（「替换结果出现在正在编辑的框里」，
+     * 退出提交仍以草稿为准、任何方向不丢字）。进入编辑时缺省（undefined），首次
+     * 接管起计数；标志翻转（pill/toggleDataMode）与零变更事务不递增。
+     */
+    draftSeq?: number
 }
 
 /**

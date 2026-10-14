@@ -31,7 +31,7 @@ describe('beginTextEdit：进入文本编辑（会话住 ui 分支，不进历�
         expect(changes).toEqual([{ scope: 'ui', branch: 'editing' }])
     })
 
-    it('会话标志按进入瞬间 layer.expression !== null 锚定（进入时计、编辑中稳定）', () => {
+    it('会话标志初值按进入瞬间 layer.expression !== null 取定（此后为活标志，ADR 0019）', () => {
         const expression = '姓名：{{row.name}}'
         const editor = makeEditor({
             width: 400,
@@ -50,18 +50,19 @@ describe('beginTextEdit：进入文本编辑（会话住 ui 分支，不进历�
         expect(editor.store.ui.editing).toEqual({ path: ['layers', 1], expression: false })
     })
 
-    it('beginTextEdit 快照不受编辑中面板改动影响：字面进入后面板打标，提交仍按字面写', () => {
+    it('旁门打标落文档 + 草稿接管：标志不随动，提交去向仍由会话标志现态裁决（ADR 0019 活标志）', () => {
         const editor = makeEditor(singleTextDoc())
         editor.beginTextEdit(['layers', 0])
-        // 模拟编辑中属性面板打标（updateDataExpression 直接落文档）
+        // 模拟编辑中程序化打标（updateDataExpression 直接落文档）：草稿接管
+        // （draftSeq 递增，绑定层把镜像新值全量替换进 textarea），会话标志不翻
         editor.updateDataExpression(['layers', 0], '{{certCode}}')
 
-        expect(editor.store.ui.editing).toMatchObject({ path: ['layers', 0], expression: false })
+        expect(editor.store.ui.editing).toMatchObject({ path: ['layers', 0], expression: false, draftSeq: 1 })
 
         editor.commitTextEdit('改成字面')
 
-        // 字面会话走 updateData 字面写（字面接管解标）；若错按层现状走表达式写
-        // 则标记会保留——会话快照是提交去向的裁决依据
+        // 标志仍静态 → 字面写（字面接管解标）；提交去向不随旁门打标翻转——
+        // 活标志只归 pill/toggleDataMode 翻（见 contentExclusivity.test.ts）
         const layer = editor.store.doc!.layers[0]!
         expect(layer.type === 'TextLayer' && layer.text).toBe('改成字面')
         expect(layer.type === 'TextLayer' && layer.expression).toBeNull()
@@ -386,7 +387,7 @@ describe('提交未变化短路：对比对象随会话模式（字面对比 tex
         expect(editor.store.ui.editing).toBeNull()
     })
 
-    it('表达式会话对比 layer.expression 而非 text：面板解标后（expression 已 null）同串提交不短路且按片段改标', () => {
+    it('表达式会话对比 layer.expression 而非 text：旁门解标后（expression 已 null）同串提交不短路且按片段改标', () => {
         const expression = '姓名：{{row.name}}'
         const editor = makeEditor({
             width: 400,
@@ -394,7 +395,8 @@ describe('提交未变化短路：对比对象随会话模式（字面对比 tex
             layers: [textLayer({ priority: 10, text: expression, expression })],
         })
         editor.beginTextEdit(['layers', 0])
-        // 编辑中面板解标：expression → null、text 保持镜像值（本身是面板的一步历史）
+        // 编辑中程序化解标（旁门写）：expression → null、text 保持镜像值（落文档
+        // 一步历史 + 草稿接管；会话标志不随动——活标志只归 pill/toggleDataMode）
         editor.updateDataExpression(['layers', 0], null)
         const historyBeforeCommit = editor.store.history.length
 

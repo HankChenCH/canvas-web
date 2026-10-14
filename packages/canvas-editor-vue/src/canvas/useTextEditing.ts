@@ -56,6 +56,13 @@ export interface TextEditingBinding {
     editing: ComputedRef<LayerPath | null>
     /** 编辑层的布局描述（内核查询，路径失效为 null） */
     layout: ComputedRef<TextEditLayout | null>
+    /**
+     * 草稿接管序号（edit-overlay-toolbar 工单 02，会话内容独占的内核底线面）：
+     * 会话对象 draftSeq 的投影——旁门内容写（查找替换等程序化写）命中编辑层时
+     * 内核递增，绑定层据此全量替换 textarea 草稿为文档新值并刷新表达式诊断
+     * （pill 翻标志不递增，草稿不动）。未接管过为 undefined。
+     */
+    draftSeq: ComputedRef<number | undefined>
     /** textarea 内联样式（随相机/dpr 实时跟随；字号视觉恒定） */
     style: ComputedRef<CSSProperties | null>
     /**
@@ -258,13 +265,14 @@ export function useTextEditing(editor: EditorSession, hosts: TextEditingHosts): 
 
     /**
      * 内容类型切换（工单 03）：pill 点击仅翻会话标志——setEditing 原位换新对象
-     * （path 不变，会话快照语义），零文档变更零历史步；非编辑态零操作（按钮只在
-     * 编辑会话期在场，防御同门）。
+     * （path 不变），零文档变更零历史步；展开旧会话对象保留 draftSeq（工单 02：
+     * 与内核 toggleDataMode 同语义——翻标志不是内容写，不得触发草稿接管）；
+     * 非编辑态或目标即现态零操作（按钮只在编辑会话期在场，防御同门）。
      */
     const setExpressionMode = (expression: boolean): void => {
         const current = editor.store.ui.editing
         if (!current || current.expression === expression) return
-        editor.store.setEditing({ path: current.path, expression })
+        editor.store.setEditing({ ...current, expression })
     }
 
     // ---- 提交漏斗与 blur 延迟提交 ----
@@ -361,6 +369,7 @@ export function useTextEditing(editor: EditorSession, hosts: TextEditingHosts): 
     return {
         editing,
         layout,
+        draftSeq: computed(() => session.value?.draftSeq),
         style,
         pillStyle,
         boxTagStyle,

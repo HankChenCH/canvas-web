@@ -131,7 +131,7 @@ import {
     setCellAutoHeightInDraft,
     type MovedSubtreeRef,
 } from '../editing/tableEditing'
-import { EditorStore, type DragGesture, type EditorChange, type TransactOptions } from './store'
+import { EditorStore, type DocRecipe, type DragGesture, type EditorChange, type TransactOptions } from './store'
 import { ARM_CREATE_LAYER_TYPES, type EditorShortcutAction } from './shortcuts'
 import {
     parseCanvasEditorState,
@@ -201,10 +201,9 @@ export interface TextEditLayout {
     /** autowrap = textarea  pre-wrap 软换行，否则 pre 单行（断行允许与预览不同，决策 A） */
     autowrap: boolean
     /**
-     * 内容类型会话模式（canvas-web-expression-editing 工单 01）：true = 表达式——
-     * 绑定层 pill 激活态与补全 enabled 的消费面。取会话标志（编辑中 pill 切换
-     * 实时跟随，不受层标记态影响——面板在会话窗口期显示的是提交前旧状态）；路径
-     * 无活动会话时按层标记态回落（进入编辑即锚定同值）。
+     * 内容模式活标志（ADR 0019）：true = 表达式——绑定层 pill 激活态与补全
+     * enabled 的消费面。取会话活标志（pill 切换与内核 toggleDataMode 会话期实时
+     * 翻转，面板锁定段同源随动）；路径无活动会话时按层标记态回落。
      */
     expressionMode: boolean
 }
@@ -1297,12 +1296,10 @@ export class EditorSession {
      * 进入文本编辑：路径必须解析到 TextLayer。会话只进 ui 分支（不进历史），
      * live 文本住在绑定层的 textarea，内容层随即跳绘该层文本（防重影）。
      *
-     * 内容类型会话标志（canvas-web-expression-editing 工单 01，spec 决策 2）按
-     * 进入瞬间 `layer.expression !== null` 锚定进会话快照——「进入时计、编辑中
-     * 稳定」（布局字段不在此列：textEditLayout 对当前文档现算，见 ADR 0019）。
-     * 编辑中面板改标记不回写标志，提交去向由快照裁决（打标是显式动作，内容判定
-     * 制已否决；活标志改造归会话内容独占工单）。同路径重复进入短路（快照
-     * 不重锚）；换层进入按新层现状重锚。
+     * 内容模式活标志（ADR 0019）初值按进入瞬间 `layer.expression !== null` 取定
+     * （与文档现态一致），此后不再冻结——pill 切换与内核 toggleDataMode 会话期
+     * 都只翻标志，提交去向由退出时现态裁决（见 commitTextEdit）。同路径重复进入
+     * 短路（会话不重建，接管序号延续）；换层进入按新层现状取初值。
      */
     beginTextEdit(path: LayerPath): boolean {
         const layer = this.textLayerAt(path)
@@ -1319,14 +1316,14 @@ export class EditorSession {
      * 提交与随后 blur 竞态），会话清空后后续调用幂等，保证一次退出恰一步历史。
      *
      * 提交矩阵（canvas-web-expression-editing 工单 01，spec 决策 3，空串判定先于
-     * 片段判定）：
-     * - 串与文档一致：不进历史（进出编辑零噪声），返回 false——对比对象随会话
-     *   模式取：表达式会话对比 `layer.expression`、字面会话对比 `layer.text`（现行
-     *   语义）；
+     * 片段判定；对比对象与去向裁决按会话标志**退出时现态**——活标志语义，ADR
+     * 0019，取代旧「进入时快照」）：
+     * - 串与文档一致：不进历史（进出编辑零噪声），返回 false——对比对象随退出时
+     *   会话标志取：表达式现态对比 `layer.expression`、静态现态对比 `layer.text`；
      * - 空串：删除该图层（复用 deleteLayer 的 splice/重映射语义），任何模式同语义；
-     * - 表达式会话且串含 ≥1 语法有效闭合片段（hasValidExpressionFragment）：
+     * - 表达式现态且串含 ≥1 语法有效闭合片段（hasValidExpressionFragment）：
      *   updateDataExpression 标记写（保持标记、text 自动重镜像）；
-     * - 其余（字面会话恒走此支；表达式会话无合法片段回落）：updateData 字面写、
+     * - 其余（静态现态恒走此支；表达式现态无合法片段回落）：updateData 字面写、
      *   字面接管解标——含 `{{...}}` 按字面保留，杜绝无片段标记层。
      */
     commitTextEdit(text: string): boolean {
@@ -1445,7 +1442,8 @@ export class EditorSession {
      * 原地不动——事务后派生列表在被替换处缩一位，原下标即「下一处」（「替换后
      * 自动跳下一处」靠派生天然成立，末处替换则钳位停在尾）。写值经 replaceHitsInDraft
      * 与文本编辑提交同门（text 直写 + expression 保持 null）。无文档/空 query/
-     * 无命中空转返回 false。
+     * 无命中空转返回 false。命中编辑层时草稿接管（会话内容独占，工单 02——
+     * 替换结果出现在正在编辑的框里）。
      */
     replaceOne(): boolean {
         const doc = this.store.doc
@@ -1454,7 +1452,7 @@ export class EditorSession {
         const matches = scanTextMatches(doc, query)
         const hit = matches[clampFindCursor(this.store.ui.find.cursor, matches.length)]
         if (!hit) return false
-        this.store.transact((draft) => {
+        this.transactContent([hit.path], (draft) => {
             replaceHitsInDraft(draft, [hit], this.store.ui.find.replacement)
         })
         return true
@@ -1464,7 +1462,8 @@ export class EditorSession {
      * 全部替换（查找条「全部替换」按钮）：命中（path + 偏移对）在事务前按原文
      * 快照一次算定，单事务内按同字段偏移降序应用、替换产物不重扫（replacement
      * 含查询串不死循环）——一次调用 = 一步历史，undo 一次全回。返回应用处数
-     * （计数反馈「已替换 N 处」）；无文档/空 query 空转返回 0。
+     * （计数反馈「已替换 N 处」）；无文档/空 query 空转返回 0。命中编辑层时
+     * 草稿接管（会话内容独占，工单 02）。
      */
     replaceAll(): number {
         const doc = this.store.doc
@@ -1473,7 +1472,7 @@ export class EditorSession {
         const hits = scanTextMatches(doc, query) // 原文快照：命中事务前一次算定
         if (hits.length === 0) return 0
         let applied = 0
-        this.store.transact((draft) => {
+        this.transactContent(hits.map((hit) => hit.path), (draft) => {
             applied = replaceHitsInDraft(draft, hits, this.store.ui.find.replacement)
         })
         return applied
@@ -1543,9 +1542,13 @@ export class EditorSession {
      * null，值与标记的镜像关系随之解除——标记态文档经字面编辑退化为字面态，
      * 不可自动恢复属预期（spec §3.7 兼容面）。
      * 表/行/格无数据字段，空转。
+     *
+     * 会话内容独占（工单 02，ADR 0019 内核底线面）：命中编辑层的写落文档的同时
+     * 草稿接管（draftSeq 递增，绑定层全量替换 textarea 草稿）——旁门程序化写的
+     * 结果进编辑框草稿而非被退出提交覆盖，任何方向不丢字。
      */
     updateData(path: LayerPath, value: string | null, options: TransactOptions = {}): void {
-        this.store.transact((draft) => {
+        this.transactContent([path], (draft) => {
             const layer = resolveLayer(draft, path) as Draft<Layer> | null
             if (!layer) return
             switch (layer.type) {
@@ -1577,9 +1580,11 @@ export class EditorSession {
      *   字面态空值归一交给 updateData/decode 分支（这里不清值，字面接管语义）。
      * - 仅三内容层生效，表/行/格/行模板空转（与 updateData 同门）。
      * - updateData 语义不变：字面写解除标记仍成立（spec §1 明示两者并排）。
+     * - 命中编辑层的旁门打标同走草稿接管（draftSeq 递增；会话标志不随动——
+     *   活标志只归 pill/toggleDataMode 翻，见 toggleDataMode）。
      */
     updateDataExpression(path: LayerPath, expression: string | null, options: TransactOptions = {}): void {
-        this.store.transact((draft) => {
+        this.transactContent([path], (draft) => {
             const layer = resolveLayer(draft, path) as Draft<Layer> | null
             if (!layer) return
             switch (layer.type) {
@@ -1599,6 +1604,66 @@ export class EditorSession {
                     break
             }
         }, options)
+    }
+
+    /**
+     * 数据字段取值方式切换（静态 ⇆ 表达式，工单 02 自面板收编内核）：表达式现态
+     * → 字面接管（updateData，值保持现镜像）；静态现态 → 打标（updateDataExpression，
+     * 初值 = 值字段原文）。各为独立一步历史（无 mergeKey）。三内容层分派各取值
+     * 字段，表/行/格/悬空路径空转。
+     *
+     * 活标志防御路由（ADR 0019）：路径即编辑中的层时只翻会话活标志（零文档变更
+     * 零历史步）——会话期内容模式切换的唯一写入口是会话标志，文档面锁定归编辑框
+     * 草稿；面板锁定段/pill 显式调用与宿主旁路调用都安全收敛到同一语义。
+     */
+    toggleDataMode(path: LayerPath): void {
+        const editing = this.store.ui.editing
+        if (editing && pathsEqual(editing.path, path)) {
+            this.store.setEditing({ ...editing, expression: !editing.expression })
+            return
+        }
+        const layer = this.store.doc ? resolveLayer(this.store.doc, path) : null
+        if (!layer) return
+        switch (layer.type) {
+            case 'TextLayer':
+                if (layer.expression !== null) this.updateData(path, layer.text)
+                else this.updateDataExpression(path, layer.text)
+                return
+            case 'ImageLayer':
+                if (layer.expression !== null) this.updateData(path, layer.src ?? '')
+                else this.updateDataExpression(path, layer.src ?? '')
+                return
+            case 'QrCodeLayer':
+                if (layer.expression !== null) this.updateData(path, layer.value)
+                else this.updateDataExpression(path, layer.value)
+                return
+            default:
+                return
+        }
+    }
+
+    /**
+     * 内容写事务的统一形（会话内容独占工单 02）：transact 落库 + 命中编辑层的
+     * 草稿接管收口——updateData/updateDataExpression/replaceOne/replaceAll 四个
+     * 旁门写入口同门（接管判定见 takeoverDraftIfNeeded；零变更事务天然短路）。
+     */
+    private transactContent(paths: readonly LayerPath[], recipe: DocRecipe, options: TransactOptions = {}): void {
+        const docBefore = this.store.doc
+        this.store.transact(recipe, options)
+        this.takeoverDraftIfNeeded(paths, docBefore)
+    }
+
+    /**
+     * 草稿接管收口（工单 02）：paths 中有编辑层且文档确实变更（引用比较——零变更
+     * 事务 transact 空转不通知，接管序号也不动）时递增会话 draftSeq 并广播
+     * ui.editing。绑定层据此全量替换 textarea 草稿为文档新值并刷新表达式诊断。
+     * commitTextEdit 先清会话再落库，天然不复入接管。
+     */
+    private takeoverDraftIfNeeded(paths: readonly LayerPath[], docBefore: Canvas | null): void {
+        const editing = this.store.ui.editing
+        if (!editing || this.store.doc === docBefore) return
+        if (!paths.some((path) => pathsEqual(path, editing.path))) return
+        this.store.setEditing({ ...editing, draftSeq: (editing.draftSeq ?? 0) + 1 })
     }
 
     /** 更新画布级字段（未选中图层时面板的宽/高写入口）；键由类型收窄为 width/height */

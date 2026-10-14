@@ -15,6 +15,7 @@
 import { computed, onScopeDispose, shallowRef, type ComputedRef } from 'vue'
 
 import {
+    pathsEqual,
     resolveLayer,
     resolveRowsPathStartSchema,
     type Canvas,
@@ -23,12 +24,12 @@ import {
     type LayerBox,
     type LayerPath,
     type ResourceStatusMap,
+    type TextEditingSession,
 } from '@hankchen/canvas-editor'
 
 import {
     CANVAS_FIELD_SECTIONS,
     fieldSectionsForPath,
-    readField,
     type FieldDef,
     type FieldSection,
 } from './fieldSchema'
@@ -75,12 +76,24 @@ export interface PropertyPanelBinding {
      * 宿主从渲染端物化状态机桥接注入，padding 行占位态动态提示的物化维度事实源。
      */
     readonly resourceStatuses: ComputedRef<ResourceStatusMap>
+    /**
+     * 会话内容独占（canvas-web-edit-overlay-toolbar 工单 02，ADR 0019 门面）：
+     * 编辑会话在场且选中层即编辑层 → 内容面锁定（data 字段与模式段 disabled，
+     * 显示随会话活标志/文档现值，退出后随文档通知追平）。会话保持但选择走开
+     * （显示别的层）不锁。
+     */
+    readonly contentLocked: ComputedRef<boolean>
+    /** 锁定时的模式显示源：编辑会话对象（活标志 = expression），非锁定为 null */
+    readonly editingSession: ComputedRef<TextEditingSession | null>
+    /** 数据字段当前取值方式（锁定期随会话活标志，否则随层标记态）；非 data 字段恒 false */
+    isDataMarked(field: FieldDef): boolean
     /** 面板唯一提交口：final = 收口提交（change/blur），否则按 mergeKey 合并累积 */
     commit(field: FieldDef, value: unknown, final: boolean): void
     /**
-     * 数据字段取值方式切换（静态值/表达式，工单 02）：静态 → 表达式初值取当前
-     * 字面原文（不自动包裹/猜变量）；表达式 → 静态字面接管（值保持现镜像）。
-     * 各为独立一步历史；仅 data 字段且有选中目标时生效。
+     * 数据字段取值方式切换（静态值/表达式，工单 02）：语义经内核 toggleDataMode
+     * 收口——非会话期正常切换（一步历史），编辑会话期命中编辑层只翻会话活标志
+     * （零文档变更零历史步，防御性路由；面板锁定段常态下不可达，路由兜宿主旁路）。
+     * 仅 data 字段且有选中目标时生效。
      */
     toggleDataMode(field: FieldDef): void
     /** 锚点折叠区开合（写 store ui 分支，不进历史） */
@@ -95,6 +108,13 @@ export function usePropertyPanel(editor: EditorSession): PropertyPanelBinding {
     const dataSourceSchema = shallowRef(editor.store.ui.dataSourceSchema)
     /** 资源物化状态切片（工单 02 注入缝，会话态）：padding 行占位态提示的物化维度 */
     const resourceStatuses = shallowRef<ResourceStatusMap>(editor.store.ui.resourceStatuses)
+    /**
+     * 编辑会话投影（canvas-web-edit-overlay-toolbar 工单 02）：镜像整个会话对象
+     * （useTextEditing 同款反应锚）——pill/内核 toggleDataMode 翻标志 = setEditing
+     * 原位换新对象，锁定段的模式显示随翻转立即重算。doc 通知一并重读（契约注记：
+     * openDocument 清会话只发 doc 通知）。
+     */
+    const editingSession = shallowRef<TextEditingSession | null>(editor.store.ui.editing)
 
     const unsubscribe = editor.subscribe((change) => {
         if (change.scope === 'doc') {
@@ -105,6 +125,8 @@ export function usePropertyPanel(editor: EditorSession): PropertyPanelBinding {
             selection.value = editor.store.ui.selection
             // resourceStatuses 同被 openDocument 重置：doc 通知一并重读（契约注记同门）
             resourceStatuses.value = editor.store.ui.resourceStatuses
+            // editing 同被 openDocument 重置：doc 通知一并重读（契约注记同门）
+            editingSession.value = editor.store.ui.editing
         } else if (change.scope === 'ui') {
             if (change.branch === 'selection') {
                 selection.value = editor.store.ui.selection
@@ -117,6 +139,8 @@ export function usePropertyPanel(editor: EditorSession): PropertyPanelBinding {
                 dataSourceSchema.value = editor.store.ui.dataSourceSchema
             } else if (change.branch === 'resourceStatuses') {
                 resourceStatuses.value = editor.store.ui.resourceStatuses
+            } else if (change.branch === 'editing') {
+                editingSession.value = editor.store.ui.editing
             }
         }
     })
@@ -170,14 +194,30 @@ export function usePropertyPanel(editor: EditorSession): PropertyPanelBinding {
     // 域内自持，语义漂移由内核侧测试看护
     const isPreviewBox = computed(() => selection.value?.includes('template') ?? false)
 
+    /**
+     * 内容面锁定（工单 02 门面）：编辑会话在场且选中层即编辑层。锁定下 data 字段
+     * 与模式段 disabled；模式显示以会话活标志为单一事实源（editingSession 投影），
+     * 内容字段读数照常来自文档（live 键入不落文档 = 进入时文本；旁门接管写随
+     * doc 通知追平）。
+     */
+    const contentLocked = computed(() => {
+        const session = editingSession.value
+        const path = selection.value
+        return session !== null && path !== null && pathsEqual(session.path, path)
+    })
+
     function setAnchorExpanded(open: boolean): void {
         editor.store.setAnchorExpanded(open)
     }
 
-    /** 数据字段取值方式派生：领域 expression 标记在场即表达式态（打标/解标动作
-     *  即时改状态，按现态派生与管线自洽，无需面板侧额外状态） */
+    /**
+     * 数据字段取值方式派生：锁定期（编辑会话在场且选中层即编辑层）显示随会话
+     * 活标志——pill/内核 toggleDataMode 翻转实时随动，层标记态反而滞后（ADR 0019
+     * 单一事实源）；否则按领域 expression 标记现态派生（打标/解标动作即时改状态）。
+     */
     function isDataMarked(field: FieldDef): boolean {
         if (!field.data) return false
+        if (contentLocked.value) return editingSession.value?.expression === true
         const current = layer.value
         return current !== null && 'expression' in current && current.expression !== null
     }
@@ -210,20 +250,14 @@ export function usePropertyPanel(editor: EditorSession): PropertyPanelBinding {
         if (final) editor.store.closeMerge(mergeKey)
     }
 
+    /**
+     * 数据字段取值方式切换（工单 02 收口内核）：分派 editor.toggleDataMode——
+     * 非会话期正常切换（一步历史），会话期命中编辑层只翻活标志（防御路由）。
+     */
     function toggleDataMode(field: FieldDef): void {
-        const current = layer.value
         const path = selection.value
-        if (!current || !path || !field.data) return
-        const read = readField(current, field.key)
-        if (!read.ok) return
-        const literal = typeof read.value === 'string' ? read.value : ''
-        if (isDataMarked(field)) {
-            // 表达式 → 静态：字面接管（值保持现镜像）
-            editor.updateData(path, literal)
-        } else {
-            // 静态 → 表达式：初值 = 当前字面原文（不自动包裹/猜变量）
-            editor.updateDataExpression(path, literal)
-        }
+        if (!path || !field.data) return
+        editor.toggleDataMode(path)
     }
 
     function commitCanvasProp(field: FieldDef, value: unknown, final: boolean): void {
@@ -245,6 +279,9 @@ export function usePropertyPanel(editor: EditorSession): PropertyPanelBinding {
         rowsPathSource,
         resourceStatuses: computed(() => resourceStatuses.value),
         anchorExpanded: computed(() => anchorExpanded.value),
+        contentLocked,
+        editingSession: computed(() => editingSession.value),
+        isDataMarked,
         commit,
         toggleDataMode,
         setAnchorExpanded,

@@ -472,3 +472,57 @@ describe('rowsPathSource（rows-path-completion 工单 03：行相对候选源�
         scope.stop()
     })
 })
+
+describe('会话内容独占（edit-overlay-toolbar 工单 02）：编辑会话投影与防御路由', () => {
+    it('contentLocked：选中层即编辑层 → true；选中其他层/退出 → false', () => {
+        const editor = makeEditor([textLayer(), textLayer({ text: '乙' })])
+        const { scope, panel } = bind(editor)
+        expect(panel.contentLocked.value).toBe(false)
+
+        editor.setSelection(['layers', 0])
+        editor.beginTextEdit(['layers', 0])
+        expect(panel.contentLocked.value).toBe(true)
+
+        // 会话保持、选择走开：面板显示别的层，不锁
+        editor.setSelection(['layers', 1])
+        expect(panel.contentLocked.value).toBe(false)
+
+        editor.setSelection(['layers', 0])
+        expect(panel.contentLocked.value).toBe(true)
+        editor.commitTextEdit('退出')
+        expect(panel.contentLocked.value).toBe(false)
+        scope.stop()
+    })
+
+    it('toggleDataMode 会话期路由：只翻会话标志（零文档变更零历史步）', () => {
+        const editor = makeEditor([textLayer()])
+        const { scope, panel } = bind(editor)
+        editor.setSelection(['layers', 0])
+        editor.beginTextEdit(['layers', 0])
+        const docBefore = editor.store.doc
+
+        panel.toggleDataMode(TEXT_FIELD)
+
+        expect(editor.store.ui.editing).toMatchObject({ path: ['layers', 0], expression: true })
+        expect(editor.store.doc).toBe(docBefore)
+        expect(editor.store.history).toHaveLength(0)
+        scope.stop()
+    })
+
+    it('toggleDataMode 非会话期：经内核动作正常切换（一步历史，语义与直写同门）', () => {
+        const editor = makeEditor([textLayer({ text: '普通文案' })])
+        const { scope, panel } = bind(editor)
+        editor.setSelection(['layers', 0])
+
+        panel.toggleDataMode(TEXT_FIELD)
+        const layer = editor.store.doc!.layers[0]!
+        expect(layer.type === 'TextLayer' && layer.expression).toBe('普通文案')
+        expect(editor.store.history).toHaveLength(1)
+
+        panel.toggleDataMode(TEXT_FIELD)
+        const after = editor.store.doc!.layers[0]!
+        expect(after.type === 'TextLayer' && after.expression).toBeNull()
+        expect(editor.store.history).toHaveLength(2)
+        scope.stop()
+    })
+})

@@ -7,9 +7,11 @@
  * - IME 全交浏览器：composition 事件由 DOM 原生处理，keydown 只在「合成中
  *   （isComposing / keyCode 229）不拦截」的分支上做提交——候选窗里按 Esc/Enter
  *   只操作候选，不误提交不误退出（比 excalidraw 的 Escape 分支多一道守卫）；
- * - 非受控语义：初值在进入编辑时注入一次，此后文档/面板改动不回写 textarea，
- *   提交以 textarea 实况为准；zoom 变更只改样式（防御性保存/恢复 selection，
- *   合成中不动——setSelectionRange 会打断 IME）；
+ * - 非受控语义：初值在进入编辑时注入一次，此后键入实况只住 textarea；例外是
+ *   草稿接管（会话内容独占工单 02）——会话期旁门内容写（查找替换等程序化写）
+ *   命中编辑层时全量替换草稿为文档新值（draftSeq 驱动），退出提交仍以 textarea
+ *   实况为准；zoom 变更只改样式（防御性保存/恢复 selection，合成中不动——
+ *   setSelectionRange 会打断 IME）；
  * - 四条退出路径（Esc / Ctrl+Enter / blur / 点画布他处）经 useTextEditing 收拢
  *   到内核 commitTextEdit 漏斗；暴露给表面组件的 API 供指针桥分流。
  * - 内容类型 pill + 表达式补全接线（canvas-web-expression-editing 工单 03）：
@@ -92,6 +94,20 @@ watch(editing, async (path) => {
     refreshDiagnostics() // 程序化写值不走 input：诊断显式同步（expression-syntax-diagnostics 工单 02）
     el.focus({ preventScroll: true })
     el.select()
+})
+
+// 草稿接管（会话内容独占工单 02，ADR 0019）：会话期旁门内容写（查找替换等程序
+// 化写）命中编辑层 → 内核递增 draftSeq，此处全量替换 textarea 草稿为文档新值并
+// 刷新表达式诊断——替换结果出现在正在编辑的框里，退出提交仍以草稿为准、任何方向
+// 不丢字。pill 翻标志不递增（草稿不动，键入实况保持）。程序化写值不走 input：
+// 诊断显式同步（进入编辑同门）。
+watch(binding.draftSeq, async () => {
+    await nextTick()
+    const el = textareaRef.value
+    const layout = binding.layout.value
+    if (!el || !layout) return
+    el.value = layout.text
+    refreshDiagnostics()
 })
 
 // zoom/相机变化只改样式（元素不重建）；防御性保存/恢复 selection——样式重排后

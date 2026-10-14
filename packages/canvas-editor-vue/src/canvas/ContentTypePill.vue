@@ -7,8 +7,8 @@
  *   useTextEditing.pillStyle——与 textarea 同一换算系：场景定位 + CSS transform
  *   scale，相机/dpr 跟随复用），随 textarea 同生共死；选中态不显示（避免与
  *   八柄/gizmo 争几何与手势面）。
- * - 激活项高亮随 ui.editing.expression（会话快照）——编辑中 pill 激活态即提交
- *   去向的权威视图（面板该窗口期显示的是提交前旧状态）；切换语义上抛 change
+ * - 激活项高亮随 ui.editing.expression（会话活标志，ADR 0019）——编辑中 pill
+ *   激活态即提交去向的权威视图（面板锁定段同源随动）；切换语义上抛 change
  *   归绑定层 setExpressionMode（仅翻会话标志，零文档变更零历史步），本组件零
  *   状态（ValueTypeSegmented 同门）。
  * - 根拦 pointerdown 默认行为：点击不夺 textarea 焦点（免 blur 延迟提交路径），

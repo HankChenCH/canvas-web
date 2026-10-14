@@ -59,9 +59,12 @@ const shape = (width = 100, height = 50) => ({
 })
 const base = { name: '', visible: true, priority: 10, shape: shape(), align: { horizontal: 'left' as const, vertical: 'top' as const }, position: { anchor: 'top-left' as const, x: 40, y: 30 } }
 
-const doc = (): Canvas['layers'] => [
-    { ...base, type: 'TextLayer', text: '你好画布', expression: null, font: '', fontSize: 16, fontColor: '#111827', angle: 0, autowrap: false },
+/** 同 doc() 但覆写文档文本（草稿接管用例的替换基准） */
+const docWithText = (text: string): Canvas['layers'] => [
+    { ...base, type: 'TextLayer', text, expression: null, font: '', fontSize: 16, fontColor: '#111827', angle: 0, autowrap: false },
 ]
+
+const doc = (): Canvas['layers'] => docWithText('你好画布')
 
 const imageDoc = (): Canvas['layers'] => [{ ...base, type: 'ImageLayer', src: null, expression: null }]
 
@@ -570,5 +573,119 @@ describe('表达式语法诊断提示条（expression-syntax-diagnostics 工单 
         const hint = await settle(wrapper)
 
         expect(hint.exists()).toBe(false)
+    })
+})
+
+describe('草稿接管（会话内容独占工单 02）：旁门内容写 → textarea 全量接管新值', () => {
+    /** 接管 watch 是 async 续体（回调内再等一拍 nextTick）：宏任务边界排干微任务链 */
+    async function settle(wrapper: ReturnType<typeof mountOverlay>) {
+        await wrapper.vm.$nextTick()
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        await wrapper.vm.$nextTick()
+    }
+
+    it('查找替换命中编辑层：textarea 草稿被替换为文档新值（替换结果出现在正在编辑的框里）', async () => {
+        const editor = makeEditor(docWithText('证书甲姓名'))
+        const wrapper = mountOverlay(editor)
+        const textarea = await enterEditing(wrapper)
+        const el = textarea.element
+        // 用户先键入草稿（live 文本不落文档）
+        el.value = '用户正在打字'
+        await textarea.trigger('input')
+
+        editor.setFindQuery('证书')
+        editor.setFindReplacement('奖状')
+        expect(editor.replaceAll()).toBe(1)
+        await settle(wrapper)
+
+        // 全量接管：草稿 = 文档新值（用户未提交的键入被接管覆盖——独占语义）
+        expect(el.value).toBe('奖状甲姓名')
+        expect(editor.store.doc!.layers[0]).toMatchObject({ type: 'TextLayer', text: '奖状甲姓名' })
+
+        // 接管后退出：串与文档一致零提交步（接管步即唯一一步历史）
+        await textarea.trigger('keydown', { key: 'Escape' })
+        await settle(wrapper)
+        expect(editor.store.history).toHaveLength(1)
+        expect(editor.store.ui.editing).toBeNull()
+    })
+
+    it('表达式会话旁门标记写：草稿接管镜像新值 + 诊断即时刷新（提示条随新值消失）', async () => {
+        const editor = makeEditor(doc())
+        const wrapper = mountOverlay(editor)
+        const textarea = await enterEditing(wrapper)
+        editor.toggleDataMode(['layers', 0]) // 翻表达式会话（零文档变更）
+        // 用户键入含语法错的片段：提示条在场
+        textarea.element.value = "{{row.name}} {{date(row.d, 'YYYY)}}"
+        await textarea.trigger('input')
+        await settle(wrapper)
+        expect(wrapper.find('.cn-text-overlay__diagnostic').exists()).toBe(true)
+
+        // 旁门程序化标记写：文档落库 + 草稿接管（合法表达式）+ 诊断刷新
+        editor.updateDataExpression(['layers', 0], "{{row.name}} {{date(row.d, 'YYYY')}}")
+        await settle(wrapper)
+
+        expect(textarea.element.value).toBe("{{row.name}} {{date(row.d, 'YYYY')}}")
+        expect(wrapper.find('.cn-text-overlay__diagnostic').exists()).toBe(false)
+    })
+
+    it('接管后清空退出：删层且可撤销（与画布侧同语义）', async () => {
+        const editor = makeEditor(docWithText('证书甲姓名'))
+        const wrapper = mountOverlay(editor)
+        const textarea = await enterEditing(wrapper)
+
+        editor.setFindQuery('证书')
+        editor.setFindReplacement('奖状')
+        editor.replaceAll()
+        await settle(wrapper)
+        expect(textarea.element.value).toBe('奖状甲姓名')
+
+        textarea.element.value = ''
+        await textarea.trigger('keydown', { key: 'Escape' })
+        await settle(wrapper)
+
+        expect(editor.store.doc!.layers).toHaveLength(0)
+        expect(editor.store.history).toHaveLength(2) // 替换步 + 删层步
+
+        editor.undo()
+        expect(editor.store.doc!.layers[0]).toMatchObject({ type: 'TextLayer', text: '奖状甲姓名' })
+        editor.undo()
+        expect(editor.store.doc!.layers[0]).toMatchObject({ type: 'TextLayer', text: '证书甲姓名' })
+    })
+
+    it('pill 翻标志（非内容写）不接管：textarea 草稿保持', async () => {
+        const editor = makeEditor(doc())
+        const wrapper = mountOverlay(editor)
+        const textarea = await enterEditing(wrapper)
+
+        textarea.element.value = '草稿{{'
+        await textarea.trigger('input')
+        editor.toggleDataMode(['layers', 0])
+        await settle(wrapper)
+
+        expect(textarea.element.value).toBe('草稿{{')
+        expect(editor.store.ui.editing).toMatchObject({ expression: true })
+    })
+
+    it('接管后经真 pill 路径翻标志：draftSeq 保留，不误触发接管（草稿实况保持）', async () => {
+        const editor = makeEditor(docWithText('证书甲姓名'))
+        const wrapper = mountOverlay(editor)
+        const textarea = await enterEditing(wrapper)
+        const el = textarea.element
+
+        // 先发生一次接管（draftSeq = 1）
+        editor.setFindQuery('证书')
+        editor.setFindReplacement('奖状')
+        editor.replaceAll()
+        await settle(wrapper)
+        expect(el.value).toBe('奖状甲姓名')
+
+        // 真 pill 路径（ContentTypePill → setExpressionMode）翻标志：若丢 draftSeq
+        // （1 → undefined），接管 watch 会误触发并全量替换草稿
+        await wrapper.find('[data-pill-expression]').trigger('click')
+        await settle(wrapper)
+
+        expect(editor.store.ui.editing).toMatchObject({ expression: true, draftSeq: 1 })
+        expect(el.value).toBe('奖状甲姓名')
+        expect(editor.store.history).toHaveLength(1) // 标志翻转零文档变更
     })
 })

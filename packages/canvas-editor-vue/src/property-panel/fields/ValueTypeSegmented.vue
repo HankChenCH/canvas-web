@@ -5,14 +5,20 @@
  * （面板下发 mode，本组件零本地状态）；点击非当前段上抛 change（目标态），
  * 当前段零事件（无冗余提交，不进历史）。
  *
+ * 锁定态（edit-overlay-toolbar 工单 02，会话内容独占门面）：disabled 时两段
+ * 均不可点（aria-disabled + 视觉降饱和），显示照常随 mode 随动——编辑会话期
+ * 面板段只作显示面，模式切换唯一入口归画布 pill。
+ *
  * 两段各有悬停 tooltip 解释态含义（文案起草、宿主审；表达式段沿用插值子集
  * 说明 {{路径}} / {{$index}} / {{$root.*}}）。视觉沿用对齐分段组的令牌语言
  * （AlignField 同款 tailwind 配方），提交管线不动——toggle 语义仍由面板
  * toggleDataMode 承担。
  */
 const props = defineProps<{
-    /** 当前取值方式（由图层 expression 标记派生：null → static） */
+    /** 当前取值方式（锁定期随会话活标志派生：null → static） */
     mode: 'static' | 'expression'
+    /** 会话内容锁定（工单 02）：true = 不可点，显示照常随动 */
+    disabled?: boolean
 }>()
 
 const emit = defineEmits<{ change: [value: 'static' | 'expression'] }>()
@@ -28,6 +34,7 @@ const SEGMENTS: readonly { value: 'static' | 'expression'; label: string; title:
 ]
 
 function pick(value: 'static' | 'expression'): void {
+    if (props.disabled) return
     if (value === props.mode) return
     emit('change', value)
 }
@@ -36,8 +43,10 @@ function pick(value: 'static' | 'expression'): void {
 <template>
     <span
         class="cn-valuetype flex h-7 shrink-0 items-stretch overflow-hidden rounded-md border border-cn-field-line bg-cn-field"
+        :class="{ 'opacity-60': disabled }"
         role="group"
         aria-label="取值方式"
+        :aria-disabled="disabled ? 'true' : undefined"
     >
         <button
             v-for="(segment, index) in SEGMENTS"
@@ -52,6 +61,9 @@ function pick(value: 'static' | 'expression'): void {
             ]"
             :aria-pressed="segment.value === mode"
             :title="segment.value === mode ? segment.title : `${segment.title}；点击切换`"
+            :data-mode-static="segment.value === 'static' ? true : undefined"
+            :data-mode-expression="segment.value === 'expression' ? true : undefined"
+            :disabled="disabled"
             @click.prevent="pick(segment.value)"
         >
             {{ segment.label }}

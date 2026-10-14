@@ -17,7 +17,7 @@
  */
 import { computed, provide } from 'vue'
 
-import type { Anchor, Canvas, EditorSession, Layer, ResourceStatus } from '@hankchen/canvas-editor'
+import type { Anchor, EditorSession, ResourceStatus } from '@hankchen/canvas-editor'
 
 import { readField, pairItemKey, type FieldDef, type FieldDisplay } from './fieldSchema'
 import AnchorDisclosureField from './fields/AnchorDisclosureField.vue'
@@ -54,8 +54,13 @@ interface RenderField {
     /** 数据字段取值方式（静态值/表达式）；undefined = 非 data 字段 */
     dataMode?: 'static' | 'expression'
     /**
+     * 会话内容锁定（edit-overlay-toolbar 工单 02）：编辑会话期 data 字段与模式段
+     * disabled，显示随会话活标志/文档现值，退出后随文档通知追平。
+     */
+    locked?: boolean
+    /**
      * 行级动态可见提示（placeholder-padding-hint 工单 02）：schema hint 谓词按
-     * 选中层与资源态切片求值的产物；undefined = 无提示（谓词缺省/求值 null）。
+     * 选中层与资源态切片求值的产物；锁定期被编辑中提示取代；undefined = 无提示。
      */
     hint?: string
     /**
@@ -78,11 +83,12 @@ const typeBadge = computed(() => {
     return panel.canvas.value ? 'Canvas' : '—'
 })
 
-/** 数据字段取值方式派生：expression 标记在场即表达式态（画布/无标记 → static） */
-function readDataMode(target: Layer | Canvas): 'static' | 'expression' {
-    const read = readField(target, ['expression'])
-    return read.ok && read.value !== null ? 'expression' : 'static'
-}
+/**
+ * 会话内容独占（edit-overlay-toolbar 工单 02，ADR 0019）：编辑会话期内容面锁定
+ * 的编辑中提示（弱提示行视觉，与 padding hint 同通道）。仅 data 字段下发——
+ * 锁定面 = 内容字段与模式段，样式/几何字段照常 live。
+ */
+const CONTENT_LOCK_HINT = '内容编辑中：请在画布编辑框内修改，退出后此处更新'
 
 const visibleSections = computed<readonly RenderSection[]>(() => {
     // 目标对象：选中层优先；仅当确无选择时回退画布（选中存在但解析失败说明
@@ -100,12 +106,19 @@ const visibleSections = computed<readonly RenderSection[]>(() => {
             const read = readField(target, field.key)
             // 未知字段：不渲染、不告警（权威字段过滤的读侧兜底）
             if (!read.ok) continue
+            const locked = panel.contentLocked.value && field.data === true
             fields.push({
                 key: `${scope}:${field.key.join('.')}`,
                 field,
                 value: read.value,
-                dataMode: field.data ? readDataMode(target) : undefined,
-                hint: field.hint && hintTarget ? (field.hint(hintTarget, statuses) ?? undefined) : undefined,
+                // 模式显示经桥派生：锁定期随会话活标志（pill 翻转实时随动），
+                // 否则随层标记态（工单 02 单一事实源）
+                dataMode: field.data ? (panel.isDataMarked(field) ? 'expression' : 'static') : undefined,
+                locked,
+                // 锁定期行提示让位编辑中提示（锁定 ≠ 信息错误：来源说清楚）
+                hint: locked
+                    ? CONTENT_LOCK_HINT
+                    : (field.hint && hintTarget ? (field.hint(hintTarget, statuses) ?? undefined) : undefined),
                 resourceStatus:
                     field.control === 'imageSrc' && typeof read.value === 'string' && read.value !== ''
                         ? statuses[read.value]
@@ -203,6 +216,7 @@ function toggleAnchorExpanded(): void {
                         :field="item.field"
                         :value="item.value"
                         :data-mode="item.dataMode"
+                        :locked="item.locked"
                         :hint="item.hint"
                         :completion="fieldCompletionSource(item.field)"
                         :displays="pairDisplays"

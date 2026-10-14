@@ -57,6 +57,12 @@ const props = defineProps<{
     /** 数据字段取值方式；undefined = 非 data 字段（无切换钮） */
     dataMode?: 'static' | 'expression'
     /**
+     * 会话内容锁定（edit-overlay-toolbar 工单 02，ADR 0019 门面）：编辑会话期
+     * data 字段的输入控件与模式段 disabled——编辑框草稿是内容唯一写入门，面板
+     * 只显示（文档现值 + 随会话活标志的模式段）。undefined/false = 照常可编辑。
+     */
+    locked?: boolean
+    /**
      * 补全候选源（面板按字段分发：data 门字段 = 表达式源，rowsPath 标记字段 =
      * 行相对源，工单 03）；null = 未注入/无接线/降级（浮层恒闭）。
      */
@@ -207,15 +213,19 @@ function relaySubCommit(field: FieldDef, value: unknown, final: boolean): void {
             {{ field.label }}
         </span>
         <!-- 数据字段取值方式分段选择器（工单 06）：目标态由组件守卫（当前段零
-             事件），切换语义经既有 toggle-mode 归面板 toggleDataMode -->
+             事件），切换语义经既有 toggle-mode 归面板 toggleDataMode。锁定期
+             disabled（工单 02）——模式切换唯一入口归画布 pill，面板段只显示 -->
         <ValueTypeSegmented
             v-if="field.data"
             class="justify-self-end"
             :mode="dataMode ?? 'static'"
+            :disabled="locked"
             @change="emit('toggle-mode')"
         />
         <!-- 宽度由各控件自持：输入类自带 flex-1 撑满列，定宽类（开关）落在控件列
-             左缘与填充类同线；数据字段控件 col-span-2 成上下布局的输入行 -->
+             左缘与填充类同线；数据字段控件 col-span-2 成上下布局的输入行。锁定期
+             下发 disabled（工单 02）：TextareaField 声明消费；其余控件经 attrs
+             透传原生 disabled（锁定面只出现在 data 字段，编辑会话仅文本层可达） -->
         <component
             :is="control"
             ref="controlRef"
@@ -229,6 +239,7 @@ function relaySubCommit(field: FieldDef, value: unknown, final: boolean): void {
             ]"
             :field="field"
             :model-value="value"
+            :disabled="locked"
             :displays="field.control === 'pair' ? displays : undefined"
             :data-mode="field.control === 'imageSrc' ? dataMode : undefined"
             :resource-status="field.control === 'imageSrc' ? resourceStatus : undefined"
