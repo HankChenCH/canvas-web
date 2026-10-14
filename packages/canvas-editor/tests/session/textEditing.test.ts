@@ -507,3 +507,50 @@ describe('textEditLayout：编辑 overlay 的布局描述（与绘制同一套�
         expect(editor.textEditLayout(['layers', 9])).toBeNull()
     })
 })
+
+describe('textEditLayout 对当前文档现算（ADR 0019 会话期 live 联动）', () => {
+    it('会话期样式写入后布局查询返回新值（字号/行高/对齐/换行/字色）', () => {
+        const editor = makeEditor(singleTextDoc())
+        editor.beginTextEdit(['layers', 0])
+
+        editor.updateSpec(['layers', 0], ['fontSize'], 24)
+        const afterFont = editor.textEditLayout(['layers', 0])!
+        expect(afterFont.fontSize).toBe(24)
+        expect(afterFont.lineHeightPx).toBe(29) // ceil(24 × 1.2)
+
+        editor.updateSpec(['layers', 0], ['align', 'horizontal'], 'center')
+        editor.updateSpec(['layers', 0], ['autowrap'], true)
+        editor.updateSpec(['layers', 0], ['fontColor'], '#ff0000')
+        const afterStyle = editor.textEditLayout(['layers', 0])!
+        expect(afterStyle.horizontalAlign).toBe('center')
+        expect(afterStyle.autowrap).toBe(true)
+        expect(afterStyle.fontColor).toBe('#ff0000')
+    })
+
+    it('会话期位置/尺寸写入后盒几何跟随', () => {
+        const editor = makeEditor(singleTextDoc())
+        editor.beginTextEdit(['layers', 0])
+
+        editor.updateSpec(['layers', 0], ['position', 'x'], 90)
+        editor.updateSpec(['layers', 0], ['shape', 'width'], 200)
+
+        expect(editor.textEditLayout(['layers', 0])!.box).toMatchObject({ x: 90, width: 200 })
+    })
+
+    it('纵向锚点随当前文档文本现算：autowrap 层改文本行数变化 → 锚点跟随', () => {
+        const editor = makeEditor({
+            width: 400,
+            height: 300,
+            layers: [
+                textLayer({ priority: 10, align: { horizontal: 'left', vertical: 'center' }, autowrap: true }),
+            ],
+        })
+        editor.beginTextEdit(['layers', 0])
+        // 单行（4 字 64 ≤ 内容宽 100）：trunc((50 − 20×0)/2) = 25
+        expect(editor.textEditLayout(['layers', 0])!.verticalAnchorY).toBe(25)
+
+        // 十个 CJK 字断成两行：trunc((50 − 20×1)/2) = 15——查询按当前文档文本现算
+        editor.updateData(['layers', 0], '一二三四五六七八九十')
+        expect(editor.textEditLayout(['layers', 0])!.verticalAnchorY).toBe(15)
+    })
+})

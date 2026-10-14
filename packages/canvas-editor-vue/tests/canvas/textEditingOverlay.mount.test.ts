@@ -398,6 +398,122 @@ describe('zoom 变更：字号视觉恒定、元素不重建、光标 selection 
     })
 })
 
+describe('会话期 live 联动（ADR 0019）：面板样式/几何写 → 编辑框实时跟随', () => {
+    /** 面板同门的权威写（usePropertyPanel.commit 同一内核漏斗与 mergeKey 约定） */
+    const spec = (editor: EditorSession, key: readonly string[], value: unknown) =>
+        editor.updateSpec(['layers', 0], key, value, { mergeKey: `sel:layers.0:${key.join('.')}` })
+
+    it('样式字段写（字号/字色/字体/换行/行高/内边距/水平/垂直对齐）→ textarea 样式即时变化', async () => {
+        const editor = makeEditor(doc())
+        const wrapper = mountOverlay(editor)
+        const textarea = await enterEditing(wrapper)
+        const el = textarea.element
+
+        spec(editor, ['fontSize'], 24)
+        await wrapper.vm.$nextTick()
+        expect(el.style.fontSize).toBe('24px')
+        expect(el.style.lineHeight).toBe('29px') // ceil(24 × 1.2)
+        // 元素不重建（key 只随路径）：草稿与光标保持
+        expect(wrapper.find('textarea').element).toBe(el)
+
+        spec(editor, ['fontColor'], '#ff0000')
+        await wrapper.vm.$nextTick()
+        expect(el.style.color).toBe('rgb(255, 0, 0)')
+
+        spec(editor, ['font'], 'https://fonts.example/hand.ttf')
+        await wrapper.vm.$nextTick()
+        expect(el.style.fontFamily).toContain('canvas-font-')
+
+        spec(editor, ['align', 'horizontal'], 'center')
+        await wrapper.vm.$nextTick()
+        expect(el.style.textAlign).toBe('center')
+
+        // 纵向对齐写 → 锚点现算 padding-top（单行、盒高 50）：center 锚
+        // trunc(50/2) = 25 → padding-top = 25 − 29/2 = 10.5
+        spec(editor, ['align', 'vertical'], 'center')
+        await wrapper.vm.$nextTick()
+        expect(el.style.paddingTop).toBe('10.5px')
+
+        // 行高写 → 行盒与锚点折算同步现算：ceil(24 × 1.5) = 36、锚 25 不变
+        // → padding-top = 25 − 36/2 = 7
+        spec(editor, ['shape', 'lineHeight'], 1.5)
+        await wrapper.vm.$nextTick()
+        expect(el.style.lineHeight).toBe('36px')
+        expect(el.style.paddingTop).toBe('7px')
+
+        // 内边距写 → 内容盒与锚点随之现算：内容高 trunc(50−3) = 47、
+        // 锚 = 1 + trunc(47/2) = 24 → padding-top = 24 − 18 = 6
+        spec(editor, ['shape', 'padding'], { top: 1, bottom: 2, left: 8, right: 3 })
+        await wrapper.vm.$nextTick()
+        expect(el.style.paddingLeft).toBe('8px')
+        expect(el.style.paddingTop).toBe('6px')
+
+        spec(editor, ['autowrap'], true)
+        await wrapper.vm.$nextTick()
+        expect(el.style.whiteSpace).toBe('pre-wrap')
+    })
+
+    it('位置/尺寸写 → 编辑框几何实时跟随', async () => {
+        const editor = makeEditor(doc())
+        const wrapper = mountOverlay(editor)
+        const textarea = await enterEditing(wrapper)
+        const el = textarea.element
+
+        spec(editor, ['position', 'x'], 90)
+        spec(editor, ['shape', 'width'], 200)
+        await wrapper.vm.$nextTick()
+
+        expect(el.style.transform).toBe('translate(90px, 30px) scale(1)')
+        expect(el.style.width).toBe('200px')
+    })
+
+    it('样式写入 + 退出提交：各自成步恰两步历史（会话期写入不合入文本提交）', async () => {
+        const editor = makeEditor(doc())
+        const wrapper = mountOverlay(editor)
+        const textarea = await enterEditing(wrapper)
+
+        spec(editor, ['fontSize'], 24)
+        editor.store.closeMerge('sel:layers.0:fontSize') // 面板 final 收口同门
+        textarea.element.value = '改了文本'
+        await textarea.trigger('keydown', { key: 'Escape' })
+        await wrapper.vm.$nextTick()
+
+        expect(editor.store.history).toHaveLength(2)
+        // 样式步已被面板 final 收口闭合（closeMerge 置 null），文本提交步独立无 mergeKey
+        expect(editor.store.history[0]!.mergeKey).toBeNull()
+        expect(editor.store.history[1]!.mergeKey).toBeNull()
+        expect(editor.store.doc!.layers[0]).toMatchObject({ fontSize: 24, text: '改了文本' })
+    })
+
+    it('键入模拟（input，零文档变更）→ 布局与纵向锚点零变化', async () => {
+        const editor = makeEditor(doc())
+        const wrapper = mountOverlay(editor)
+        const textarea = await enterEditing(wrapper)
+        const el = textarea.element
+        const before = {
+            transform: el.style.transform,
+            width: el.style.width,
+            height: el.style.height,
+            paddingTop: el.style.paddingTop,
+            lineHeight: el.style.lineHeight,
+        }
+
+        el.value = '键入了很多很多文字'
+        await textarea.trigger('input')
+        await wrapper.vm.$nextTick()
+
+        // live 文本只住 textarea 草稿不落文档：零历史、文档文本不动
+        expect(editor.store.history).toHaveLength(0)
+        expect(editor.store.doc!.layers[0]).toMatchObject({ text: '你好画布' })
+        // 布局与纵向锚点零变化（锚点不随键入跳动）
+        expect(el.style.transform).toBe(before.transform)
+        expect(el.style.width).toBe(before.width)
+        expect(el.style.height).toBe(before.height)
+        expect(el.style.paddingTop).toBe(before.paddingTop)
+        expect(el.style.lineHeight).toBe(before.lineHeight)
+    })
+})
+
 describe('表达式语法诊断提示条（expression-syntax-diagnostics 工单 02）', () => {
     /** 表达式标记层（text = expression 镜像）：初值即含语法错（格式串缺收尾引号） */
     const brokenExpr = "{{row.name}} {{date(row.d, 'YYYY)}}"

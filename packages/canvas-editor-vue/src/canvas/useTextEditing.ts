@@ -4,7 +4,9 @@
  *
  * - 会话状态：ui.editing（会话对象身份，pill 切换原位换新即驱动 layout 重算）
  *   的 shallowRef 桥 + 内核 textEditLayout 布局查询（与绘制/命中同一套布局策略，
- *   overlay 与内容层几何不漂移）；
+ *   overlay 与内容层几何不漂移）；反应锚「会话对象 + doc 通知」双触发（工单 01，
+ *   ADR 0019 布局现算）——会话期面板/工具条的样式与几何权威写实时反映到编辑框，
+ *   键入零文档变更则布局与纵向锚点零变化；
  * - 呈现换算：textarea 以「场景字号/盒尺寸占位 + CSS transform scale(zoom)」定位
  *   ——字号视觉恒定（excalidraw textWysiwyg 同款，impl 研究 §2.4），缩放中元素
  *   不重建、光标不丢；对位用与内容层同一呈现视口（snapViewportToPhysicalPixels，
@@ -129,10 +131,20 @@ function fontBoxHeight(font: string, fontSize: number): number {
 export function useTextEditing(editor: EditorSession, hosts: TextEditingHosts): TextEditingBinding {
     // 镜像整个会话对象（不只 path）：pill 切换 = setEditing 原位换新对象（path 不
     // 变），shallowRef 以对象身份为反应锚——layout/expressionMode 随翻转立即重算
-    // （工单 03 pill 激活态与补全 enabled 的消费面）
+    // （工单 03 pill 激活态与补全 enabled 的消费面）。doc 通知只重读会话引用：
+    // openDocument 清会话只发 doc 通知（store 契约注记），漏读会悬挂旧会话
     const session = shallowRef<TextEditingSession | null>(editor.store.ui.editing)
+    // doc 通知版本号（canvas-web-edit-overlay-toolbar 工单 01，ADR 0019 布局现算）：
+    // 会话期文档写（面板/工具条样式与几何权威写、查找替换等）不改会话对象身份，
+    // shallowRef 值等短路感知不到——layout 需要第二反应锚感知「文档变了」。键入
+    // 零文档变更 → 版本不动 → 布局与纵向锚点天然稳定不跳（live 文本只住 textarea
+    // 草稿不落文档）
+    const docVersion = shallowRef(0)
     const unsubscribe = editor.subscribe((change) => {
-        if (change.scope === 'doc' || (change.scope === 'ui' && change.branch === 'editing')) {
+        if (change.scope === 'doc') {
+            docVersion.value += 1
+            session.value = editor.store.ui.editing
+        } else if (change.scope === 'ui' && change.branch === 'editing') {
             session.value = editor.store.ui.editing
         }
     })
@@ -145,6 +157,9 @@ export function useTextEditing(editor: EditorSession, hosts: TextEditingHosts): 
     const viewport = useViewport(editor)
 
     const layout = computed(() => {
+        // 反应锚双触发（ADR 0019）：会话对象管进入/退出/翻转，docVersion 管
+        // 会话期文档写（样式/几何现算）——void 表达式只为参与依赖收集
+        void docVersion.value
         const current = session.value
         return current ? editor.textEditLayout(current.path) : null
     })
@@ -215,7 +230,8 @@ export function useTextEditing(editor: EditorSession, hosts: TextEditingHosts): 
      *   center: 字形盒心 = padding + LH/2           = 锚点 → padding = 锚点 − LH/2
      *   bottom: 字形盒底 = padding + (LH+FH)/2      = 锚点 → padding = 锚点 − (LH+FH)/2
      * 其余取值归 top（与渲染端未知取值归 top 同门）；CSS padding 非负，负值钳 0
-     * （误差 ≤ 半行距，亚像素到 1–2px）。锚点按进入编辑时的文档文本计，编辑中稳定。
+     * （误差 ≤ 半行距，亚像素到 1–2px）。锚点对当前文档文本现算（ADR 0019）：
+     * live 文本只住 textarea 草稿不落文档，键入不触发文档变更，锚点天然稳定不跳。
      */
     function verticalPadding(l: TextEditLayout): CSSProperties {
         const anchor = l.padding.top + l.verticalAnchorY

@@ -179,7 +179,7 @@ export type InvalidateTarget = 'content' | 'overlay' | 'both'
 export interface TextEditLayout {
     /** 编辑中图层的绝对盒（场景坐标；textarea 覆盖整盒，文字按 padding 内缩） */
     box: LayerBox
-    /** 进入编辑时的文档文本（textarea 初值） */
+    /** 当前文档文本（textarea 初值消费；live 键入只住草稿不落文档） */
     text: string
     /** 原始字体引用（空串/纯数字 = 内置默认字体；URL 由绑定层解析注册族名） */
     font: string
@@ -1299,8 +1299,9 @@ export class EditorSession {
      *
      * 内容类型会话标志（canvas-web-expression-editing 工单 01，spec 决策 2）按
      * 进入瞬间 `layer.expression !== null` 锚定进会话快照——「进入时计、编辑中
-     * 稳定」（verticalAnchorY 同门）：编辑中面板改标记不回写标志，提交去向由
-     * 快照裁决（打标是显式动作，内容判定制已否决）。同路径重复进入短路（快照
+     * 稳定」（布局字段不在此列：textEditLayout 对当前文档现算，见 ADR 0019）。
+     * 编辑中面板改标记不回写标志，提交去向由快照裁决（打标是显式动作，内容判定
+     * 制已否决；活标志改造归会话内容独占工单）。同路径重复进入短路（快照
      * 不重锚）；换层进入按新层现状重锚。
      */
     beginTextEdit(path: LayerPath): boolean {
@@ -1351,8 +1352,10 @@ export class EditorSession {
     /**
      * 编辑 overlay 的布局描述：与绘制/命中同一套布局策略求出的盒几何与排版字段
      * （textarea 以盒左上对位、盒尺寸占位，字号/行高/内边距按场景像素交给 CSS
-     * transform 缩放）。verticalAnchorY 按进入编辑时的文档文本计算，编辑中保持
-     * 稳定不随键入跳动。非文本层/路径失效返回 null。
+     * transform 缩放）。对当前文档现算（canvas-web-edit-overlay-toolbar 工单 01，
+     * ADR 0019 布局现算）：会话期样式/几何权威写实时反映到查询值；verticalAnchorY
+     * 按当前文档文本计算——live 键入只住 textarea 草稿不落文档，键入不触发文档
+     * 变更，锚点天然稳定不跳。非文本层/路径失效返回 null。
      */
     textEditLayout(path: LayerPath): TextEditLayout | null {
         const layer = this.textLayerAt(path)
