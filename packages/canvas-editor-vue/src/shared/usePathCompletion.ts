@@ -63,7 +63,7 @@ const CURSOR_MOVE_KEYS = ['ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'P
  * 中性值满足类型。哨兵算术收口这一处：手术剥壳实现若变，单点适配。
  */
 function wholeInputFragment(input: string): ExpressionScanFragment {
-    return { kind: 'fragment', start: -2, end: input.length + 2, raw: '', expr: input, error: null }
+    return { kind: 'fragment', start: -2, end: input.length + 2, raw: '', expr: input, error: null, diagnostic: null }
 }
 
 export function usePathCompletion(options: {

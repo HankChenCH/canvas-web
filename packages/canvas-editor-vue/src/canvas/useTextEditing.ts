@@ -63,6 +63,13 @@ export interface TextEditingBinding {
      */
     pillStyle: ComputedRef<CSSProperties | null>
     /**
+     * 图层框上缘左角锚点内联样式（expression-syntax-diagnostics 工单 02）：与
+     * pill 同换算系，尾部 translateY(-100%)（调用方叠间隙）把自身底边对到框顶——
+     * 左角对齐与居中 pill 错位不重叠，供编辑期标签类浮示（语法诊断提示条）锚定；
+     * null = 非编辑态
+     */
+    boxTagStyle: ComputedRef<CSSProperties | null>
+    /**
      * 呈现缩放（snapViewportToPhysicalPixels 后的 zoom）：补全锚点测量的 scale
      * 消费面——画布 textarea 整体在 transform: scale(zoom) 系（工单 03 补全绑定）
      */
@@ -185,6 +192,17 @@ export function useTextEditing(editor: EditorSession, hosts: TextEditingHosts): 
         const { left, top, zoom } = sceneToScreen(l.box.x + l.box.width / 2, l.box.y)
         return {
             transform: `translate(${left}px, ${top}px) scale(${zoom}) translate(-50%, -100%)`,
+            transformOrigin: '0 0',
+        }
+    })
+
+    /** 框顶左角锚点（诊断提示条等标签类浮示）：pill 同换算系，底边对框顶（见接口注释） */
+    const boxTagStyle = computed<CSSProperties | null>(() => {
+        const l = layout.value
+        if (!l) return null
+        const { left, top, zoom } = sceneToScreen(l.box.x, l.box.y)
+        return {
+            transform: `translate(${left}px, ${top}px) scale(${zoom}) translateY(calc(-100% - 4px))`,
             transformOrigin: '0 0',
         }
     })
@@ -329,6 +347,7 @@ export function useTextEditing(editor: EditorSession, hosts: TextEditingHosts): 
         layout,
         style,
         pillStyle,
+        boxTagStyle,
         scale: computed(() => presented.value.zoom),
         composing: computed(() => composingRef.value),
         setComposing,

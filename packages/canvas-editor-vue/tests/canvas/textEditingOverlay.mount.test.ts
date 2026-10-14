@@ -397,3 +397,62 @@ describe('zoom 变更：字号视觉恒定、元素不重建、光标 selection 
         expect(textarea.element.style.transform).toBe('translate(30px, 10px) scale(1)')
     })
 })
+
+describe('表达式语法诊断提示条（expression-syntax-diagnostics 工单 02）', () => {
+    /** 表达式标记层（text = expression 镜像）：初值即含语法错（格式串缺收尾引号） */
+    const brokenExpr = "{{row.name}} {{date(row.d, 'YYYY)}}"
+    const exprDoc = (): Canvas['layers'] => [
+        {
+            ...base,
+            type: 'TextLayer',
+            text: brokenExpr,
+            expression: brokenExpr,
+            font: '',
+            fontSize: 16,
+            fontColor: '#111827',
+            angle: 0,
+            autowrap: false,
+        },
+    ]
+
+    /** 诊断链路含跨 tick 的初值注入同步（composable attach 的 nextTick 补拍），多等两拍 */
+    async function settle(wrapper: ReturnType<typeof mountOverlay>) {
+        await wrapper.vm.$nextTick()
+        await wrapper.vm.$nextTick()
+        return wrapper.find('.cn-text-overlay__diagnostic')
+    }
+
+    it('表达式态会话初值即含语法错：提示条在场（文案 + 锚定图层框左角上方）', async () => {
+        const editor = makeEditor(exprDoc())
+        const wrapper = mountOverlay(editor)
+        await enterEditing(wrapper)
+
+        const hint = await settle(wrapper)
+        expect(hint.exists()).toBe(true)
+        expect(hint.text()).toBe('表达式语法错误：字符串字面量未闭合')
+        // 与 pill 同换算系：盒左上 (40,30) 上方（translateY 负向偏移），scale 随 zoom
+        expect(hint.attributes('style')).toContain('translate(40px, 30px) scale(1)')
+    })
+
+    it('修好语法：提示条消失', async () => {
+        const editor = makeEditor(exprDoc())
+        const wrapper = mountOverlay(editor)
+        const textarea = await enterEditing(wrapper)
+
+        textarea.element.value = "{{row.name}} {{date(row.d, 'YYYY')}}"
+        await textarea.trigger('input')
+        const hint = await settle(wrapper)
+
+        expect(hint.exists()).toBe(false)
+    })
+
+    it('静态会话不提示（无表达式标记）', async () => {
+        const editor = makeEditor(doc())
+        const wrapper = mountOverlay(editor)
+        await enterEditing(wrapper)
+
+        const hint = await settle(wrapper)
+
+        expect(hint.exists()).toBe(false)
+    })
+})

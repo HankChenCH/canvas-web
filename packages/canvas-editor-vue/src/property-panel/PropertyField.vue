@@ -39,13 +39,14 @@
  */
 import { computed, ref, type ComponentPublicInstance } from 'vue'
 
-import type { ResourceStatus } from '@hankchen/canvas-editor'
+import { expressionDiagnostics, type ExpressionFragmentDiagnostic, type ResourceStatus } from '@hankchen/canvas-editor'
 
 import { controlRegistry } from './controls'
 import type { FieldDef, FieldDisplay } from './fieldSchema'
 import ValueTypeSegmented from './fields/ValueTypeSegmented.vue'
 import ExpressionCompletionPopup from '../shared/ExpressionCompletionPopup.vue'
 import { useExpressionCompletion } from '../shared/useExpressionCompletion'
+import { expressionDiagnosticHint } from '../shared/useExpressionDiagnostics'
 import { usePathCompletion } from '../shared/usePathCompletion'
 import type { CompletionSource } from '../shared/completion'
 
@@ -118,6 +119,28 @@ const wiresCompletion = computed(() => wiresExpressionCompletion.value || wiresP
 
 /** 控件根元素（组件实例 $el；textarea/input 双形态，其余控件给 null 不绑） */
 const controlRef = ref<ComponentPublicInstance | null>(null)
+
+/**
+ * 表达式语法诊断（expression-syntax-diagnostics 工单 02）：表达式态数据字段
+ * 实时标错——面板 input 实时 commit（props.value 即最新文本），computed 直算
+ * 零监听（画布侧非受控宿主才走 useExpressionDiagnostics 监听同步）；门与补全
+ * 接线门同面（textarea/text/imageSrc 数据字段），静态态恒空（{{ 是字面）。
+ */
+const expressionErrors = computed<readonly ExpressionFragmentDiagnostic[]>(() =>
+    wiresExpressionCompletion.value && isExpression.value && typeof props.value === 'string'
+        ? expressionDiagnostics(props.value)
+        : [],
+)
+const expressionErrorHint = computed(() => expressionDiagnosticHint(expressionErrors.value))
+
+/** 点击提示：聚焦控件并选中出错子范围（value 即模板串，at 模板坐标可直接落 selection） */
+function locateFirstError(): void {
+    const first = expressionErrors.value[0]
+    const el: unknown = controlRef.value?.$el
+    if (first === undefined || !(el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement)) return
+    el.focus()
+    el.setSelectionRange(first.at.start, first.at.end)
+}
 const completionTarget = computed<HTMLTextAreaElement | HTMLInputElement | null>(() => {
     if (!wiresCompletion.value) return null
     const el: unknown = controlRef.value?.$el
@@ -193,7 +216,13 @@ function relaySubCommit(field: FieldDef, value: unknown, final: boolean): void {
             :is="control"
             ref="controlRef"
             class="cn-prop-field__control"
-            :class="[controlClass, { 'cn-field--expression': isExpression }]"
+            :class="[
+                controlClass,
+                {
+                    'cn-field--expression': isExpression,
+                    'cn-field--invalid': expressionErrors.length > 0,
+                },
+            ]"
             :field="field"
             :model-value="value"
             :displays="field.control === 'pair' ? displays : undefined"
@@ -210,6 +239,16 @@ function relaySubCommit(field: FieldDef, value: unknown, final: boolean): void {
             v-if="hint"
             class="cn-prop-field__hint col-span-2 block text-[11px] leading-4 text-cn-muted"
         >{{ hint }}</span>
+        <!-- 表达式语法错误提示（expression-syntax-diagnostics 工单 02）：诊断在
+             场即红边（控件 cn-field--invalid），提示行可点击——聚焦控件并选中出错
+             子范围（at 模板坐标直接落 selection）；与弱提示行互斥在场时不冲突
+             （错误行在其后，视觉 danger 色） -->
+        <span
+            v-if="expressionErrorHint"
+            class="cn-prop-field__hint cn-prop-field__hint--error col-span-2 block cursor-pointer text-[11px] leading-4 text-cn-danger"
+            title="点击选中出错片段"
+            @click="locateFirstError"
+        >{{ expressionErrorHint }}</span>
     </component>
     <!-- 补全浮层（工单 04/05/03）：portal 到 body，仅接线字段渲染——按门选呈现
          态（表达式门 = useExpressionCompletion，标记门 = usePathCompletion，互斥

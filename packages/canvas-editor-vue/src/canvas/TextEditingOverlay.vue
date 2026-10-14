@@ -28,6 +28,7 @@ import type { EditorSession } from '@hankchen/canvas-editor'
 import ExpressionCompletionPopup from '../shared/ExpressionCompletionPopup.vue'
 import { expressionCompletionSource, expressionFieldContext } from '../shared/expressionContext'
 import { useExpressionCompletion } from '../shared/useExpressionCompletion'
+import { expressionDiagnosticHint, useExpressionDiagnostics } from '../shared/useExpressionDiagnostics'
 import ContentTypePill from './ContentTypePill.vue'
 import { useTextEditing } from './useTextEditing'
 
@@ -47,12 +48,17 @@ const binding = useTextEditing(props.editor, {
 })
 
 // 顶层解构：模板里自动解包
-const { editing, style, composing, pillStyle } = binding
+const { editing, style, composing, pillStyle, boxTagStyle } = binding
 const layout = binding.layout
 
 // pill 激活态与补全 enabled 的单一事实源：内核 textEditLayout.expressionMode
 // （会话模式优先，无会话按层标记态回落——工单 01 钉定的消费面）
 const expressionMode = computed(() => layout.value?.expressionMode === true)
+
+// 表达式语法诊断（expression-syntax-diagnostics 工单 02）：textarea 非受控（值
+// 不在 Vue 态）走监听同步；诊断在表达式会话期恒算，汇总文案驱动框顶提示条
+const { diagnostics, refresh: refreshDiagnostics } = useExpressionDiagnostics({ target: textareaRef, enabled: expressionMode })
+const diagnosticHint = computed(() => (expressionMode.value ? expressionDiagnosticHint(diagnostics.value) : ''))
 
 // 表达式补全（工单 03）：候选源与面板同源——schema/文档/路径在求值时直读会话
 // 现态（resolve 每次重算上下文，模板格内容 row. 上下文自动正确），无需额外
@@ -83,6 +89,7 @@ watch(editing, async (path) => {
     const layout = binding.layout.value
     if (!el || !layout) return
     el.value = layout.text
+    refreshDiagnostics() // 程序化写值不走 input：诊断显式同步（expression-syntax-diagnostics 工单 02）
     el.focus({ preventScroll: true })
     el.select()
 })
@@ -160,6 +167,12 @@ defineExpose({
             :mode="expressionMode ? 'expression' : 'static'"
             @change="binding.setExpressionMode($event === 'expression')"
         />
+        <!-- 表达式语法诊断提示条（expression-syntax-diagnostics 工单 02）：表达式
+             会话期框顶左角浮示（与 pill 同换算系错位不重叠），被动展示不劫持指针；
+             提交语义不变（无效表达式仍按内核行为落库，标错只解释不阻断） -->
+        <span v-if="editing && diagnosticHint" class="cn-text-overlay__diagnostic" :style="boxTagStyle">{{
+            diagnosticHint
+        }}</span>
         <!-- 表达式补全浮层（工单 03）：portal 到 body，表达式会话才可开 -->
         <ExpressionCompletionPopup ref="popupRef" :state="popup" @select="accept" />
     </div>
@@ -191,5 +204,27 @@ defineExpose({
     letter-spacing: normal;
     text-transform: none;
     padding: 0; /* 实际 padding 由 :style 按图层 shape/对齐注入 */
+}
+
+/* 诊断提示条（expression-syntax-diagnostics 工单 02）：框顶左角上方被动浮示。
+   色值取 --cn-danger/--cn-bg 同值——画布侧不在 .cn-props 令牌命名空间内，按值
+   取（补全浮层是 portal 根自重建命名空间，此处不 portal 无命名空间可用）。 */
+.cn-text-overlay__diagnostic {
+    position: absolute;
+    top: 0;
+    left: 0;
+    max-width: 240px; /* 场景像素随 zoom 缩放（与 pill 同刻度），超宽省略 */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 2px 6px;
+    border: 1px solid rgba(248, 113, 113, 0.4);
+    border-radius: 4px;
+    background: rgba(11, 18, 32, 0.88);
+    color: #f87171;
+    font-size: 12px;
+    line-height: 16px;
+    pointer-events: none; /* 被动浮示：不劫持画布指针（不可点选不拦截） */
+    user-select: none;
 }
 </style>
