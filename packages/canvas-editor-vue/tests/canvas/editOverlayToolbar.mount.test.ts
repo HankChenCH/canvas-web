@@ -1,14 +1,15 @@
 // @vitest-environment jsdom
 /**
- * 内容类型 pill + 表达式补全画布接线集成测试（canvas-web-expression-editing 工单 03）。
+ * 编辑浮层工具条 + 表达式补全画布接线集成测试（canvas-web-edit-overlay-toolbar
+ * 工单 03；前身 contentPill.mount.test.ts——内容类型切换浮层原地演进为工具条首段）。
  *
- * 全链路（真实候选源 = 内核枚举器，非桩）：pill 随编辑会话开合与激活态（随会话
- * 标志而非层标记态）；切换仅翻会话标志（零文档变更零历史步、textarea 实况保持）；
- * pill 定位换算（图层框上边框居中、zoom 折算）；豁免集两目标（textarea + pill）；
- * Esc 双态分流（浮层开着只关浮层）与 Ctrl/Cmd+Enter 提交优先于候选接受（监听次序
- * 钉住）；补全绑定 enabled 随会话模式翻转（静态恒闭零配对、表达式可开）与候选源
- * 同源（根层根候选集 / 模板格内容 row. 上下文）；锚点 scale 折算消费（zoom 传入
- * measureCursorAnchor）。
+ * 全链路（真实候选源 = 内核枚举器，非桩）：工具条骨架随编辑会话开合（此时仅内容
+ * 类型一段，选中态不显示）；切换仅翻会话标志（零文档变更零历史步、textarea 实况
+ * 保持）；屏幕恒定定位换算（图层框上缘中点的屏幕折算锚点、无 scale 变换——尺寸
+ * 恒定可读可点，锚点随相机/缩放跟随；上缘放不下翻框下缘、水平钳制画布视口）；
+ * 豁免集两目标（textarea + 整条工具条）；Esc 双态分流（浮层开着只关浮层）与
+ * Ctrl/Cmd+Enter 提交优先于候选接受（监听次序钉住）；补全绑定 enabled 随会话
+ * 模式翻转与候选源同源；锚点 scale 折算消费（zoom 传入 measureCursorAnchor）。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
@@ -62,6 +63,23 @@ if (typeof HTMLElement.prototype.setPointerCapture !== 'function') {
     Object.defineProperty(HTMLElement.prototype, 'hasPointerCapture', { value: () => false, configurable: true })
 }
 
+/**
+ * 工具条屏幕恒定尺寸桩：jsdom 无布局（offsetWidth/Height 恒 0），翻转/钳制/水平
+ * 居中的换算断言需要确定尺寸——原型 getter 按根类名返回桩值（精确 token 匹配，
+ * 其余元素照旧 0；本文件环境隔离，不外泄）。实现经 offsetWidth/offsetHeight 实测
+ * （真实浏览器由 ResizeObserver 跟随），桩值即替身。
+ */
+const TOOLBAR_SIZE = { width: 240, height: 28 }
+for (const prop of ['offsetWidth', 'offsetHeight'] as const) {
+    Object.defineProperty(HTMLElement.prototype, prop, {
+        configurable: true,
+        get(this: HTMLElement) {
+            if (!this.classList.contains('cn-edit-toolbar')) return 0
+            return prop === 'offsetWidth' ? TOOLBAR_SIZE.width : TOOLBAR_SIZE.height
+        },
+    })
+}
+
 const nullScheduler: FrameScheduler = () => () => {}
 
 /** 载荷形态 schema（与面板接线测试同款键树；order.items = 行数组） */
@@ -96,6 +114,8 @@ const wrappers: { unmount(): void }[] = []
 function makeEditor(layers: Parameters<EditorSession['openDocument']>[0]['layers']): EditorSession {
     const editor = new EditorSession({ scheduleFrame: nullScheduler })
     editor.openDocument({ width: 800, height: 600, layers })
+    // 画布视口尺寸（翻转/钳制边界）：真实装配里由 CanvasSurface 呈现环境同步
+    editor.setSurfaceSize(800, 600)
     return editor
 }
 
@@ -128,6 +148,7 @@ async function type(wrapper: OverlayWrapper, value: string, cursor: number): Pro
     await field.trigger('input')
 }
 
+const toolbar = (wrapper: OverlayWrapper) => wrapper.find('[data-edit-toolbar]')
 const pill = (wrapper: OverlayWrapper) => wrapper.find('[data-content-pill]')
 const pillButton = (wrapper: OverlayWrapper, kind: 'static' | 'expression') =>
     wrapper.find(`[data-pill-${kind}]`)
@@ -151,30 +172,45 @@ beforeEach(() => {
     vi.mocked(measureCursorAnchor).mockClear()
 })
 
-describe('pill 随编辑会话开合与激活态', () => {
-    it('非编辑态不渲染 pill', () => {
+describe('工具条骨架随编辑会话开合（此时仅内容类型一段）', () => {
+    it('非编辑态不渲染工具条', () => {
         const editor = makeEditor([textLayer()])
         const wrapper = mountOverlay(editor)
 
-        expect(pill(wrapper).exists()).toBe(false)
+        expect(toolbar(wrapper).exists()).toBe(false)
     })
 
-    it('字面层进入编辑：pill 挂载且静态项激活；提交退出随 textarea 同卸载', async () => {
+    it('选中态（非编辑）不渲染工具条：工具条仅编辑会话期在场', async () => {
+        const editor = makeEditor([textLayer({ position: { anchor: 'top-left', x: 40, y: 30 } })])
+        const wrapper = mountOverlay(editor)
+
+        editor.setSelection(['layers', 0])
+        await nextTick()
+
+        expect(editor.store.ui.selection).toEqual(['layers', 0])
+        expect(toolbar(wrapper).exists()).toBe(false)
+    })
+
+    it('字面层进入编辑：工具条挂载且静态项激活（骨架期仅内容类型一段）；提交退出随 textarea 同卸载', async () => {
         const editor = makeEditor([textLayer()])
         const wrapper = mountOverlay(editor)
 
         await beginEditing(wrapper, ['layers', 0])
 
+        expect(toolbar(wrapper).exists()).toBe(true)
+        expect(toolbar(wrapper).attributes('role')).toBe('toolbar')
         expect(pill(wrapper).exists()).toBe(true)
+        // 骨架期单段：工具条内只有内容类型段一组子件（工单 04 续接五组样式段）
+        expect(toolbar(wrapper).element.children).toHaveLength(1)
         expect(wrapper.find('textarea').exists()).toBe(true)
         expect(pillButton(wrapper, 'static').attributes('aria-pressed')).toBe('true')
         expect(pillButton(wrapper, 'expression').attributes('aria-pressed')).toBe('false')
 
-        // 提交退出（串未变化零历史）：pill 与 textarea 同生共死
+        // 提交退出（串未变化零历史）：工具条与 textarea 同生共死
         await wrapper.find('textarea').trigger('keydown', { key: 'Escape' })
         await nextTick()
         expect(editor.store.ui.editing).toBeNull()
-        expect(pill(wrapper).exists()).toBe(false)
+        expect(toolbar(wrapper).exists()).toBe(false)
         expect(wrapper.find('textarea').exists()).toBe(false)
     })
 
@@ -190,7 +226,7 @@ describe('pill 随编辑会话开合与激活态', () => {
     })
 })
 
-describe('pill 切换：仅翻会话标志（零文档变更零历史步）', () => {
+describe('内容类型段切换：仅翻会话标志（零文档变更零历史步）', () => {
     it('字面会话点表达式：会话标志翻转、层文档零变更、零历史步、textarea 实况保持', async () => {
         const editor = makeEditor([textLayer()])
         const wrapper = mountOverlay(editor)
@@ -246,51 +282,132 @@ describe('pill 切换：仅翻会话标志（零文档变更零历史步）', ()
     })
 })
 
-describe('pill 定位：图层框上边框居中（与 textarea 同一换算系）', () => {
-    it('zoom 1：translate 取盒上边中点屏幕坐标，scale 补缩放、自身 -50%/-100% 对中', async () => {
-        const editor = makeEditor([textLayer({ position: { anchor: 'top-left', x: 40, y: 30 } })])
+describe('屏幕恒定定位：上缘中点锚随图层框与相机，尺寸不随 zoom（ADR 0019 两套换算系分叉）', () => {
+    /**
+     * 断言口径（stub 工具条 240×28、画布视口 800×600、间隙 4、cam 默认 (0,0)）：
+     * 左 = clamp(锚x − 120, 0, 560)；上 = 锚上y − 32（上缘放不下翻框下缘，见翻转
+     * describe）。无 transform：屏幕坐标定位，无 scale 变换 = 尺寸恒定的换算面。
+     */
+    const expectPlacedAt = (wrapper: OverlayWrapper, left: number, top: number) => {
+        const style = toolbar(wrapper).attributes('style') ?? ''
+        expect(style).toContain(`left: ${left}px`)
+        expect(style).toContain(`top: ${top}px`)
+        expect(style).not.toContain('transform')
+        expect(style).not.toContain('scale')
+    }
+
+    it('zoom 1：工具条水平居中悬挂图层框上缘中点上方（间隙 4px）', async () => {
+        const editor = makeEditor([textLayer({ position: { anchor: 'top-left', x: 200, y: 100 } })])
         const wrapper = mountOverlay(editor)
         await beginEditing(wrapper, ['layers', 0])
 
-        // 盒 (40,30,100,50)：上边中点 (90,30)；cam (0,0) zoom 1
-        expect(pill(wrapper).attributes('style')).toContain(
-            'transform: translate(90px, 30px) scale(1) translate(-50%, -100%)',
-        )
+        // 盒 (200,100,100,50)：上缘中点 (250,100) → 左 250−120=130、上 100−4−28=68
+        expectPlacedAt(wrapper, 130, 68)
     })
 
-    it('zoom 2 / 0.5：相机/缩放跟随复用，锚点按 zoom 折算（缩放系内贴边不漂）', async () => {
-        const editor = makeEditor([textLayer({ position: { anchor: 'top-left', x: 40, y: 30 } })])
+    it.each([
+        [0.2, 600, 200, 10, 8],
+        [2, 200, 100, 380, 168],
+        [5, 60, 100, 430, 468],
+    ])('zoom %s：锚点按 zoom 折算、无 scale 变换（0.2×/5× 下尺寸恒定可读可点）', async (zoom, x, y, left, top) => {
+        const editor = makeEditor([textLayer({ position: { anchor: 'top-left', x, y } })])
         const wrapper = mountOverlay(editor)
         await beginEditing(wrapper, ['layers', 0])
 
-        editor.zoomAt(0, 0, 2)
+        editor.zoomAt(0, 0, zoom)
         await nextTick()
-        expect(pill(wrapper).attributes('style')).toContain(
-            'transform: translate(180px, 60px) scale(2) translate(-50%, -100%)',
-        )
 
-        editor.zoomAt(0, 0, 0.5)
+        expectPlacedAt(wrapper, left, top)
+    })
+
+    it('相机平移跟随：锚点随 cam 实时折算（元素不重建）', async () => {
+        const editor = makeEditor([textLayer({ position: { anchor: 'top-left', x: 200, y: 100 } })])
+        const wrapper = mountOverlay(editor)
+        await beginEditing(wrapper, ['layers', 0])
+        const el = toolbar(wrapper).element
+
+        editor.panBy(-10, -20) // cam += (10, 20)
         await nextTick()
-        expect(pill(wrapper).attributes('style')).toContain(
-            'transform: translate(45px, 15px) scale(0.5) translate(-50%, -100%)',
-        )
+
+        // 锚点 (250−10, 100−20) = (240, 80) → 左 120、上 48
+        expectPlacedAt(wrapper, 120, 48)
+        expect(toolbar(wrapper).element).toBe(el)
     })
 })
 
-describe('豁免集：textarea + pill 两目标（表面组件指针分流用）', () => {
-    it('ownsEventTarget 覆盖 textarea 与 pill 内目标，外部元素除外', async () => {
+describe('翻转与水平钳制：上缘放不下翻框下缘，水平钳画布视口', () => {
+    const styleOf = (wrapper: OverlayWrapper) => toolbar(wrapper).attributes('style') ?? ''
+
+    it('图层框贴画布上缘：工具条翻到框下缘（悬挂框下缘中点下方，间隙 4px）', async () => {
+        const editor = makeEditor([textLayer({ position: { anchor: 'top-left', x: 200, y: 20 } })])
+        const wrapper = mountOverlay(editor)
+        await beginEditing(wrapper, ['layers', 0])
+
+        // 锚上y 20：上缘空间 20 − 4 < 28 放不下 → 翻框下缘：上 = (20+50)+4 = 74
+        expect(styleOf(wrapper)).toContain('left: 130px')
+        expect(styleOf(wrapper)).toContain('top: 74px')
+    })
+
+    it('zoom 0.2 贴上缘小盒：翻转 + 左钳 0（复合边界）', async () => {
+        const editor = makeEditor([textLayer({ position: { anchor: 'top-left', x: 200, y: 20 } })])
+        const wrapper = mountOverlay(editor)
+        await beginEditing(wrapper, ['layers', 0])
+
+        editor.zoomAt(0, 0, 0.2)
+        await nextTick()
+
+        // 锚上y 4 放不下 → 翻：上 = 70×0.2+4 = 18；锚x 50 − 120 < 0 → 左钳 0
+        expect(styleOf(wrapper)).toContain('left: 0px')
+        expect(styleOf(wrapper)).toContain('top: 18px')
+    })
+
+    it('窄盒贴左缘：水平钳制在画布视口左边界', async () => {
+        const editor = makeEditor([textLayer({ position: { anchor: 'top-left', x: 0, y: 100 }, shape: { width: 40 } })])
+        const wrapper = mountOverlay(editor)
+        await beginEditing(wrapper, ['layers', 0])
+
+        // 锚x 20 − 120 < 0 → 左钳 0；上缘 100 放得下：上 = 68
+        expect(styleOf(wrapper)).toContain('left: 0px')
+        expect(styleOf(wrapper)).toContain('top: 68px')
+    })
+
+    it('窄盒贴右缘：水平钳制在画布视口右边界（视口宽 − 工具条宽）', async () => {
+        const editor = makeEditor([textLayer({ position: { anchor: 'top-left', x: 760, y: 100 }, shape: { width: 40 } })])
+        const wrapper = mountOverlay(editor)
+        await beginEditing(wrapper, ['layers', 0])
+
+        // 锚x 780 − 120 = 660 > 800 − 240 = 560 → 右钳 560
+        expect(styleOf(wrapper)).toContain('left: 560px')
+        expect(styleOf(wrapper)).toContain('top: 68px')
+    })
+
+    it('画布视口窄于工具条：钳 0 而不出负位', async () => {
+        const editor = makeEditor([textLayer({ position: { anchor: 'top-left', x: 200, y: 100 } })])
+        editor.setSurfaceSize(200, 600)
+        const wrapper = mountOverlay(editor)
+        await beginEditing(wrapper, ['layers', 0])
+
+        // 视口宽 200 < 条宽 240：右界 max(0, 200−240) = 0 → 左钳 0
+        expect(styleOf(wrapper)).toContain('left: 0px')
+        expect(styleOf(wrapper)).toContain('top: 68px')
+    })
+})
+
+describe('豁免集：textarea + 整条工具条（表面组件指针分流用）', () => {
+    it('ownsEventTarget 覆盖 textarea 与工具条内目标，外部元素除外', async () => {
         const editor = makeEditor([textLayer()])
         const wrapper = mountOverlay(editor)
         await beginEditing(wrapper, ['layers', 0])
 
         expect(wrapper.vm.ownsEventTarget(wrapper.find('textarea').element)).toBe(true)
+        expect(wrapper.vm.ownsEventTarget(toolbar(wrapper).element)).toBe(true)
         expect(wrapper.vm.ownsEventTarget(pillButton(wrapper, 'expression').element)).toBe(true)
         const outside = document.createElement('div')
         document.body.appendChild(outside)
         expect(wrapper.vm.ownsEventTarget(outside)).toBe(false)
     })
 
-    it('表面组件 pointerdown 命中 pill：不提交（commitNow）、不点选（selectAt）、会话保持', async () => {
+    it('表面组件 pointerdown 命中工具条：不提交（commitNow）、不点选（selectAt）、会话保持', async () => {
         // 编辑层上方再放一层：豁免失效时 pointerdown 会提交并顺路点选上方层
         const surfaceEditor = new EditorSession({ scheduleFrame: nullScheduler })
         surfaceEditor.openDocument({
@@ -301,6 +418,8 @@ describe('豁免集：textarea + pill 两目标（表面组件指针分流用）
                 textLayer({ position: { anchor: 'top-left', x: 40, y: 30 }, priority: 10 }),
             ],
         })
+        // 表面装配（CanvasSurface 自同步呈现环境，jsdom 下视口 0×0）：断言只吃
+        // 指针分流语义，不吃工具条落位
         const hostEl = document.createElement('div')
         document.body.appendChild(hostEl)
         const surface = mount(CanvasSurface, { props: { editor: surfaceEditor }, attachTo: hostEl })
@@ -310,15 +429,12 @@ describe('豁免集：textarea + pill 两目标（表面组件指针分流用）
         await nextTick()
         surfaceEditor.setSelection(['layers', 1])
 
-        // pill 锚在编辑层上边框中点 (90,30)——恰落在上方层的盒内（豁免失效即点选换层）
         const button = surface.find('[data-pill-static]')
         expect(button.exists()).toBe(true)
         const event = new MouseEvent('pointerdown', {
             bubbles: true,
             cancelable: true,
             button: 0,
-            clientX: 90,
-            clientY: 25,
         })
         button.element.dispatchEvent(event)
         await nextTick()
@@ -403,7 +519,7 @@ describe('Esc 合流：双态分流', () => {
 })
 
 describe('补全绑定：enabled 随会话模式翻转、候选源与面板同源', () => {
-    it('静态会话恒闭：输入 {{ 零补全零配对；pill 切表达式后实时开（配对 + 根候选集）', async () => {
+    it('静态会话恒闭：输入 {{ 零补全零配对；工具条切表达式后实时开（配对 + 根候选集）', async () => {
         const editor = makeEditor([textLayer()])
         editor.setDataSourceSchema(RAW_SCHEMA)
         const wrapper = mountOverlay(editor)
@@ -413,7 +529,7 @@ describe('补全绑定：enabled 随会话模式翻转、候选源与面板同�
         expect(popupOpen()).toBe(false)
         expect(wrapper.find('textarea').element.value).toBe('{{') // 零配对（静态 {{ 是字面）
 
-        // pill 切表达式：enabled 实时翻转，同一 textarea 内 {{ 即配对出 }} 并弹候选
+        // 工具条切表达式：enabled 实时翻转，同一 textarea 内 {{ 即配对出 }} 并弹候选
         await clickPill(wrapper, 'expression')
         await type(wrapper, '{{', 2)
         expect(wrapper.find('textarea').element.value).toBe('{{}}')
@@ -421,7 +537,7 @@ describe('补全绑定：enabled 随会话模式翻转、候选源与面板同�
         expect(optionSegments()).toEqual(['orderNo', 'order', '$root'])
     })
 
-    it('pill 切静态：开着的浮层即时关（enabled watcher 关浮层）', async () => {
+    it('工具条切静态：开着的浮层即时关（enabled watcher 关浮层）', async () => {
         const editor = makeEditor([textLayer({ text: '{{', expression: '{{' })])
         editor.setDataSourceSchema(RAW_SCHEMA)
         const wrapper = mountOverlay(editor)

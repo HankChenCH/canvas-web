@@ -27,11 +27,30 @@ if (typeof window.matchMedia !== 'function') {
     })) as unknown as typeof window.matchMedia
 }
 
+/**
+ * 工具条屏幕恒定尺寸桩（editOverlayToolbar.mount.test 同款）：诊断条改挂工具条
+ * 左端外侧后，其锚点断言需要确定尺寸——原型 getter 按根类名精确返回桩值（本文件
+ * 环境隔离不外泄，其余元素照旧 0）。
+ */
+const TOOLBAR_SIZE = { width: 240, height: 28 }
+for (const prop of ['offsetWidth', 'offsetHeight'] as const) {
+    Object.defineProperty(HTMLElement.prototype, prop, {
+        configurable: true,
+        get(this: HTMLElement) {
+            if (!this.classList.contains('cn-edit-toolbar')) return 0
+            return prop === 'offsetWidth' ? TOOLBAR_SIZE.width : TOOLBAR_SIZE.height
+        },
+    })
+}
+
 const nullScheduler: FrameScheduler = () => () => {}
 
 function makeEditor(layers: Canvas['layers']): EditorSession {
     const editor = new EditorSession({ scheduleFrame: nullScheduler })
     editor.openDocument({ width: 800, height: 600, layers })
+    // 画布视口尺寸（工具条翻转/钳制边界，诊断条锚随工具条）：真实装配里由
+    // CanvasSurface 呈现环境同步
+    editor.setSurfaceSize(800, 600)
     return editor
 }
 
@@ -517,12 +536,13 @@ describe('会话期 live 联动（ADR 0019）：面板样式/几何写 → 编�
     })
 })
 
-describe('表达式语法诊断提示条（expression-syntax-diagnostics 工单 02）', () => {
+describe('表达式语法诊断提示条（expression-syntax-diagnostics 工单 02；edit-overlay-toolbar 工单 03 改挂）', () => {
     /** 表达式标记层（text = expression 镜像）：初值即含语法错（格式串缺收尾引号） */
     const brokenExpr = "{{row.name}} {{date(row.d, 'YYYY)}}"
-    const exprDoc = (): Canvas['layers'] => [
+    const exprDoc = (x = 200, y = 100): Canvas['layers'] => [
         {
             ...base,
+            position: { anchor: 'top-left', x, y },
             type: 'TextLayer',
             text: brokenExpr,
             expression: brokenExpr,
@@ -541,22 +561,45 @@ describe('表达式语法诊断提示条（expression-syntax-diagnostics 工单 
         return wrapper.find('.cn-text-overlay__diagnostic')
     }
 
-    it('表达式态会话初值即含语法错：提示条在场（文案 + 锚定图层框左角上方）', async () => {
+    /** 诊断用例按路径进入编辑（exprDoc 盒位可变，双击中心点随位而变不做公共入口） */
+    async function enterEditingByPath(wrapper: ReturnType<typeof mountOverlay>) {
+        expect(wrapper.vm.beginTextEdit(['layers', 0])).toBe(true)
+        await wrapper.vm.$nextTick()
+    }
+
+    it('表达式态会话初值即含语法错：提示条在场（文案 + 挂工具条左端、背离图层盒一侧上方）', async () => {
         const editor = makeEditor(exprDoc())
         const wrapper = mountOverlay(editor)
-        await enterEditing(wrapper)
+        await enterEditingByPath(wrapper)
 
         const hint = await settle(wrapper)
         expect(hint.exists()).toBe(true)
         expect(hint.text()).toBe('表达式语法错误：字符串字面量未闭合')
-        // 与 pill 同换算系：盒左上 (40,30) 上方（translateY 负向偏移），scale 随 zoom
-        expect(hint.attributes('style')).toContain('translate(40px, 30px) scale(1)')
+        // 工具条（stub 240×28）：盒 (200,100,100,50) 上缘中点 (250,100) → 条位
+        // (130,68)；诊断条左端对齐工具条左端、底边对工具条上缘上方 4px
+        expect(hint.attributes('style')).toContain('left: 130px')
+        expect(hint.attributes('style')).toContain('top: 64px')
+        expect(hint.attributes('style')).toContain('transform: translateY(-100%)')
+    })
+
+    it('图层框贴画布上缘：工具条翻框下缘，诊断条翻转随动（挂条下缘外侧下方）', async () => {
+        const editor = makeEditor(exprDoc(200, 20))
+        const wrapper = mountOverlay(editor)
+        await enterEditingByPath(wrapper)
+
+        const hint = await settle(wrapper)
+        expect(hint.exists()).toBe(true)
+        // 锚上y 20 放不下 → 工具条翻下（top = 70+4 = 74）；诊断条随之挂条下缘下方
+        expect(hint.attributes('style')).toContain('left: 130px')
+        expect(hint.attributes('style')).toContain('top: 106px')
+        expect(hint.attributes('style')).not.toContain('translateY')
     })
 
     it('修好语法：提示条消失', async () => {
         const editor = makeEditor(exprDoc())
         const wrapper = mountOverlay(editor)
-        const textarea = await enterEditing(wrapper)
+        await enterEditingByPath(wrapper)
+        const textarea = wrapper.find('textarea')
 
         textarea.element.value = "{{row.name}} {{date(row.d, 'YYYY')}}"
         await textarea.trigger('input')
@@ -568,7 +611,7 @@ describe('表达式语法诊断提示条（expression-syntax-diagnostics 工单 
     it('静态会话不提示（无表达式标记）', async () => {
         const editor = makeEditor(doc())
         const wrapper = mountOverlay(editor)
-        await enterEditing(wrapper)
+        await enterEditingByPath(wrapper)
 
         const hint = await settle(wrapper)
 
@@ -679,7 +722,7 @@ describe('草稿接管（会话内容独占工单 02）：旁门内容写 → te
         await settle(wrapper)
         expect(el.value).toBe('奖状甲姓名')
 
-        // 真 pill 路径（ContentTypePill → setExpressionMode）翻标志：若丢 draftSeq
+        // 真工具条段路径（EditOverlayToolbar → setExpressionMode）翻标志：若丢 draftSeq
         // （1 → undefined），接管 watch 会误触发并全量替换草稿
         await wrapper.find('[data-pill-expression]').trigger('click')
         await settle(wrapper)

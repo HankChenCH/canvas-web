@@ -12,7 +12,12 @@
  *   不重建、光标不丢；对位用与内容层同一呈现视口（snapViewportToPhysicalPixels，
  *   相机/物理像素对齐）；纵向按 CSS 行盒模型折算内核的首行绘制锚点（锚点语义随
  *   verticalAlign = 字形盒顶/心/底，与渲染端基线消化同源），enter/exit 不跳变；
- *   pillStyle 同换算系把内容类型 pill 锚到图层框上边框居中（工单 03）；
+ * - 工具条换算（edit-overlay-toolbar 工单 03，ADR 0019）：编辑浮层工具条屏幕
+ *   恒定尺寸——屏幕坐标定位、无 scale 变换，锚点取图层框上缘中点的屏幕折算点
+ *   （与 textarea 的场景像素换算系分叉，浮层定位两套并存），任何 zoom 下可读可点；
+ *   上缘放不下整条翻框下缘、水平钳制画布视口（视口尺寸 = 内核 surfaceSize 权威
+ *   值 + 宿主 RO 跟随；工具条尺寸经 offsetWidth/Height 实测 + RO 跟随）；诊断条
+ *   等标签类浮示挂工具条左端外侧（背离图层盒一侧，翻转随动）；
  * - 提交漏斗：四条退出路径（Esc / Ctrl+Enter / blur / 点画布他处）全部收拢到
  *   commitNow → 内核 commitTextEdit（先清会话保证幂等，一次退出恰一步历史）；
  * - IME 守卫全分支：键盘分支由绑定层按 isComposing/keyCode 229 拦截；blur 与
@@ -21,17 +26,18 @@
  * - blur 走延迟提交：外部指针交互（属性面板/工具栏）引发的 blur 被豁免（excalidraw
  *   temporarilyDisableSubmit 同款语义——点面板调样式不误提交），焦点落回 textarea
  *   则取消（窗口捕获阶段 pointerdown 标记豁免、pointerup 恢复）；
- * - 豁免集（工单 03）：ownsEventTarget 收 textarea + 内容类型 pill 两目标——
- *   表面组件 pointerdown 对两者的指针不提交不点选不拖动；setExpressionMode
- *   仅翻会话标志（零文档变更零历史步）。
+ * - 豁免集（工单 03）：ownsEventTarget 收 textarea + 整条工具条两目标——表面
+ *   组件 pointerdown 对两者的指针不提交不点选不拖动；setExpressionMode 仅翻
+ *   会话标志（零文档变更零历史步）。
  */
-import { computed, onScopeDispose, shallowRef, type CSSProperties, type ComputedRef } from 'vue'
+import { computed, onMounted, onScopeDispose, shallowRef, watch, type CSSProperties, type ComputedRef } from 'vue'
 
 import {
     canvasFontCssFamily,
     snapViewportToPhysicalPixels,
     type EditorSession,
     type LayerPath,
+    type Size,
     type TextEditLayout,
     type TextEditingSession,
 } from '@hankchen/canvas-editor'
@@ -45,10 +51,11 @@ export interface TextEditingHosts {
     /** 画布表面宿主元素（区分「画布内点按」与「面板/工具栏等外部交互」） */
     getHost: () => HTMLElement | null
     /**
-     * 内容类型 pill 根元素（可选，工单 03）：与 textarea 同入豁免集——pill 点击
-     * 不得触发表面组件 pointerdown 的 commitNow/点选/拖动路径
+     * 编辑浮层工具条根元素（可选，工单 03）：与 textarea 同入豁免集——工具条
+     * 点击不得触发表面组件 pointerdown 的 commitNow/点选/拖动路径；也是屏幕
+     * 恒定尺寸的实测面（offsetWidth/Height + RO 跟随，翻转/钳制/居中都吃它）
      */
-    getPill?: () => HTMLElement | null
+    getToolbar?: () => HTMLElement | null
 }
 
 export interface TextEditingBinding {
@@ -66,18 +73,18 @@ export interface TextEditingBinding {
     /** textarea 内联样式（随相机/dpr 实时跟随；字号视觉恒定） */
     style: ComputedRef<CSSProperties | null>
     /**
-     * 内容类型 pill 内联样式（工单 03）：图层框上边框居中的锚点换算——与 textarea
-     * 同一换算系（场景定位 + CSS transform scale，相机/dpr 跟随复用），尾部
-     * translate(-50%, -100%) 把 pill 自身底边中点对到锚点；null = 非编辑态
+     * 编辑浮层工具条内联样式（edit-overlay-toolbar 工单 03，ADR 0019）：屏幕恒定
+     * 尺寸系——屏幕坐标 left/top 直接定位、无 scale 变换，锚点 = 图层框上缘中点
+     * 的屏幕折算点（与 textarea 的场景像素换算系分叉，浮层定位两套并存）；上缘
+     * 放不下整条翻框下缘、水平钳制画布视口；null = 非编辑态
      */
-    pillStyle: ComputedRef<CSSProperties | null>
+    toolbarStyle: ComputedRef<CSSProperties | null>
     /**
-     * 图层框上缘左角锚点内联样式（expression-syntax-diagnostics 工单 02）：与
-     * pill 同换算系，尾部 translateY(-100%)（调用方叠间隙）把自身底边对到框顶——
-     * 左角对齐与居中 pill 错位不重叠，供编辑期标签类浮示（语法诊断提示条）锚定；
-     * null = 非编辑态
+     * 工具条标签类浮示锚点内联样式（工单 03）：挂工具条左端外侧、背离图层盒一侧
+     * （工具条在上挂其上方，翻下随翻下方；表达式语法诊断条消费面），与工具条同
+     * 屏幕恒定系；null = 非编辑态
      */
-    boxTagStyle: ComputedRef<CSSProperties | null>
+    toolbarTagStyle: ComputedRef<CSSProperties | null>
     /**
      * 呈现缩放（snapViewportToPhysicalPixels 后的 zoom）：补全锚点测量的 scale
      * 消费面——画布 textarea 整体在 transform: scale(zoom) 系（工单 03 补全绑定）
@@ -101,7 +108,7 @@ export interface TextEditingBinding {
     setExpressionMode(expression: boolean): void
     /** blur 延迟提交：外部指针交互豁免、焦点落回取消（语义见模块头注释） */
     armBlurCommit(): void
-    /** 编辑态查询：目标是否属于编辑中的 textarea 或内容类型 pill（表面组件的指针分流用） */
+    /** 编辑态查询：目标是否属于编辑中的 textarea 或整条工具条（表面组件的指针分流用） */
     ownsEventTarget(target: EventTarget | null): boolean
 }
 
@@ -172,7 +179,7 @@ export function useTextEditing(editor: EditorSession, hosts: TextEditingHosts): 
     })
     const presented = computed(() => snapViewportToPhysicalPixels(viewport.value, dpr.value))
 
-    /** 场景点 → 呈现屏幕像素（screen = (scene − cam) × zoom，呈现视口口径）：style 与 pillStyle 共用 */
+    /** 场景点 → 呈现屏幕像素（screen = (scene − cam) × zoom，呈现视口口径）：style 换算共用 */
     function sceneToScreen(sceneX: number, sceneY: number): { left: number; top: number; zoom: number } {
         const { x: camX, y: camY, zoom } = presented.value
         return { left: (sceneX - camX) * zoom, top: (sceneY - camY) * zoom, zoom }
@@ -202,31 +209,99 @@ export function useTextEditing(editor: EditorSession, hosts: TextEditingHosts): 
     })
 
     /**
-     * pill 锚点换算（工单 03）：与 textarea 同一换算系——上边框中点折算屏幕像素后
-     * translate 定位，scale 补缩放（transform-origin 0 0），尾部 translate(-50%,
-     * -100%) 在缩放系内把 pill 自身底边中点对到锚点（百分比基于布局尺寸，随 scale
-     * 一起折算——zoom ≠ 1 贴边不漂）。pill 尺寸用场景像素，视觉随画布缩放与图层框
-     * 保持同刻度。
+     * 工具条悬挂间隙（工单 03）：锚点/框缘与工具条边缘之间的屏幕像素。诊断条
+     * 等标签浮示与工具条之间取同值。
      */
-    const pillStyle = computed<CSSProperties | null>(() => {
+    const TOOLBAR_GAP_PX = 4
+
+    // ---- 屏幕恒定尺寸的尺寸输入（ADR 0019 两套换算系分叉的量测面） ----
+
+    /** 画布视口尺寸（水平钳制的右界）：内核 surfaceSize 权威值 + 宿主 RO 跟随 */
+    const surfaceSize = shallowRef<Size>({ width: 0, height: 0 })
+    /** 工具条实测尺寸（翻转/钳制/水平居中的输入）：根元素 offsetWidth/Height 实测 */
+    const toolbarSize = shallowRef<Size>({ width: 0, height: 0 })
+
+    const refreshSurfaceSize = (): void => {
+        const size = editor.getSurfaceSize()
+        surfaceSize.value = { width: size.width, height: size.height }
+    }
+
+    const measureToolbar = (): void => {
+        const el = hosts.getToolbar?.() ?? null
+        toolbarSize.value = el !== null ? { width: el.offsetWidth, height: el.offsetHeight } : { width: 0, height: 0 }
+    }
+
+    // 会话开始时同步画布视口权威值（真实装配里 CanvasSurface 在其 onMounted 同步，
+    // 子组件 setup 时读太早）；渲染后量工具条尺寸并挂 RO——尺寸随内容变化（工单 04
+    // 续接样式段）与宿主 resize（编辑中改窗口）实时跟随。jsdom 无布局也无 RO 回调：
+    // 显式量测是测试桩（原型 getter）的消费面。
+    watch(editing, (path) => {
+        if (path === null) return
+        refreshSurfaceSize()
+    }, { flush: 'post' })
+    let toolbarObserver: ResizeObserver | null = null
+    watch(() => hosts.getToolbar?.() ?? null, (el) => {
+        toolbarObserver?.disconnect()
+        toolbarObserver = null
+        if (el === null) return
+        measureToolbar()
+        if (typeof ResizeObserver === 'function') {
+            toolbarObserver = new ResizeObserver(measureToolbar)
+            toolbarObserver.observe(el)
+        }
+    }, { flush: 'post' })
+    let hostObserver: ResizeObserver | null = null
+    onMounted(() => {
+        const host = hosts.getHost()
+        if (host === null || typeof ResizeObserver !== 'function') return
+        hostObserver = new ResizeObserver(() => {
+            // 宿主自身盒即画布视口（overlay 根 inset:0 同盒）：DOM 读自足于
+            // 内核值的同步时序（CanvasSurface 的 RO 与本 RO 回调次序不定）
+            surfaceSize.value = { width: host.clientWidth, height: host.clientHeight }
+        })
+        hostObserver.observe(host)
+    })
+    onScopeDispose(() => {
+        hostObserver?.disconnect()
+        toolbarObserver?.disconnect()
+    }, true)
+
+    /**
+     * 工具条框位（工单 03）：屏幕恒定系的全部几何——锚点 = 图层框上缘中点折算
+     * 屏幕像素（sceneToScreen 同门换算）；上缘放不下整条（锚点上方空间 < 间隙 +
+     * 条高）翻框下缘悬挂；水平以锚点居中后钳制画布视口（视口窄于工具条钳 0）。
+     * 缩放只折算锚点，条尺寸恒定（无 scale 变换）。
+     */
+    const toolbarFrame = computed<{ left: number; top: number; height: number; flipped: boolean } | null>(() => {
         const l = layout.value
         if (!l) return null
-        const { left, top, zoom } = sceneToScreen(l.box.x + l.box.width / 2, l.box.y)
-        return {
-            transform: `translate(${left}px, ${top}px) scale(${zoom}) translate(-50%, -100%)`,
-            transformOrigin: '0 0',
-        }
+        const { width, height } = toolbarSize.value
+        const anchorTop = sceneToScreen(l.box.x + l.box.width / 2, l.box.y)
+        const anchorBottom = sceneToScreen(l.box.x + l.box.width / 2, l.box.y + l.box.height)
+        const flipped = anchorTop.top - TOOLBAR_GAP_PX - height < 0
+        const top = flipped ? anchorBottom.top + TOOLBAR_GAP_PX : anchorTop.top - TOOLBAR_GAP_PX - height
+        const left = Math.min(Math.max(anchorTop.left - width / 2, 0), Math.max(0, surfaceSize.value.width - width))
+        return { left, top, height, flipped }
     })
 
-    /** 框顶左角锚点（诊断提示条等标签类浮示）：pill 同换算系，底边对框顶（见接口注释） */
-    const boxTagStyle = computed<CSSProperties | null>(() => {
-        const l = layout.value
-        if (!l) return null
-        const { left, top, zoom } = sceneToScreen(l.box.x, l.box.y)
-        return {
-            transform: `translate(${left}px, ${top}px) scale(${zoom}) translateY(calc(-100% - 4px))`,
-            transformOrigin: '0 0',
-        }
+    /** 工具条定位样式：屏幕坐标直接定位、零变换（尺寸恒定的换算面，见接口注释） */
+    const toolbarStyle = computed<CSSProperties | null>(() => {
+        const frame = toolbarFrame.value
+        if (!frame) return null
+        return { left: `${frame.left}px`, top: `${frame.top}px` }
+    })
+
+    /**
+     * 标签类浮示（语法诊断条等）锚定样式：挂工具条左端、背离图层盒一侧——工具条
+     * 在上挂其上方（translateY(-100%) 把自身底边对到工具条上缘上方），翻下随翻
+     * 下方；水平与工具条左端对齐（工具条已钳制，条随之在场内）。
+     */
+    const toolbarTagStyle = computed<CSSProperties | null>(() => {
+        const frame = toolbarFrame.value
+        if (!frame) return null
+        return frame.flipped
+            ? { left: `${frame.left}px`, top: `${frame.top + frame.height + TOOLBAR_GAP_PX}px` }
+            : { left: `${frame.left}px`, top: `${frame.top - TOOLBAR_GAP_PX}px`, transform: 'translateY(-100%)' }
     })
 
     /**
@@ -338,10 +413,10 @@ export function useTextEditing(editor: EditorSession, hosts: TextEditingHosts): 
 
     const ownsEventTarget = (target: EventTarget | null): boolean => {
         if (!(target instanceof Node)) return false
-        // pill 与 textarea 同豁免（工单 03）：pill 点击不得触发表面组件的
-        // commitNow/点选/拖动路径
-        const pill = hosts.getPill?.() ?? null
-        if (pill !== null && pill.contains(target)) return true
+        // 工具条与 textarea 同豁免（工单 03 豁免集扩容）：工具条任意处点击不得
+        // 触发表面组件的 commitNow/点选/拖动路径
+        const toolbar = hosts.getToolbar?.() ?? null
+        if (toolbar !== null && toolbar.contains(target)) return true
         const el = hosts.getTextarea()
         return el !== null && el.contains(target)
     }
@@ -371,8 +446,8 @@ export function useTextEditing(editor: EditorSession, hosts: TextEditingHosts): 
         layout,
         draftSeq: computed(() => session.value?.draftSeq),
         style,
-        pillStyle,
-        boxTagStyle,
+        toolbarStyle,
+        toolbarTagStyle,
         scale: computed(() => presented.value.zoom),
         composing: computed(() => composingRef.value),
         setComposing,

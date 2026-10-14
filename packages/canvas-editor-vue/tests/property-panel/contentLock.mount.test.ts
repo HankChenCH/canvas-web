@@ -135,11 +135,11 @@ describe('会话内容独占：面板内容字段与模式段锁定（门面）'
         expect(hints.some((text) => text.includes('编辑框'))).toBe(true)
     })
 
-    it('真 pill 路径端到端：画布 pill 切换 → 锁定的面板段显示同步翻转（验收条 2 挂载 seam）', async () => {
+    it('真工具条段路径端到端：画布内容类型段切换 → 锁定的面板段显示同步翻转（验收条 2 挂载 seam）', async () => {
         const editor = makeEditor([textLayer({ priority: 10 })])
         editor.setSelection(['layers', 0])
-        // overlay（画布侧 pill）与 panel 同 editor 装配：走完整链路
-        // ContentTypePill → setExpressionMode → 会话标志 → 面板锁定段
+        // overlay（画布侧内容类型段）与 panel 同 editor 装配：走完整链路
+        // EditOverlayToolbar → setExpressionMode → 会话标志 → 面板锁定段
         const hostEl = document.createElement('div')
         document.body.appendChild(hostEl)
         const overlay = mount(TextEditingOverlay, { props: { editor }, attachTo: hostEl })

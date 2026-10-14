@@ -14,14 +14,15 @@
  *   setSelectionRange 会打断 IME）；
  * - 四条退出路径（Esc / Ctrl+Enter / blur / 点画布他处）经 useTextEditing 收拢
  *   到内核 commitTextEdit 漏斗；暴露给表面组件的 API 供指针桥分流。
- * - 内容类型 pill + 表达式补全接线（canvas-web-expression-editing 工单 03）：
- *   pill 随编辑会话开合（同 textarea 换算系，激活态随 ui.editing.expression，
- *   切换仅翻会话标志）；补全浮层绑编辑 textarea——enabled = 会话表达式模式
- *   （静态恒闭零配对，pill 切换实时翻转），候选源与面板同源
- *   （expressionCompletionSource ∘ expressionFieldContext：模板格内容 row.
- *   上下文自动正确），锚点测量传画布 zoom 折算；Esc 合流——浮层开着只关浮层
- *   （浮层自身路径），关着才提交；Ctrl/Cmd+Enter 提交优先于候选接受（模板监听
- *   先于 composable 挂载，次序天然成立，mount 测试钉住）。
+ * - 编辑浮层工具条 + 表达式补全接线（canvas-web-edit-overlay-toolbar 工单 03，
+ *   原 canvas-web-expression-editing 工单 03 的 pill 面原地演进为工具条首段）：
+ *   工具条随编辑会话开合（屏幕恒定尺寸，翻转/钳制换算在 useTextEditing.toolbarStyle，
+ *   激活态随 ui.editing.expression，切换仅翻会话标志）；补全浮层绑编辑
+ *   textarea——enabled = 会话表达式模式（静态恒闭零配对，工具条切换实时翻转），
+ *   候选源与面板同源（expressionCompletionSource ∘ expressionFieldContext：模板
+ *   格内容 row. 上下文自动正确），锚点测量传画布 zoom 折算；Esc 合流——浮层开着
+ *   只关浮层（浮层自身路径），关着才提交；Ctrl/Cmd+Enter 提交优先于候选接受
+ *   （模板监听先于 composable 挂载，次序天然成立，mount 测试钉住）。
  */
 import { computed, nextTick, ref, watch } from 'vue'
 
@@ -31,26 +32,26 @@ import ExpressionCompletionPopup from '../shared/ExpressionCompletionPopup.vue'
 import { expressionCompletionSource, expressionFieldContext } from '../shared/expressionContext'
 import { useExpressionCompletion } from '../shared/useExpressionCompletion'
 import { expressionDiagnosticHint, useExpressionDiagnostics } from '../shared/useExpressionDiagnostics'
-import ContentTypePill from './ContentTypePill.vue'
+import EditOverlayToolbar from './EditOverlayToolbar.vue'
 import { useTextEditing } from './useTextEditing'
 
 const props = defineProps<{ editor: EditorSession }>()
 
 const rootRef = ref<HTMLElement | null>(null)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
-const pillRef = ref<InstanceType<typeof ContentTypePill> | null>(null)
+const toolbarRef = ref<InstanceType<typeof EditOverlayToolbar> | null>(null)
 const popupRef = ref<InstanceType<typeof ExpressionCompletionPopup> | null>(null)
 
 const binding = useTextEditing(props.editor, {
     getTextarea: () => textareaRef.value,
     getHost: () => rootRef.value?.parentElement ?? null,
-    // pill 与 textarea 同入豁免集（工单 03）：表面组件 pointerdown 命中 pill
-    // 不提交不点选
-    getPill: () => pillRef.value?.rootEl ?? null,
+    // 工具条与 textarea 同入豁免集（工单 03 豁免集扩容）：表面组件 pointerdown
+    // 命中工具条任意处不提交不点选不拖动；根元素也是屏幕恒定尺寸的实测面
+    getToolbar: () => toolbarRef.value?.rootEl ?? null,
 })
 
 // 顶层解构：模板里自动解包
-const { editing, style, composing, pillStyle, boxTagStyle } = binding
+const { editing, style, composing, toolbarStyle, toolbarTagStyle } = binding
 const layout = binding.layout
 
 // pill 激活态与补全 enabled 的单一事实源：内核 textEditLayout.expressionMode
@@ -173,20 +174,22 @@ defineExpose({
             @compositionstart="binding.setComposing(true)"
             @compositionend="binding.setComposing(false)"
         ></textarea>
-        <!-- 内容类型 pill（工单 03）：随编辑会话开合（与 textarea 同生共死），挂在
-             图层框上边框居中（换算在 useTextEditing.pillStyle）；激活态随会话模式，
-             切换仅翻会话标志（零文档变更零历史步） -->
-        <ContentTypePill
-            v-if="editing && pillStyle"
-            ref="pillRef"
-            :style="pillStyle"
+        <!-- 编辑浮层工具条（工单 03，原 pill 面原地演进为首段）：随编辑会话开合
+             （与 textarea 同生共死），悬挂图层框上缘中点、屏幕恒定尺寸（换算在
+             useTextEditing.toolbarStyle）；激活态随会话模式，切换仅翻会话标志
+             （零文档变更零历史步） -->
+        <EditOverlayToolbar
+            v-if="editing && toolbarStyle"
+            ref="toolbarRef"
+            :style="toolbarStyle"
             :mode="expressionMode ? 'expression' : 'static'"
             @change="binding.setExpressionMode($event === 'expression')"
         />
-        <!-- 表达式语法诊断提示条（expression-syntax-diagnostics 工单 02）：表达式
-             会话期框顶左角浮示（与 pill 同换算系错位不重叠），被动展示不劫持指针；
-             提交语义不变（无效表达式仍按内核行为落库，标错只解释不阻断） -->
-        <span v-if="editing && diagnosticHint" class="cn-text-overlay__diagnostic" :style="boxTagStyle">{{
+        <!-- 表达式语法诊断提示条（expression-syntax-diagnostics 工单 02；锚点改挂
+             edit-overlay-toolbar 工单 03）：挂工具条左端外侧、背离图层盒一侧（翻转
+             随动），被动展示不劫持指针；提交语义不变（无效表达式仍按内核行为落库，
+             标错只解释不阻断） -->
+        <span v-if="editing && diagnosticHint" class="cn-text-overlay__diagnostic" :style="toolbarTagStyle">{{
             diagnosticHint
         }}</span>
         <!-- 表达式补全浮层（工单 03）：portal 到 body，表达式会话才可开 -->
@@ -222,14 +225,15 @@ defineExpose({
     padding: 0; /* 实际 padding 由 :style 按图层 shape/对齐注入 */
 }
 
-/* 诊断提示条（expression-syntax-diagnostics 工单 02）：框顶左角上方被动浮示。
+/* 诊断提示条（expression-syntax-diagnostics 工单 02；edit-overlay-toolbar 工单 03
+   改挂工具条左端外侧）：与工具条同屏幕恒定系（定位换算在 toolbarTagStyle）。
    色值取 --cn-danger/--cn-bg 同值——画布侧不在 .cn-props 令牌命名空间内，按值
    取（补全浮层是 portal 根自重建命名空间，此处不 portal 无命名空间可用）。 */
 .cn-text-overlay__diagnostic {
     position: absolute;
     top: 0;
     left: 0;
-    max-width: 240px; /* 场景像素随 zoom 缩放（与 pill 同刻度），超宽省略 */
+    max-width: 240px; /* 屏幕恒定尺寸（随工具条系），超宽省略 */
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
