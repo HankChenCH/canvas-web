@@ -7,7 +7,8 @@
  * （packages/canvas-editor/tests/shared/certFormDatasetSchema.ts，grilling
  * 会话评估样本的等价重写）：draft-07 方言全侧面——$schema/$id 忽略、$ref/
  * definitions（嵌套 orgInfo.contact、前向 chapter→section、菱形共享 imageUrl）、
- * 嵌套对象树、数组、additionalProperties: true 开放映射、format/enum 混杂宽松忽略。
+ * 嵌套对象树、数组、fields 具体键声明（动态键由宿主组装——开放映射契约已废除，
+ * ADR 0020）、format/enum 混杂宽松忽略。
  * 根级 13 键：certName/certNo/issueDate/org/student/training/chapters/coursewares/
  * originCertificates/fields/attachments/remark/printSettings；键树与演示 graph
  * （demoGraph.ts）的表达式对齐：标记图片 {{org.logo}}、标记二维码 {{certNo}}、
@@ -16,7 +17,8 @@
  *
  * 编译面（工单 08 一次性转译编译器）：注入即 deref 出内部形状树，全树零诊断；
  * 数组节点候选枚举收敛为叶子（D9——originCertificates 等徽标 array、无具名子
- * 候选），开放映射 fields 无键候选但浮层出占位提示（D10，联动工单 10）。
+ * 候选）；fields 具体键照常枚举（开放映射 additionalProperties: true 契约已
+ * 废除——ADR 0020，解析边界 open_map_unsupported 显式拒绝，动态键归宿主组装）。
  * 注入即整体替换（D2 宿主随会话注入）：声明只进编辑器会话态，不进 graph、不落
  * localStorage、不动 wire；根级键保留 row/$ 前缀（reserved_root_key 拒绝）。
  */
@@ -24,7 +26,7 @@ export const SAMPLE_DATASET_SCHEMA = {
     $schema: 'http://json-schema.org/draft-07/schema#',
     type: 'object',
     title: '证书 form-data 载荷',
-    description: '培训机构证书数据源（draft-07：$ref/definitions、嵌套对象、数组、开放映射）',
+    description: '培训机构证书数据源（draft-07：$ref/definitions、嵌套对象、数组、fields 具体键声明）',
     definitions: {
         imageUrl: { type: 'string', description: '图片资源 URL' },
         contact: {
@@ -113,7 +115,14 @@ export const SAMPLE_DATASET_SCHEMA = {
         chapters: { type: 'array', description: '章节树（两级：章节→小节）', items: { $ref: '#/definitions/chapter' } },
         coursewares: { type: 'array', description: '课件清单', items: { $ref: '#/definitions/courseware' } },
         originCertificates: { type: 'array', description: '原始证书数组', items: { $ref: '#/definitions/certificate' } },
-        fields: { type: 'object', description: '开放映射（动态字段，键由模板定义）', additionalProperties: true },
+        fields: {
+            type: 'object',
+            description: '自定义字段（动态键由宿主组装成具体 properties，开放映射契约已废除）',
+            properties: {
+                fieldName: { type: 'string', description: '字段名' },
+                fieldValue: { type: 'string', description: '字段值' },
+            },
+        },
         attachments: { type: 'array', description: '附件 URL 列表', items: { type: 'string' } },
         remark: { type: 'string', description: '备注' },
         printSettings: {

@@ -13,9 +13,9 @@
  *   工单 04 review）：pointerdown 先于 mousedown 且拦不住 mousedown 的 stop——
  *   宿主带「window pointerdown 点外收」的容器（下拉底座）会在点选候选时先收起
  *   撕掉浮层，click 接受永不到达；点选经 select 上抛由宿主 accept；
- * - 工单 10 两增量：open 信号（开放映射节点）渲染「动态字段，键由模板定义」
- *   占位提示行（不可接受、不进导航序）；候选说明展示回落 description ?? title
- *   （D8 两字段分离透传，二者皆缺省维持现状）；
+ * - 工单 10 增量：候选说明展示回落 description ?? title（D8 两字段分离透传，
+ *   二者皆缺省维持现状）。开放映射占位提示行（工单 10，D10）已随契约废除移除
+ *   （ADR 0020，resource-expression-single-ref 工单 04）；
  * - 视觉沿 panel-theme 令牌（cn-field/cn-accent 系），option 几何以 tailwind
  *   utility 留在模板，抬升底色/阴影与高亮态收口在 panel-theme.css。
  */
@@ -53,7 +53,7 @@ watch(
             @mousedown.prevent.stop
             @pointerdown.stop
         >
-            <!-- listbox 只含 option 子节点（严格 ARIA）；开放映射占位提示行在其外作脚注 -->
+            <!-- listbox 只含 option 子节点（严格 ARIA） -->
             <div role="listbox" aria-label="表达式路径候选">
                 <button
                     v-for="(item, index) in state.items"
@@ -81,18 +81,6 @@ watch(
                         {{ item.description ?? item.title }}
                     </span>
                 </button>
-            </div>
-            <!--
-                开放映射占位提示行（工单 10，D10）：open 节点（additionalProperties:
-                true）时解释「动态字段，键由模板定义」——不可接受、不进导航序，仅说明
-                无候选/候选有限的原因（行业惯例：无候选但不阻断）。非 option：点击不
-                emit select（accept 无从触发），listbox 语义不受牵连。
-            -->
-            <div
-                v-if="state.openMapping"
-                class="cn-completion__hint px-2 py-1.5 text-[10px] leading-none text-cn-muted"
-            >
-                动态字段，键由模板定义
             </div>
         </div>
     </Teleport>

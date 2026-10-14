@@ -19,8 +19,8 @@ import { cellLayer, rowLayer, rowTemplateLayer, tableLayer, textLayer } from '..
  *   与漂移同款：无补全态、不抛错、手输不受阻）。
  * - 候选给当前层全量合法子项、不按 partial 预过滤（前缀过滤归工单 02 浮层面）；
  *   单尾点 = 剥点列全量子段。
- * - open 节点（additionalProperties: true）→ open 信号随结果透出（信号面与候选
- *   空否无关，对齐 content-completion D10 面）。
+ * - open 节点信号面（additionalProperties: true，D10）已随契约废除移除（ADR
+ *   0020）——无 properties 的对象节点按标量判别（不出候选、下钻走不通）。
  * - 起点三分流（D3）：无 template 祖先 → 载荷根 schema；有祖先沿每个 template 段
  *   行相对递归 resolveRowSchema；任一层解析不出 → null 降级无候选。
  *
@@ -61,7 +61,7 @@ const RAW_SCHEMA = {
             },
         },
         chapters: { type: 'array', description: '章节列表', title: '章节', items: { type: 'string' } },
-        fields: { type: 'object', description: '动态字段', additionalProperties: true },
+        fields: { type: 'object', description: '自定义字段', properties: { meta: { type: 'object', description: '字段元信息', properties: { label: { type: 'string' } } } } },
         mixed: { title: '混合数组', items: { type: 'object', properties: { kind: { type: 'string' } } } },
     },
 }
@@ -154,11 +154,24 @@ describe('enumerateRowsPathCandidates：候选规则（工单 01）', () => {
         expect(enumerateRowsPathCandidates(SCHEMA, 'org..students')).toBeNull()
     })
 
-    it('open 节点：无 properties → open 信号 + 空候选（浮层占位提示面）', () => {
+    it('无键对象 = 标量判别（开放映射契约废除，ADR 0020）：不出候选、下钻走不通', () => {
+        const local = schemaOf({
+            type: 'object',
+            properties: {
+                loose: { type: 'object', description: '无键对象' },
+                keyed: { type: 'object', description: '具体键对象', properties: { name: { type: 'string' } } },
+            },
+        })
+        const head = enumerateRowsPathCandidates(local, '')
+        if (head === null) throw new Error('应枚举成功')
+        expect(head.candidates.map((candidate) => candidate.segment)).toEqual(['keyed']) // 无键对象按标量跳过
+        expect(enumerateRowsPathCandidates(local, 'loose.')).toBeNull()
+    })
+
+    it('fields 具体键下钻（动态键由宿主组装成具体 properties）：剥点列该层子段', () => {
         const result = enumerateRowsPathCandidates(SCHEMA, 'fields.')
-        if (result === null) throw new Error('open 层应枚举成功')
-        expect(result.open).toBe(true)
-        expect(result.candidates).toEqual([])
+        if (result === null) throw new Error('fields 层应枚举成功')
+        expect(result.candidates.map((candidate) => candidate.segment)).toEqual(['meta'])
         expect(result.partial).toBe('')
     })
 

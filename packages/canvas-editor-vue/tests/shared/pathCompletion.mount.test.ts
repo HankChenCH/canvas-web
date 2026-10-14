@@ -10,8 +10,7 @@
  *   触发（输入即弹 / `.` 刷新 / Ctrl+Space 强制含空输入全量 / 空输入不自动弹）、
  *   前缀过滤（大小写敏感）、接受（↑↓ 导航、Enter/Tab、点选；后缀替换 + 合成
  *   input/change；array 段接受不补 `.`；中途编辑只换光标所在段）、
- *   IME 守卫（229/isComposing 不接受）、关闭（Esc/失焦/点外/候选空/open 占位例外、
- *   占位态键位让路原生）、
+ *   IME 守卫（229/isComposing 不接受）、关闭（Esc/失焦/点外/候选空），
  *   「行数组」文案经 source 数据直透浮层、portal 与锚点重算。
  * 表达式补全（useExpressionCompletion）零改动的回归由既有
  * expressionCompletion.mount.test.ts 不改动全绿保证。
@@ -47,12 +46,6 @@ const pathSource: CompletionSource = (expr) => {
     if (expr === 'zz') return { partial: 'zz', candidates: [] }
     if (expr === 'form.') return { partial: '', candidates: FORM_ITEMS }
     if (expr === 'form.f' || expr === 'form.fi') return { partial: expr.slice(5), candidates: FORM_ITEMS }
-    return null
-}
-
-/** open 节点桩源（D10 同款）：候选空但携带 open 信号——占位提示行解释原因 */
-const openPathSource: CompletionSource = (expr) => {
-    if (expr === 'dyn') return { partial: 'dyn', candidates: [], open: true }
     return null
 }
 
@@ -121,7 +114,6 @@ const optionEls = (): HTMLElement[] => Array.from(document.body.querySelectorAll
 const optionSegments = (): string[] =>
     optionEls().map((option) => option.querySelector('.cn-completion__segment')?.textContent ?? '')
 const activeIndex = (): number => optionEls().findIndex((option) => option.getAttribute('aria-selected') === 'true')
-const hintEl = (): HTMLElement | null => document.body.querySelector('.cn-completion__hint')
 
 afterEach(() => {
     wrappers.splice(0).forEach((wrapper) => wrapper.unmount())
@@ -182,73 +174,6 @@ describe('触发与前缀过滤', () => {
         await type(harness, 'zz', 2)
         expect(popupEl()).toBeNull()
         await type(harness, 'form.zz', 7)
-        expect(popupEl()).toBeNull()
-    })
-})
-
-/* ------------------------------------------------ open 占位提示行（D10 同款） */
-
-describe('open 占位提示行（D10 同款）', () => {
-    it('open 信号 → 浮层开：占位提示行渲染、零候选按钮', async () => {
-        const harness = mountHost('input', openPathSource)
-        await type(harness, 'dyn', 3)
-        expect(popupEl()).not.toBeNull()
-        expect(optionEls()).toHaveLength(0)
-        expect(hintEl()?.textContent?.trim()).toBe('动态字段，键由模板定义')
-    })
-
-    it('提示行不进导航序：↑↓ 无导航目标；Enter/Tab/点选零提交、浮层保持', async () => {
-        const harness = mountHost('input', openPathSource)
-        await type(harness, 'dyn', 3)
-        harness.events.length = 0
-        await pressKey(harness, 'ArrowDown')
-        await pressKey(harness, 'ArrowUp')
-        expect(activeIndex()).toBe(-1)
-        await pressKey(harness, 'Enter')
-        await pressKey(harness, 'Tab')
-        expect(harness.field().value).toBe('dyn')
-        expect(harness.events).toHaveLength(0)
-        expect(popupEl()).not.toBeNull()
-        hintEl()!.click()
-        await nextTick()
-        expect(harness.field().value).toBe('dyn')
-        expect(harness.events).toHaveLength(0)
-    })
-
-    it('占位态键位让路原生（不进导航序的键位面）：Enter/Tab/方向键不劫持，Esc 照收', async () => {
-        const harness = mountHost('input', openPathSource)
-        await type(harness, 'dyn', 3)
-        const field = harness.field()
-        const rawKey = (key: string, init: KeyboardEventInit = {}): boolean => {
-            const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init })
-            field.dispatchEvent(event)
-            return event.defaultPrevented
-        }
-        expect(rawKey('Enter')).toBe(false) // 宿主表单原生 Enter 提交不吞
-        expect(rawKey('Tab')).toBe(false) // 原生移焦不吞
-        expect(rawKey('ArrowDown')).toBe(false) // 原生移光标不吞
-        expect(rawKey('Escape')).toBe(true) // Esc 收口保留
-        await nextTick()
-        expect(popupEl()).toBeNull()
-    })
-
-    it('open 态关闭路径不回归：Esc / 失焦 / 点外照常收口', async () => {
-        const harness = mountHost('input', openPathSource)
-        await type(harness, 'dyn', 3)
-        expect(popupEl()).not.toBeNull()
-        await pressKey(harness, 'Escape')
-        expect(popupEl()).toBeNull()
-
-        await type(harness, 'dyn', 3)
-        harness.field().dispatchEvent(new Event('blur'))
-        await nextTick()
-        expect(popupEl()).toBeNull()
-
-        await type(harness, 'dyn', 3)
-        const outside = document.createElement('div')
-        document.body.appendChild(outside)
-        outside.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
-        await nextTick()
         expect(popupEl()).toBeNull()
     })
 })

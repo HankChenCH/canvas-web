@@ -4,7 +4,7 @@
  * D6 钉定：注入边界一次性转译为内部形状树（不在查询期惰性解析原始 schema，
  * 行业惯例见 schema-completion-research.md）。方言子集 = JSON Schema draft-07 的
  * 结构关键词（`properties` / `items` / `type`）+ 注解关键词（`description` /
- * `title` / `additionalProperties: true` / 白名单 `format`，见下）+ 引用关键词
+ * `title` / 白名单 `format`，见下）+ 引用关键词
  * （`$ref` 内部 JSON Pointer、`definitions`/`$defs` 命名池）；其余关键词
  * （`required`/`enum`/`const`/`allOf` 族/`patternProperties`/`$schema`/`$id` 及
  * 一切未识别键）宽松忽略，节点按已识别字段归一（可能变叶子）。
@@ -19,10 +19,14 @@
  * 注解只影响建议面（date() 建议分桶），求值器/graph/wire 三端零感知。
  *
  * 降级分级（D7）：
- * - **整份拒绝**仅保留根级结构性问题（在原始文档上判定，拒绝面与 walker 时代
+ * - **整份拒绝**保留根级结构性问题（在原始文档上判定，拒绝面与 walker 时代
  *   全等）：根非对象 / 根缺 properties 层级（含根级 `$ref`——根不解引用）/
  *   `reserved_root_key`（根级键 `row` 或 `$` 前缀，前移填充期硬错误，对应
- *   `CanvasHydrator::assertReservedRootKeys`；仅根级保留，嵌套层同名键合法）。
+ *   `CanvasHydrator::assertReservedRootKeys`；仅根级保留，嵌套层同名键合法）+
+ *   开放映射契约废除（ADR 0020，resource-expression-single-ref 工单 04）：文档
+ *   任意层 `additionalProperties: true` 显式拒绝（`open_map_unsupported`，deref
+ *   前对原始文档扫描，$ref 目标与宽松忽略关键词容器内同不留活口）——错误信息
+ *   教学宿主：动态键由宿主组装成具体 properties 后注入。
  * - **局部故障**（`$ref` 断链 / 外部指针 / 环引用（活跃路径 seen-set 判定）/
  *   目标形态不符）→ 该节点降级为叶子（保留本地 type/description/title 注解）+
  *   diagnostics 逐条记录，树其余部分照常服务；注入期由
@@ -46,9 +50,9 @@
  * （type 声明为 array 或声明了 items）收敛为叶子、不沿 items 链穿透：具名段下钻
  * 数组在求值器（InterpolationEvaluator::navigateValue）是静默空串（缺字段信号），
  * 补全不得怂恿写渲染为空白的表达式；类型徽标仍显示 array 本身，不特供「供表格
- * rowsPath 使用」文案（为表达式内置函数留前瞻口，spec D9）。open 节点
- * （additionalProperties: true）即随枚举结果携带 open 信号（D10，供工单 10 浮层
- * 占位提示；信号面与候选空否无关）。
+ * rowsPath 使用」文案（为表达式内置函数留前瞻口，spec D9）。开放映射信号面
+ * （D10）已随契约废除整体移除（ADR 0020，resource-expression-single-ref 工单
+ * 04）——schema 解析边界显式拒绝后，树内不存在动态键节点。
  *
  * 全模块零 DOM、零内部依赖（editor-shared-isolation）；除
  * normalizeExpressionSchemaSource 的 console 警告收口（注入期汇总一次）外均为纯函数。
@@ -61,8 +65,6 @@ export interface ExpressionSchemaNode {
     /** 展示回落注解（D8）：浮层取 description ?? title */
     title?: string
     description?: string
-    /** 开放映射标记（D10）：`additionalProperties: true`；动态字段实际键由宿主合入 properties */
-    open?: boolean
     /**
      * 日期标记注解（工单 11，D13）：`format: "date" | "date-time"` 白名单两值、
      * 仅 type 归一为 string 的节点挂；只影响 date() 建议分桶，永不触发诊断
@@ -78,8 +80,12 @@ export interface ExpressionSchemaChildEntry {
     node: ExpressionSchemaNode
 }
 
-/** 声明期拒绝原因：reserved_root_key = 前移的填充期硬错误；invalid_schema = 形态非法 */
-export type ExpressionSchemaRejectReason = 'reserved_root_key' | 'invalid_schema'
+/**
+ * 声明期拒绝原因：reserved_root_key = 前移的填充期硬错误；invalid_schema = 形态
+ * 非法；open_map_unsupported = 开放映射契约废除（ADR 0020：additionalProperties:
+ * true 显式拒绝，动态键归宿主组装成具体 properties 后注入）
+ */
+export type ExpressionSchemaRejectReason = 'reserved_root_key' | 'invalid_schema' | 'open_map_unsupported'
 
 /** 局部故障诊断码（D7 四类，全部 $ref 解析面；节点降叶子 + 树其余照常服务） */
 export type ExpressionSchemaDiagnosticCode = 'broken_ref' | 'external_ref' | 'circular_ref' | 'target_shape_mismatch'
@@ -252,11 +258,9 @@ function compileRefNode(raw: Record<string, unknown>, rawRef: unknown, declPath:
     return base
 }
 
-/** 无 $ref 节点：注解 + open 标记 + 结构关键词（形态不符的键宽松忽略） */
+/** 无 $ref 节点：注解 + 结构关键词（形态不符的键宽松忽略） */
 function compileInlineNode(raw: Record<string, unknown>, declPath: string, ctx: CompileContext): ExpressionSchemaNode {
     const node: ExpressionSchemaNode = annotationsOf(raw)
-
-    if (raw['additionalProperties'] === true) node.open = true
 
     const rawProperties = raw['properties']
     if (isPlainObject(rawProperties)) {
@@ -274,9 +278,37 @@ function compileInlineNode(raw: Record<string, unknown>, declPath: string, ctx: 
     return node
 }
 
+/** 开放映射拒绝的教学信息（ADR 0020：宿主组装是动态键的唯一正道） */
+const OPEN_MAP_DETAIL_SUFFIX = '——开放映射契约已废除，动态键请由宿主组装成具体 properties 后注入'
+
+/**
+ * 开放映射扫描（ADR 0020，resource-expression-single-ref 工单 04）：原始文档任意
+ * 层（对象、数组容器一律下钻——$ref 目标与宽松忽略关键词内不留活口）的
+ * `additionalProperties: true` 即违例，返回首个违例节点的声明路径（JSON Pointer
+ * 风格，供 detail 定位）；无违例返回 null。deref 前在原始文档上扫描，编译器与
+ * 枚举层因此永不遭遇动态键节点（open 信号面已整体移除）。
+ */
+function findOpenMapping(raw: unknown, path: string): string | null {
+    if (Array.isArray(raw)) {
+        for (let i = 0; i < raw.length; i += 1) {
+            const hit = findOpenMapping(raw[i], `${path}/${i}`)
+            if (hit !== null) return hit
+        }
+        return null
+    }
+    if (!isPlainObject(raw)) return null
+    if (raw['additionalProperties'] === true) return path
+    for (const [key, value] of Object.entries(raw)) {
+        const hit = findOpenMapping(value, `${path}/${pointerEscape(key)}`)
+        if (hit !== null) return hit
+    }
+    return null
+}
+
 /**
  * 声明期编译（D6 注入边界一次性转译）：合法 → 节点树 + diagnostics（局部故障
- * 逐条，可为空）；根级保留键 → reserved_root_key；根级结构非法 → invalid_schema。
+ * 逐条，可为空）；根级保留键 → reserved_root_key；根级结构非法 → invalid_schema；
+ * 开放映射（文档任意层 additionalProperties: true）→ open_map_unsupported。
  * 根级判定在原始文档上进行（根级 `$ref` 不解引用，拒绝面与 walker 时代全等）。
  */
 export function parseExpressionSchema(raw: unknown): ExpressionSchemaParse {
@@ -295,6 +327,13 @@ export function parseExpressionSchema(raw: unknown): ExpressionSchemaParse {
     }
     if (!isPlainObject(rawProperties)) {
         return { ok: false, reason: 'invalid_schema', detail: '根声明缺 properties 层级（schema 即载荷形状，必须声明顶层键）' }
+    }
+
+    // 开放映射契约废除（ADR 0020）：编译前整份拒绝——局部降级会把动态键静默
+    // 收敛成无键叶子，宿主无从得知要组装具体键，显式报错才是教学面
+    const openPath = findOpenMapping(raw, '#')
+    if (openPath !== null) {
+        return { ok: false, reason: 'open_map_unsupported', detail: `"${openPath}" 声明了 additionalProperties: true${OPEN_MAP_DETAIL_SUFFIX}` }
     }
 
     const diagnostics: ExpressionSchemaDiagnostic[] = []
@@ -355,14 +394,12 @@ export function schemaNodeAtPath(node: ExpressionSchemaNode, segments: readonly 
 }
 
 /**
- * 一层子候选枚举结果（D9 候选视图的返回面）：候选条目 + open 信号。信号走结果
- * 面扩展，不污染候选条目契约（ExpressionSchemaChildEntry 不加字段）。
+ * 一层子候选枚举结果（D9 候选视图的返回面）。开放映射信号（D10）已随契约废除
+ * 移除（ADR 0020）——schema 解析边界显式拒绝后，视图只承载候选条目。
  */
 export interface ExpressionSchemaChildView {
     /** 一层子候选（按声明序）；数组节点收敛为叶子 = 空（D9） */
     entries: readonly ExpressionSchemaChildEntry[]
-    /** 开放映射信号（D10）：节点标 open（additionalProperties: true）时为 true；非 open 恒缺省 */
-    open?: boolean
 }
 
 /**
@@ -371,7 +408,7 @@ export interface ExpressionSchemaChildView {
  * （navigateValue 缺字段信号），补全不得怂恿写渲染为空白的表达式（spec §2 D9，
  * 2026-09-30 修订 D3）；声明自相矛盾（type array 而又带 properties/items）时从疑
  * 同样收敛，对齐 D7 疑点降叶哲学。其余节点取**自身** properties（按声明序），
- * 不沿 items 链穿透。open 信号（D10）随视图透出，供浮层占位提示（工单 10）。
+ * 不沿 items 链穿透。
  * 下钻层（schemaNodeAtPath/resolveRowSchema）机制不动，rowsPath/`row.*`/`$index`
  * 零影响（数组的数组穿透不回归）。
  */
@@ -379,7 +416,7 @@ export function schemaChildEntries(node: ExpressionSchemaNode): ExpressionSchema
     if (node.type === 'array' || node.items !== undefined) return { entries: [] }
     const entries =
         node.properties !== undefined ? [...node.properties].map(([key, child]) => ({ key, node: child })) : []
-    return node.open === true ? { entries, open: true } : { entries }
+    return { entries }
 }
 
 /**

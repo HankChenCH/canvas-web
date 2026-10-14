@@ -13,8 +13,8 @@
  * - `.` 下钻走 properties 树；无 properties 节点终止该分支；数组节点收敛为叶子
  *   无具名子候选（D9 修订 D3：具名段下钻数组在求值器是静默空串——缺字段信号，
  *   不给写得出来而渲染为空白的表达式；下钻层 items 链保留供 rowsPath/`row.*`
- *   机制，类型徽标仍显示 array 本身）。开放映射（open）节点的枚举结果携带 open
- *   信号（结果面扩展，不污染候选条目契约），供工单 10 浮层占位提示（D10）。
+ *   机制，类型徽标仍显示 array 本身）。开放映射信号面（D10）已随契约废除移除
+ *   （ADR 0020）——schema 解析边界显式拒绝后，枚举只服务具体键声明。
  *
  * 消费契约（工单 04 浮层 + 工单 12 调用面扩展）：
  * - 入参 expr 是**光标前缀**（trim 后，来自 expressionScan + 光标切片——调用片段
@@ -118,12 +118,6 @@ export type ExpressionCandidateResult =
           /** 正在输入的未完整段（'' = 尾点/空表达式态）；恒为 expr 的后缀 */
           partial: string
           candidates: readonly ExpressionCandidate[]
-          /**
-           * 开放映射信号（D10）：候选来源节点（头部层 = 根 schema，下钻层 = 前缀
-           * 节点）标 open 时为 true，非 open 恒缺省——供浮层渲染「动态字段，键由
-           * 模板定义」占位提示（工单 10），不污染候选条目契约。
-           */
-          open?: boolean
       }
     | { ok: false; reason: ExpressionSyntaxError }
 
@@ -212,14 +206,14 @@ function dateFormatCandidates(): ExpressionCandidate[] {
     }))
 }
 
-/** 上下文头部候选：裸键（声明序）+ $root；行上下文追加 row/$index（结构头，踏脚石）；open 信号随根节点透出 */
+/** 上下文头部候选：裸键（声明序）+ $root；行上下文追加 row/$index（结构头，踏脚石） */
 function headCandidates(
     schema: ExpressionSchemaNode,
     context: ExpressionContextKind,
     rowSchema: ExpressionSchemaNode | null | undefined,
     exprLen: number,
     withBuckets: boolean,
-): { candidates: readonly ExpressionCandidate[]; open?: boolean } {
+): readonly ExpressionCandidate[] {
     const view = schemaChildEntries(schema)
     const candidates = view.entries.flatMap((entry) => childCandidates(entry, '', exprLen, withBuckets))
     candidates.push({ path: '$root', segment: '$root', kind: 'path' })
@@ -227,7 +221,7 @@ function headCandidates(
         candidates.push(rowSchema ? { path: 'row', segment: 'row', kind: 'path', ...candidateMeta(rowSchema) } : { path: 'row', segment: 'row', kind: 'path' })
         candidates.push({ path: '$index', segment: '$index', kind: 'path' })
     }
-    return view.open === true ? { candidates, open: true } : { candidates }
+    return candidates
 }
 
 /**
@@ -282,7 +276,7 @@ function enumeratePathCandidates(
                 ok: true,
                 prefix: '',
                 partial: '',
-                ...headCandidates(schema, query.context, query.rowSchema, expr.length, false),
+                candidates: headCandidates(schema, query.context, query.rowSchema, expr.length, false),
             }
         }
         return { ok: false, reason: 'expression_syntax_error' }
@@ -322,8 +316,7 @@ function enumeratePathCandidates(
             ok: true,
             prefix: '',
             partial,
-            candidates: [...view.candidates, ...fns],
-            ...(view.open === true ? { open: true } : {}),
+            candidates: [...view, ...fns],
         }
     }
 
@@ -360,7 +353,6 @@ function enumeratePathCandidates(
         prefix,
         partial,
         candidates: view.entries.flatMap((entry) => childCandidates(entry, prefix, expr.length, withBuckets)),
-        ...(view.open === true ? { open: true } : {}),
     }
 }
 

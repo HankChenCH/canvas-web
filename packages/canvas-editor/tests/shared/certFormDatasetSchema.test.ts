@@ -6,8 +6,10 @@ import { CERT_FORM_DATASET_SCHEMA } from './certFormDatasetSchema'
 /**
  * 证书 form-data schema 全链路（content-completion 工单 08/09，spec §5 真实 fixture）：
  * draft-07 全树 deref 零诊断，形状树覆盖全部嵌套分支（机构/学员/培训/章节树/课件/
- * 开放映射），$ref 菱形/嵌套/前向与内联等价，definitions 命名池不进候选树；
- * 工单 09：数组枚举收敛为叶子（D9）+ open 信号透出（D10）。
+ * fields 具体键），$ref 菱形/嵌套/前向与内联等价，definitions 命名池不进候选树；
+ * 工单 09：数组枚举收敛为叶子（D9）。开放映射信号面（D10）已随契约废除移除
+ * （ADR 0020，resource-expression-single-ref 工单 04）——动态键由宿主组装成具体
+ * properties 后注入。
  */
 
 const parsed = parseExpressionSchema(CERT_FORM_DATASET_SCHEMA)
@@ -90,13 +92,11 @@ describe('证书 form-data schema（真实 fixture，工单 08）', () => {
         expect(schemaChildEntries(origin as NonNullable<typeof origin>).entries).toEqual([])
     })
 
-    it('开放映射 fields：open 标记入形状树，枚举视图空候选 + open 信号（工单 09/10）', () => {
+    it('fields 具体键（宿主组装，开放映射契约已废除 ADR 0020）：枚举视图列具体键', () => {
         const fields = schemaNodeAtPath(schema, ['fields'])
-        expect(fields?.open).toBe(true)
-        expect(fields?.properties).toBeUndefined()
+        expect(fields?.properties?.has('fieldName')).toBe(true)
         const view = schemaChildEntries(fields as NonNullable<typeof fields>)
-        expect(view.entries).toEqual([])
-        expect(view.open).toBe(true)
+        expect(view.entries.map((entry) => entry.key)).toEqual(['fieldName', 'fieldValue'])
     })
 
     it('打印设置：enum/format 等校验关键词宽松忽略，type 照常归一', () => {

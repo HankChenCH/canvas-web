@@ -20,14 +20,16 @@ function parseOk(raw: unknown): Extract<ExpressionSchemaParse, { ok: true }> {
 /**
  * 数据源 schema 方言编译器（content-completion 工单 02/08，spec §2 D6–D8）：
  * 注入边界一次性转译为内部形状树——结构（properties/items/type）+ 注解
- * （description/title/open）入树；$ref 注入期 deref（内部 #/ 指针，~0/~1/%25
+ * （description/title/format）入树；$ref 注入期 deref（内部 #/ 指针，~0/~1/%25
  * 转义，definitions/$defs 命名池不进树）；未识别关键词宽松忽略。
- * 降级分级（D7）：整份拒绝仅根级结构性问题（根非对象/缺 properties 层级/
- * reserved_root_key）；局部故障（断链/外部指针/环引用/目标形态不符）该节点降
- * 叶子 + diagnostics 逐条记录，树其余部分照常服务。零依赖、不引 ajv、零 DOM。
+ * 降级分级（D7）：整份拒绝保留根级结构性问题（根非对象/缺 properties 层级/
+ * reserved_root_key）+ 开放映射契约废除（open_map_unsupported，ADR 0020——文档
+ * 任意层 additionalProperties: true 显式拒绝，动态键归宿主组装）；局部故障
+ * （断链/外部指针/环引用/目标形态不符）该节点降叶子 + diagnostics 逐条记录，
+ * 树其余部分照常服务。零依赖、不引 ajv、零 DOM。
  * D3 钉定（2026-09-30 由 D9 修订）：数组类型节点 items 键树下钻保留下钻层
  * （schemaNodeAtPath/resolveRowSchema）；枚举层候选视图（schemaChildEntries）
- * 已分叉——数组节点收敛为叶子 + open 信号随视图透出（工单 09）。
+ * 已分叉——数组节点收敛为叶子（D9）。
  */
 
 /** 端上常用声明样例（载荷形态，D1：schema 声明即 data 载荷形状） */
@@ -304,11 +306,10 @@ describe('schemaChildEntries（一层子候选枚举：D9 候选视图）', () =
         expect(tags.type).toBe('array')
     })
 
-    it('叶子（无 properties 无 items）= 无子候选；非 open 节点 open 信号恒缺省', () => {
+    it('叶子（无 properties 无 items）= 无子候选', () => {
         const remark = schemaNodeAtPath(schema, ['remark'])
         if (!remark) throw new Error('remark 节点应存在')
         expect(schemaChildEntries(remark).entries).toEqual([])
-        expect(schemaChildEntries(remark).open).toBeUndefined()
         expect(schemaChildEntries(schemaNodeAtPath(schema, ['orderNo']) as ExpressionSchemaNode).entries).toEqual([])
     })
 
@@ -347,22 +348,16 @@ describe('schemaChildEntries（一层子候选枚举：D9 候选视图）', () =
         expect(schemaNodeAtPath(parsed2.schema, ['mixed', 'name'])?.type).toBe('string') // 下钻层不动
     })
 
-    it('D10：open 节点候选为空且枚举视图携带 open 信号；已合入 properties 的键照常枚举', () => {
-        const parsed2 = parseExpressionSchema({
+    it('D10 面（工单 10）已随开放映射契约废除（ADR 0020）：候选视图不再携带 open 信号——拒绝面见 open_map_unsupported 组', () => {
+        const parsed = parseExpressionSchema({
             properties: {
-                openMap: { type: 'object', additionalProperties: true },
-                openWithKeys: { type: 'object', additionalProperties: true, properties: { known: { type: 'string' } } },
                 closedMap: { type: 'object', properties: { plain: { type: 'string' } } },
             },
         })
-        if (!parsed2.ok) throw new Error('应解析通过')
-        const openView = schemaChildEntries(schemaNodeAtPath(parsed2.schema, ['openMap']) as ExpressionSchemaNode)
-        expect(openView.entries).toEqual([])
-        expect(openView.open).toBe(true)
-        const withKeysView = schemaChildEntries(schemaNodeAtPath(parsed2.schema, ['openWithKeys']) as ExpressionSchemaNode)
-        expect(withKeysView.entries.map((entry) => entry.key)).toEqual(['known']) // D10：动态键由宿主合入 properties
-        expect(withKeysView.open).toBe(true)
-        expect(schemaChildEntries(schemaNodeAtPath(parsed2.schema, ['closedMap']) as ExpressionSchemaNode).open).toBeUndefined()
+        if (!parsed.ok) throw new Error('应解析通过')
+        const view = schemaChildEntries(schemaNodeAtPath(parsed.schema, ['closedMap']) as ExpressionSchemaNode)
+        expect(view.entries.map((entry) => entry.key)).toEqual(['plain'])
+        expect('open' in view).toBe(false)
     })
 })
 
@@ -596,7 +591,7 @@ describe('局部故障降级（工单 08，D7：该节点降叶子 + diagnostics
     })
 })
 
-describe('title / open 入形状树（工单 08，D8/D10）', () => {
+describe('title 入形状树（工单 08，D8）', () => {
     it('title 透传入树；展示取 description ?? title 归浮层（工单 10）', () => {
         const parsed = parseOk({
             properties: {
@@ -607,22 +602,77 @@ describe('title / open 入形状树（工单 08，D8/D10）', () => {
         expect(parsed.schema.properties?.get('named')).toMatchObject({ title: '订单编号', description: '扫描件上的编号' })
         expect(parsed.schema.properties?.get('titleOnly')).toMatchObject({ title: '仅标题' })
     })
+})
 
-    it('additionalProperties: true 标记 open；false / schema 形态不标', () => {
-        const parsed = parseOk({
+describe('open_map_unsupported 拒绝（ADR 0020：开放映射契约废除，动态键归宿主组装）', () => {
+    afterEach(() => {
+        vi.restoreAllMocks()
+    })
+
+    it('深层节点 additionalProperties: true → 整份拒绝，detail 指明位置并教学宿主组装具体键', () => {
+        const parsed = parseExpressionSchema({
             properties: {
-                openMap: { type: 'object', additionalProperties: true },
-                closedMap: { type: 'object', additionalProperties: false },
-                schemaMap: { type: 'object', additionalProperties: { type: 'string' } },
-                openWithKeys: { type: 'object', additionalProperties: true, properties: { known: { type: 'string' } } },
+                fields: { type: 'object', additionalProperties: true },
+                kept: { type: 'string', description: '健康键同拒（整份拒绝，不局部降级）' },
             },
         })
-        expect(parsed.schema.properties?.get('openMap')?.open).toBe(true)
-        expect(parsed.schema.properties?.get('closedMap')?.open).toBeUndefined()
-        expect(parsed.schema.properties?.get('schemaMap')?.open).toBeUndefined()
-        const openWithKeys = parsed.schema.properties?.get('openWithKeys')
-        expect(openWithKeys?.open).toBe(true) // 已声明键与开放映射并存（D10：动态键由宿主合入 properties）
-        expect(openWithKeys?.properties?.has('known')).toBe(true)
+        expect(parsed).toMatchObject({ ok: false, reason: 'open_map_unsupported' })
+        if (!parsed.ok) {
+            expect(parsed.detail).toContain('#/properties/fields')
+            expect(parsed.detail).toContain('动态键请由宿主组装成具体 properties 后注入')
+        }
+    })
+
+    it('根级 additionalProperties: true（与 properties 并存）同拒', () => {
+        const parsed = parseExpressionSchema({
+            type: 'object',
+            additionalProperties: true,
+            properties: { name: { type: 'string' } },
+        })
+        expect(parsed).toMatchObject({ ok: false, reason: 'open_map_unsupported' })
+        if (!parsed.ok) expect(parsed.detail).toContain('#')
+    })
+
+    it('$ref 目标（definitions 池）内的开放映射同拒（deref 前文档级扫描）', () => {
+        const parsed = parseExpressionSchema({
+            definitions: { openDef: { type: 'object', additionalProperties: true } },
+            properties: { viaRef: { $ref: '#/definitions/openDef' } },
+        })
+        expect(parsed).toMatchObject({ ok: false, reason: 'open_map_unsupported' })
+        if (!parsed.ok) expect(parsed.detail).toContain('#/definitions/openDef')
+    })
+
+    it('宽松忽略关键词容器（allOf 数组）内的违例声明同拒（文档级扫描不留活口）', () => {
+        const parsed = parseExpressionSchema({
+            properties: { name: { type: 'string' } },
+            allOf: [{ properties: { extra: { type: 'object', additionalProperties: true } } }],
+        })
+        expect(parsed).toMatchObject({ ok: false, reason: 'open_map_unsupported' })
+    })
+
+    it('additionalProperties: false / schema 形态非开放映射，照常编译（契约只废 true）', () => {
+        const parsed = parseOk({
+            properties: {
+                closedMap: { type: 'object', additionalProperties: false },
+                schemaMap: { type: 'object', additionalProperties: { type: 'string' } },
+            },
+        })
+        expect(parsed.diagnostics).toEqual([])
+        expect(parsed.schema.properties?.get('closedMap')?.type).toBe('object')
+        expect(parsed.schema.properties?.get('schemaMap')?.type).toBe('object')
+    })
+
+    it('normalizeExpressionSchemaSource → null + console.warn 恰一次（reason + 教学信息在场）', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        expect(
+            normalizeExpressionSchemaSource({
+                properties: { fields: { type: 'object', additionalProperties: true } },
+            }),
+        ).toBeNull()
+        expect(warn).toHaveBeenCalledTimes(1)
+        const message = String(warn.mock.calls[0]?.[0])
+        expect(message).toContain('open_map_unsupported')
+        expect(message).toContain('动态键请由宿主组装成具体 properties 后注入')
     })
 })
 

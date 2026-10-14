@@ -23,7 +23,6 @@ export function rowsPathCompletionSource(startSchema: ExpressionSchemaNode | nul
             candidates: result.candidates.map((candidate) =>
                 candidate.type === 'array' ? { ...candidate, type: '行数组' } : candidate,
             ),
-            ...(result.open === true ? { open: true } : {}),
         }
     }
 }

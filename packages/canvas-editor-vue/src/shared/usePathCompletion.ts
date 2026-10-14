@@ -15,11 +15,7 @@
  *   全量起点候选只随强制开）；光标移动（keyup/click）只跟踪——保持/重定位/关闭，
  *   不主动开。
  * - 关闭：Esc、失焦、点外（document mousedown，浮层根 @mousedown.stop 自拦）、
- *   候选空（唯一例外：候选源携带 open 信号——D10 同款，浮层渲染「动态字段，键由
- *   模板定义」占位提示行，不可接受不进导航序）。
- * - 占位态键位让路原生（code-review 采纳）：open 占位态无可导航/可接受项，
- *   Enter/Tab/方向键不劫持（不吞宿主表单提交/移焦/移光标），只留 Esc 收口——
- *   「不进导航序」的键位面收口。
+ *   候选空（开放映射 open 信号的例外已随契约废除移除——ADR 0020）。
  * - 接受：↑↓ 循环导航、Enter/Tab、鼠标点选；applyCompletion 后缀替换——伪片段
  *   把 [0, cursor) 内容区包成闭合片段形态（start 负 2 = `{{` 剥壳位、end 超 2 =
  *   `}}` 剥壳位，手术只读 kind/start/end），值与浮层态漂移由手术内检验拒绝；
@@ -87,7 +83,6 @@ export function usePathCompletion(options: {
         activeIndex: 0,
         top: 0,
         left: 0,
-        openMapping: false,
     })
 
     let el: HTMLTextAreaElement | HTMLInputElement | null = null
@@ -99,7 +94,6 @@ export function usePathCompletion(options: {
         popup.open = false
         popup.items = []
         popup.activeIndex = 0
-        popup.openMapping = false
         partial = ''
     }
 
@@ -149,8 +143,8 @@ export function usePathCompletion(options: {
             return
         }
         const shown = full ? result.candidates : result.candidates.filter((item) => item.segment.startsWith(result.partial))
-        // open 信号在场（D10 同款）候选空也开——占位提示行解释原因；非 open 空候选不开
-        if (shown.length === 0 && result.open !== true) {
+        // 候选空即关闭（open 信号例外已随契约废除移除，ADR 0020）
+        if (shown.length === 0) {
             close()
             return
         }
@@ -158,7 +152,6 @@ export function usePathCompletion(options: {
         if (!popup.open && !openAllowed) return
         popup.items = shown
         popup.activeIndex = 0
-        popup.openMapping = result.open === true
         popup.open = true
         reposition()
         // 首开浮层 v-if 下一拍才挂载，量不到宽——延一拍补跑收口（表达式控件同款）
@@ -214,16 +207,6 @@ export function usePathCompletion(options: {
             return
         }
         if (!popup.open) return
-        if (popup.items.length === 0) {
-            // open 占位态（D10）：无可导航/可接受项，键位让路原生——不吞宿主的
-            // Enter 提交 / Tab 移焦 / 方向键移光标，只留 Esc 收口（提交管线零改动
-            // 同语；候选态的键位劫持才是补全浮层的本分）
-            if (event.key === 'Escape') {
-                event.preventDefault()
-                close()
-            }
-            return
-        }
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
             event.preventDefault()
             const count = popup.items.length

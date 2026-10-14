@@ -4,10 +4,11 @@
  *
  * draft-07 方言全侧面：$schema/$id/definitions、嵌套引用（orgInfo.contact）、
  * 前向引用（chapter 先于 section 声明即引用）、菱形引用（imageUrl 被 logo/照片/
- * 课件/证书四处共享）、数组 items 引用、additionalProperties: true 开放映射、
- * 校验类关键词（format/enum）混杂。约束：全树 deref 零诊断——章节树按有界两级
- * 建模（章节→小节），不做自引用递归（自引用环按 D7 降级出诊断，见 expressionSchema
- * 测试的环引用组）。
+ * 课件/证书四处共享）、数组 items 引用、fields 具体键声明（开放映射契约已废除——
+ * ADR 0020：动态键由宿主组装成具体 properties 后注入，additionalProperties: true
+ * 在解析边界显式拒绝）、校验类关键词（format/enum）混杂。约束：全树 deref 零诊断
+ * ——章节树按有界两级建模（章节→小节），不做自引用递归（自引用环按 D7 降级出
+ * 诊断，见 expressionSchema 测试的环引用组）。
  */
 
 /** 图片资源 URL（菱形引用目标：被机构 Logo/学员照片/课件文件/证书扫描件共享） */
@@ -106,7 +107,14 @@ export const CERT_FORM_DATASET_SCHEMA = {
         chapters: { type: 'array', description: '章节树（两级：章节→小节）', items: { $ref: '#/definitions/chapter' } },
         coursewares: { type: 'array', description: '课件清单', items: { $ref: '#/definitions/courseware' } },
         originCertificates: { type: 'array', description: '原始证书数组', items: { $ref: '#/definitions/certificate' } },
-        fields: { type: 'object', description: '开放映射（动态字段，键由模板定义）', additionalProperties: true },
+        fields: {
+            type: 'object',
+            description: '自定义字段（动态键由宿主组装成具体 properties，开放映射契约已废除）',
+            properties: {
+                fieldName: { type: 'string', description: '字段名' },
+                fieldValue: { type: 'string', description: '字段值' },
+            },
+        },
         attachments: { type: 'array', description: '附件 URL 列表', items: { type: 'string' } },
         remark: { type: 'string', description: '备注' },
         printSettings: {

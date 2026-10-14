@@ -8,7 +8,7 @@
  * （表达式 + 镜像同改、一步历史、undo 恢复镜像）；静态态/未注入 schema 零补全。
  * 提交管线零改动（valueType 分段派生、updateDataExpression 分键复用）。
  */
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 import { mount, type VueWrapper } from '@vue/test-utils'
 
@@ -174,53 +174,19 @@ describe('上下文感知：候选集随选中位置切换', () => {
     })
 })
 
-describe('开放映射占位提示 + title 回落（工单 10，真实候选源全链路）', () => {
-    /** open 节点 schema（D10/D8）：根与 extra 子树标 open，certCode 仅 title、certName 双注解 */
-    const OPEN_SCHEMA = {
+describe('title 回落 + 开放映射拒绝（工单 10 / ADR 0020，真实候选源全链路）', () => {
+    /** 注解 schema（D8）：certCode 仅 title、certName 双注解 */
+    const ANNOTATED_SCHEMA = {
         type: 'object',
-        additionalProperties: true,
         properties: {
-            extra: { type: 'object', additionalProperties: true, title: '扩展字段' },
             certCode: { type: 'string', title: '证书编号' },
             certName: { type: 'string', description: '证书名称', title: '名称标题' },
         },
     }
 
-    it('头部层 open（根节点）：候选照常枚举 + 提示行并存（信号与候选空否无关）', async () => {
-        const editor = makeEditor([textLayer({ text: '{{', expression: '{{' })])
-        editor.setDataSourceSchema(OPEN_SCHEMA)
-        const wrapper = mountPanel(editor)
-        editor.setSelection(['layers', 0])
-        await nextTick()
-
-        await type(wrapper, '{{', 2)
-        expect(popupOpen()).toBe(true)
-        expect(optionSegments()).toEqual(['extra', 'certCode', 'certName', '$root'])
-        expect(document.body.querySelector('.cn-completion__hint')?.textContent?.trim()).toBe('动态字段，键由模板定义')
-    })
-
-    it('下钻层 open（extra.）：空候选只显示提示行；Esc 照常收口', async () => {
-        const editor = makeEditor([textLayer({ text: '{{', expression: '{{' })])
-        editor.setDataSourceSchema(OPEN_SCHEMA)
-        const wrapper = mountPanel(editor)
-        editor.setSelection(['layers', 0])
-        await nextTick()
-
-        await type(wrapper, '{{extra.', 8)
-        expect(popupOpen()).toBe(true)
-        expect(optionSegments()).toEqual([])
-        expect(document.body.querySelector('.cn-completion__hint')?.textContent?.trim()).toBe('动态字段，键由模板定义')
-
-        wrapper.find('textarea').element.dispatchEvent(
-            new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
-        )
-        await nextTick()
-        expect(popupOpen()).toBe(false)
-    })
-
     it('title 回落：仅 title 显示 title，description 优先于 title', async () => {
         const editor = makeEditor([textLayer({ text: '{{', expression: '{{' })])
-        editor.setDataSourceSchema(OPEN_SCHEMA)
+        editor.setDataSourceSchema(ANNOTATED_SCHEMA)
         const wrapper = mountPanel(editor)
         editor.setSelection(['layers', 0])
         await nextTick()
@@ -230,6 +196,27 @@ describe('开放映射占位提示 + title 回落（工单 10，真实候选源�
         expect(optionTexts()[0]).toContain('证书编号')
         expect(optionTexts()[1]).toContain('证书名称')
         expect(optionTexts()[1]).not.toContain('名称标题')
+    })
+
+    it('开放映射契约废除（ADR 0020）：additionalProperties: true 声明被拒 → 零补全不弹层，警告教学宿主', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        const editor = makeEditor([textLayer({ text: '{{', expression: '{{' })])
+        editor.setDataSourceSchema({
+            type: 'object',
+            additionalProperties: true,
+            properties: { name: { type: 'string' } },
+        })
+        const wrapper = mountPanel(editor)
+        editor.setSelection(['layers', 0])
+        await nextTick()
+
+        await type(wrapper, '{{n', 3)
+        expect(popupOpen()).toBe(false)
+        expect(warn).toHaveBeenCalledTimes(1) // 注入期内核 console.warn 单点收口
+        const message = String(warn.mock.calls[0]?.[0])
+        expect(message).toContain('open_map_unsupported')
+        expect(message).toContain('动态键请由宿主组装成具体 properties 后注入')
+        warn.mockRestore()
     })
 })
 
