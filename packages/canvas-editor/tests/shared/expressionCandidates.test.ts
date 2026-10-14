@@ -54,6 +54,19 @@ const parsedRow = parseExpressionSchema(rowSchemaRaw)
 if (!parsedRow.ok) throw new Error('样例 row schema 应合法')
 const rowSchema: ExpressionSchemaNode = parsedRow.schema
 
+/** 分桶样例（expression-type-methods 工单 12）：format 标记的日期串 + 数字 + 普通 string 三桶齐备 */
+const bucketRaw = {
+    type: 'object',
+    properties: {
+        issueDate: { type: 'string', format: 'date', description: '发证日期' },
+        amount: { type: 'number', description: '金额' },
+        name: { type: 'string', description: '姓名' },
+    },
+}
+const parsedBucket = parseExpressionSchema(bucketRaw)
+if (!parsedBucket.ok) throw new Error('分桶样例 schema 应合法')
+const bucketRow: ExpressionSchemaNode = parsedBucket.schema
+
 describe('enumerateExpressionCandidates（头部候选分表）', () => {
     it('根上下文：载荷顶层键（声明序）+ $root；不给 row/$index', () => {
         const result = enumerateExpressionCandidates(payloadSchema, { context: 'root', expr: '' })
@@ -142,8 +155,8 @@ describe('enumerateExpressionCandidates（点下钻刷新）', () => {
         expect(result.prefix).toBe('row')
         expect(result.partial).toBe('')
         expect(result.candidates).toEqual([
-            { path: 'row.label', segment: 'label', description: '标签名', type: 'string' },
-            { path: 'row.weight', segment: 'weight', description: '权重', type: 'number' },
+            { path: 'row.label', segment: 'label', description: '标签名', type: 'string', kind: 'path' },
+            { path: 'row.weight', segment: 'weight', description: '权重', type: 'number', kind: 'path' },
         ])
     })
 
@@ -164,7 +177,7 @@ describe('enumerateExpressionCandidates（点下钻刷新）', () => {
     it('裸键下钻走 properties 树：customer. → 子键', () => {
         const result = enumerateExpressionCandidates(payloadSchema, { context: 'root', expr: 'customer.' })
         if (!result.ok) throw new Error('应枚举成功')
-        expect(result.candidates).toEqual([{ path: 'customer.name', segment: 'name', description: '客户姓名', type: 'string' }])
+        expect(result.candidates).toEqual([{ path: 'customer.name', segment: 'name', description: '客户姓名', type: 'string', kind: 'path' }])
     })
 
     it('裸键在行上下文仍走根 schema（$rowNamespace + $root 合并语义）', () => {
@@ -327,8 +340,8 @@ describe('宿主示例信封 schema 的载荷形态用例（评估文档 §1.1�
         const drill = enumerateExpressionCandidates(parsed.schema, { context: 'root', expr: 'data.' })
         if (!drill.ok) throw new Error('应枚举成功')
         expect(drill.candidates).toEqual([
-            { path: 'data.orderNo', segment: 'orderNo', description: '订单号', type: 'string' },
-            { path: 'data.total', segment: 'total', description: '订单金额', type: 'number' },
+            { path: 'data.orderNo', segment: 'orderNo', description: '订单号', type: 'string', kind: 'path' },
+            { path: 'data.total', segment: 'total', description: '订单金额', type: 'number', kind: 'path' },
         ])
         // partial 非空（data.tot 收敛中）→ total 的数字族桶候选出现
         const narrowing = enumerateExpressionCandidates(parsed.schema, { context: 'root', expr: 'data.tot' })
@@ -356,19 +369,6 @@ describe('宿主示例信封 schema 的载荷形态用例（评估文档 §1.1�
 })
 
 describe('enumerateExpressionCandidates（内建函数建议面，expression-type-methods 工单 12，spec §1.2 ⑨）', () => {
-    /** 分桶样例：format 标记的日期串 + 数字 + 普通 string 三桶齐备 */
-    const bucketRowRaw = {
-        type: 'object',
-        properties: {
-            issueDate: { type: 'string', format: 'date', description: '发证日期' },
-            amount: { type: 'number', description: '金额' },
-            name: { type: 'string', description: '姓名' },
-        },
-    }
-    const parsedBucketRow = parseExpressionSchema(bucketRowRaw)
-    if (!parsedBucketRow.ok) throw new Error('分桶样例 schema 应合法')
-    const bucketRow: ExpressionSchemaNode = parsedBucketRow.schema
-
     it('函数名候选只喂补全建议：片段以名字形态开头（非空裸名）时给四函数', () => {
         const result = enumerateExpressionCandidates(payloadSchema, { context: 'root', expr: 'tag' })
         if (!result.ok) throw new Error('应枚举成功')
@@ -470,5 +470,60 @@ describe('enumerateExpressionCandidates（内建函数建议面，expression-typ
     it('行外 row. 出现在调用首参槽同样不给（row. 行外报错语义不因调用面松动）', () => {
         const result = enumerateExpressionCandidates(bucketRow, { context: 'root', expr: 'date(row.' })
         expect(result).toMatchObject({ ok: true, candidates: [] })
+    })
+})
+
+describe('候选 kind 判别（resource-expression-single-ref 工单 03）：显式分桶替代启发式', () => {
+    /**
+     * ADR 0020 资源面：路径选择器（工单 05）按 `kind === 'path'` 过滤函数桶——
+     * 不用 filterKey/含 ( 启发式（工单 12 内部约定不作契约）。path = 字段/结构头
+     * （$root/row/$index），function = 函数名建议 + 形状分桶调用插入；date 格式
+     * 快捷项两桶皆非（kind 缺省——建议面其余桶，资源面天然不出现）。
+     */
+    it('头部候选全量带 kind: path（字段 + $root/row/$index 结构头）', () => {
+        const result = enumerateExpressionCandidates(payloadSchema, { context: 'row', expr: '', rowSchema })
+        if (!result.ok) throw new Error('应枚举成功')
+        expect(result.candidates.every((candidate) => candidate.kind === 'path')).toBe(true)
+        expect(result.candidates.map((candidate) => candidate.segment)).toContain('$root')
+        expect(result.candidates.map((candidate) => candidate.segment)).toContain('row')
+        expect(result.candidates.map((candidate) => candidate.segment)).toContain('$index')
+    })
+
+    it('下钻路径候选带 kind: path；同键函数桶候选带 kind: function（显式字段，不靠 filterKey/括号启发式）', () => {
+        const result = enumerateExpressionCandidates(bucketRow, { context: 'root', expr: 'amount' })
+        if (!result.ok) throw new Error('应枚举成功')
+        const path = result.candidates.find((candidate) => candidate.segment === 'amount')
+        expect(path).toMatchObject({ path: 'amount', kind: 'path' })
+        const fns = result.candidates.filter((candidate) => candidate.segment === 'number(amount)')
+        expect(fns).toHaveLength(1)
+        expect(fns[0]).toMatchObject({ kind: 'function', filterKey: 'amount' })
+    })
+
+    it('函数名建议候选带 kind: function；date 格式快捷项两桶皆非（kind 缺省）', () => {
+        const narrowing = enumerateExpressionCandidates(bucketRow, { context: 'root', expr: 'issueDate' })
+        if (!narrowing.ok) throw new Error('应枚举成功')
+        expect(narrowing.candidates.find((candidate) => candidate.segment === 'issueDate')).toMatchObject({ kind: 'path' })
+        expect(narrowing.candidates.find((candidate) => candidate.segment === "date(issueDate, '')")).toMatchObject({ kind: 'function' })
+
+        const fnNames = enumerateExpressionCandidates(payloadSchema, { context: 'root', expr: 'tag' })
+        if (!fnNames.ok) throw new Error('应枚举成功')
+        expect(fnNames.candidates.filter((candidate) => candidate.kind === 'function').map((fn) => fn.segment)).toEqual([
+            'date()',
+            'number()',
+            'fixed()',
+            'percent()',
+        ])
+
+        const formatSlot = enumerateExpressionCandidates(bucketRow, { context: 'root', expr: "date(issueDate, 'Y" })
+        if (!formatSlot.ok) throw new Error('应枚举成功')
+        expect(formatSlot.candidates.map((candidate) => candidate.kind)).toEqual([undefined, undefined, undefined])
+    })
+
+    it('选择器消费形态：kind === path 过滤后零函数桶（路径候选全量保留，过滤归浮层面）', () => {
+        const narrowing = enumerateExpressionCandidates(bucketRow, { context: 'root', expr: 'iss' })
+        if (!narrowing.ok) throw new Error('应枚举成功')
+        const paths = narrowing.candidates.filter((candidate) => candidate.kind === 'path')
+        expect(paths.map((candidate) => candidate.segment)).toEqual(['issueDate', 'amount', 'name', '$root'])
+        expect(paths.some((candidate) => candidate.type === '函数')).toBe(false)
     })
 })

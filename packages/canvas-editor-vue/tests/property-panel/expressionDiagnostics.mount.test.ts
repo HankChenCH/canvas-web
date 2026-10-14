@@ -11,7 +11,7 @@ import { mount, type VueWrapper } from '@vue/test-utils'
 
 import { EditorSession, type FrameScheduler } from '@hankchen/canvas-editor'
 
-import { textLayer } from '../../../canvas-editor/tests/support/fixtures'
+import { textLayer, qrLayer } from '../../../canvas-editor/tests/support/fixtures'
 import PropertyPanel from '../../src/property-panel/PropertyPanel.vue'
 
 const nullScheduler: FrameScheduler = () => () => {}
@@ -126,5 +126,82 @@ describe('表达式态数据字段：语法错误实时标错', () => {
 
         expect(errorHint(wrapper).exists()).toBe(false)
         expect(invalidField(wrapper).exists()).toBe(false)
+    })
+})
+
+describe('资源字段：资源单值门诊断（resource-expression-single-ref 工单 03，ADR 0020）', () => {
+    /** QR 内容字段走 text 控件；表达式态带 cn-field--expression 标识（色值/字体的
+     *  text input 不带，定位精确到内容字段） */
+    function qrField(wrapper: VueWrapper) {
+        return wrapper.find('input.cn-field--expression')
+    }
+
+    async function typeQr(wrapper: VueWrapper, value: string): Promise<void> {
+        const field = qrField(wrapper)
+        ;(field.element as HTMLInputElement).value = value
+        await field.trigger('input')
+        await nextTick()
+    }
+
+    async function mountQr(): Promise<VueWrapper> {
+        const editor = makeEditor([qrLayer({ value: '{{', expression: '{{' })])
+        const wrapper = mountPanel(editor)
+        editor.setSelection(['layers', 0])
+        await nextTick()
+        return wrapper
+    }
+
+    it('片段外字面（尾缀）→ 单值门标错（资源教学文案，非片段扫描文案）', async () => {
+        const wrapper = await mountQr()
+        await typeQr(wrapper, '{{orderNo}}-qr')
+
+        expect(invalidField(wrapper).exists()).toBe(true)
+        expect(errorHint(wrapper).text()).toBe('表达式语法错误：资源内容必须是单个字段路径，不支持拼接文字')
+    })
+
+    it('函数调用 → 资源面禁函数（独立 kind 文案）', async () => {
+        const wrapper = await mountQr()
+        await typeQr(wrapper, '{{number(orderNo, 2)}}')
+
+        expect(errorHint(wrapper).text()).toBe('表达式语法错误：资源内容不支持函数调用')
+    })
+
+    it('多片段拼接（文本面合法形态）在资源面被拦——门是整串判定', async () => {
+        const wrapper = await mountQr()
+        await typeQr(wrapper, '{{orderNo}}{{orderNo}}')
+
+        expect(errorHint(wrapper).text()).toBe('表达式语法错误：资源内容必须是单个字段路径，不支持拼接文字')
+    })
+
+    it('合法单值裸路径零提示零红边', async () => {
+        const wrapper = await mountQr()
+        await typeQr(wrapper, '{{orderNo}}')
+
+        expect(errorHint(wrapper).exists()).toBe(false)
+        expect(invalidField(wrapper).exists()).toBe(false)
+    })
+
+    it('文本层多片段插值照旧零标错（文本字段走既有诊断不动）', async () => {
+        const editor = makeEditor([textLayer({ text: '{{', expression: '{{' })])
+        const wrapper = mountPanel(editor)
+        editor.setSelection(['layers', 0])
+        await nextTick()
+
+        await type(wrapper, '{{row.a}}{{row.b}}')
+
+        expect(errorHint(wrapper).exists()).toBe(false)
+        expect(invalidField(wrapper).exists()).toBe(false)
+    })
+
+    it('点击提示：聚焦控件并选中整串（门诊断 span = 整个模板串）', async () => {
+        const wrapper = await mountQr()
+        await typeQr(wrapper, '{{orderNo}}-qr')
+
+        const input = qrField(wrapper).element as HTMLInputElement
+        await errorHint(wrapper).trigger('click')
+
+        expect(document.activeElement).toBe(input)
+        // HTMLInputElement 的 selection 可空（textarea 型非空，lib.dom 5.9）；选中态已断言在先
+        expect(input.value.slice(input.selectionStart ?? 0, input.selectionEnd ?? 0)).toBe('{{orderNo}}-qr')
     })
 })

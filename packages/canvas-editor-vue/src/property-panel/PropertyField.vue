@@ -39,7 +39,7 @@
  */
 import { computed, ref, type ComponentPublicInstance } from 'vue'
 
-import { expressionDiagnostics, type ExpressionFragmentDiagnostic, type ResourceStatus } from '@hankchen/canvas-editor'
+import { expressionDiagnostics, resourcePathDiagnostics, type ExpressionFragmentDiagnostic, type ResourceStatus } from '@hankchen/canvas-editor'
 
 import { controlRegistry } from './controls'
 import type { FieldDef, FieldDisplay } from './fieldSchema'
@@ -131,12 +131,16 @@ const controlRef = ref<ComponentPublicInstance | null>(null)
  * 实时标错——面板 input 实时 commit（props.value 即最新文本），computed 直算
  * 零监听（画布侧非受控宿主才走 useExpressionDiagnostics 监听同步）；门与补全
  * 接线门同面（textarea/text/imageSrc 数据字段），静态态恒空（{{ 是字面）。
+ * 资源类字段（resource-expression-single-ref 工单 03，field.resource 标记：
+ * QR/imageSrc）走内核资源单值门 resourcePathDiagnostics（恰一闭合片段 + 裸点
+ * 路径，ADR 0020 求值端同源同语义）；文本字段走片段扫描诊断不动。
  */
-const expressionErrors = computed<readonly ExpressionFragmentDiagnostic[]>(() =>
-    wiresExpressionCompletion.value && isExpression.value && typeof props.value === 'string'
-        ? expressionDiagnostics(props.value)
-        : [],
-)
+const expressionErrors = computed<readonly ExpressionFragmentDiagnostic[]>(() => {
+    if (!(wiresExpressionCompletion.value && isExpression.value && typeof props.value === 'string')) return []
+    return props.field.resource === true
+        ? resourcePathDiagnostics(props.value)
+        : expressionDiagnostics(props.value)
+})
 const expressionErrorHint = computed(() => expressionDiagnosticHint(expressionErrors.value))
 
 /** 点击定位的可用面：textarea/text 控件根是可 selection 的输入元素；imageSrc

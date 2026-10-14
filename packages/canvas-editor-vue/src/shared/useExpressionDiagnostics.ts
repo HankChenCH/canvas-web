@@ -25,7 +25,8 @@ import {
     type ExpressionFragmentErrorKind,
 } from '@hankchen/canvas-editor'
 
-/** kind → 中文短语（对齐权威端消息措辞；缺左括号从「括号不平衡」单列便于提示） */
+/** kind → 中文短语（对齐权威端消息措辞；缺左括号从「括号不平衡」单列便于提示；
+ *  resource_* = 资源单值门子类（ADR 0020，措辞教学「单字段路径」引用形态） */
 const DIAGNOSTIC_MESSAGES: Record<ExpressionFragmentErrorKind, string> = {
     empty_fragment: '空的表达式片段',
     invalid_path: '非法路径',
@@ -37,6 +38,8 @@ const DIAGNOSTIC_MESSAGES: Record<ExpressionFragmentErrorKind, string> = {
     trailing_after_call: '调用后有多余内容',
     first_arg_not_path: '首参必须为路径',
     invalid_path_arg: '路径实参不合法',
+    resource_not_single_ref: '资源内容必须是单个字段路径，不支持拼接文字',
+    resource_function_call: '资源内容不支持函数调用',
 }
 
 /** 诊断汇总文案：多处取首条 kind 带计数；无诊断返回空串 */

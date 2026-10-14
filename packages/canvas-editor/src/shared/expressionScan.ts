@@ -47,8 +47,16 @@ export interface ExpressionScanFragment {
     diagnostic: ExpressionFragmentDiagnostic | null
 }
 
-/** 片段诊断 kind（结构面呈现轴，spec §1.2 ⑨ JS 本端；= 调用面子类 + 空片段） */
-export type ExpressionFragmentErrorKind = ExpressionCallErrorKind | 'empty_fragment'
+/**
+ * 片段诊断 kind（结构面呈现轴，spec §1.2 ⑨ JS 本端；= 调用面子类 + 空片段 +
+ * 资源门子类）。resource_* 两 kind 不由扫描面产出——资源单值门（resourcePath，
+ * ADR 0020）是整串判定，诊断沿本形态面出（kind 供 vue 措辞映射，复用空片段同款）。
+ */
+export type ExpressionFragmentErrorKind =
+    | ExpressionCallErrorKind
+    | 'empty_fragment'
+    | 'resource_not_single_ref' // 非「恰一闭合片段占满整串」（拼接/字面残留/未闭合/无片段）
+    | 'resource_function_call' // 片段内容为函数调用形态（资源面禁内建函数）
 
 /** 闭合片段的结构错诊断：位置由本端派生（不入跨端 fixture），措辞映射在 vue 层 */
 export interface ExpressionFragmentDiagnostic {

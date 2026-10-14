@@ -87,6 +87,15 @@ export interface ExpressionCandidate {
      * 一起被浮层按 partial 过滤（segment 是整段调用文本，直接过滤永不匹配）
      */
     filterKey?: string
+    /**
+     * 显式分桶判别（resource-expression-single-ref 工单 03，ADR 0020）：'path' =
+     * 字段/结构头路径候选，'function' = 函数名建议 + 形状分桶调用插入——资源面
+     * 选择器（工单 05）按 `kind === 'path'` 过滤函数桶，不用 filterKey/含 ( 启发
+     * 式（工单 12 内部约定不作契约）。缺省 = 两桶之外的建议面（date 格式快捷项
+     * ——资源面天然不出现）；rowsPath 候选面（RowsPathCandidate 同型别名）不产
+     * 此字段。
+     */
+    kind?: 'path' | 'function'
 }
 
 export interface ExpressionCandidateQuery {
@@ -134,7 +143,7 @@ function candidateMeta(node: ExpressionSchemaNode): Pick<ExpressionCandidate, 'd
 
 function childCandidate(entry: ExpressionSchemaChildEntry, prefix: string): ExpressionCandidate {
     const path = prefix === '' ? entry.key : `${prefix}.${entry.key}`
-    return { path, segment: entry.key, ...candidateMeta(entry.node) }
+    return { path, segment: entry.key, kind: 'path', ...candidateMeta(entry.node) }
 }
 
 /**
@@ -154,6 +163,7 @@ function callCandidatesFor(entry: ExpressionSchemaChildEntry, path: string, expr
             cursorBack: 2,
             replaceLen: exprLen,
             filterKey: entry.key,
+            kind: 'function',
             description: '日期格式化',
             type: '函数',
         })
@@ -164,6 +174,7 @@ function callCandidatesFor(entry: ExpressionSchemaChildEntry, path: string, expr
                 segment: `${fn.name}(${path})`,
                 replaceLen: exprLen,
                 filterKey: entry.key,
+                kind: 'function',
                 description: fn.summary,
                 type: '函数',
             })
@@ -185,6 +196,7 @@ function functionCandidates(): ExpressionCandidate[] {
         path: fn.signature,
         segment: `${fn.name}()`,
         cursorBack: 1,
+        kind: 'function',
         description: fn.summary,
         type: '函数',
     }))
@@ -210,10 +222,10 @@ function headCandidates(
 ): { candidates: readonly ExpressionCandidate[]; open?: boolean } {
     const view = schemaChildEntries(schema)
     const candidates = view.entries.flatMap((entry) => childCandidates(entry, '', exprLen, withBuckets))
-    candidates.push({ path: '$root', segment: '$root' })
+    candidates.push({ path: '$root', segment: '$root', kind: 'path' })
     if (context === 'row') {
-        candidates.push(rowSchema ? { path: 'row', segment: 'row', ...candidateMeta(rowSchema) } : { path: 'row', segment: 'row' })
-        candidates.push({ path: '$index', segment: '$index' })
+        candidates.push(rowSchema ? { path: 'row', segment: 'row', kind: 'path', ...candidateMeta(rowSchema) } : { path: 'row', segment: 'row', kind: 'path' })
+        candidates.push({ path: '$index', segment: '$index', kind: 'path' })
     }
     return view.open === true ? { candidates, open: true } : { candidates }
 }

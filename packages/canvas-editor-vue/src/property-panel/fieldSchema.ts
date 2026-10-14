@@ -75,6 +75,13 @@ export interface FieldDef {
     /** 数据字段：提交走 updateData（按 type 分派到 text/src/value），其余走 updateSpec */
     readonly data?: boolean
     /**
+     * 资源类内容字段（resource-expression-single-ref 工单 03，ADR 0020）：表达式态
+     * 诊断走内核资源单值门（resourcePathDiagnostics——恰一闭合片段 + 裸点路径，
+     * 禁拼接/函数），不走片段级扫描诊断。图片地址/二维码值两类声明；二维码内容
+     * 字段用 text 控件、control 无法判别，故显式标记。
+     */
+    readonly resource?: true
+    /**
      * 补全标记门（rows-path-completion 工单 03，D6）：'rowsPath' = 裸路径补全
      * （usePathCompletion，候选源 = 面板 rowsPathSource）——不走 data 门
      * （rowsPath 是结构语义，表达式补全门不适用）；缺省 = 无标记（data 门字段
@@ -236,12 +243,12 @@ const IMAGE_SECTION: FieldSection = {
     title: '图片',
     // 上传控件（缩略图回显 + 上传 + 紧凑路径行）；静态值语义不变——data 门提交
     // 走 updateData（字面接管），引用形态（data URL/宿主存储）归 uploadHandler
-    fields: [{ key: ['src'], label: '资源地址', control: 'imageSrc', data: true }],
+    fields: [{ key: ['src'], label: '资源地址', control: 'imageSrc', data: true, resource: true }],
 }
 
 const QR_SECTION: FieldSection = {
     title: '二维码',
-    fields: [{ key: ['value'], label: '内容', control: 'text', data: true }],
+    fields: [{ key: ['value'], label: '内容', control: 'text', data: true, resource: true }],
 }
 
 /**
