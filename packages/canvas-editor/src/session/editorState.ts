@@ -10,7 +10,7 @@
  */
 import type { Guide, GuideOrientation } from '../spatial/snap'
 import type { LayerPath } from '../shared/layerPath'
-import type { NextTextStyle } from '../editing/layerPanel'
+import type { NextTextStyle, RatioPresetId } from '../editing/layerPanel'
 
 /** 快照格式版本：随格式演化单调递增；v1 = 1（宽容读贯彻，restore 不分支此值） */
 export const EDITOR_STATE_SCHEMA_VERSION = 1
@@ -36,6 +36,12 @@ export interface EditorPrefsState {
      * 由 applyEditorPrefs 宽容读兜底为现值（会话内即工厂缺省）。
      */
     nextTextStyle: NextTextStyle
+    /**
+     * 建层比例槽（image-ratio-preset 工单 01，CONTEXT「建层比例」词条）：随 prefs
+     * 桶跨会话持久（per-模板记忆，「自由」即显式重置档）。schemaVersion 不升——
+     * 加法演进，旧快照缺字段或脏值由 applyEditorPrefs 宽容读回落 'free'。
+     */
+    nextLayerRatio: RatioPresetId
 }
 
 /** 快照 guide 的恢复形：id 已剥（无持久语义），只余 addGuide 入参两字段 */

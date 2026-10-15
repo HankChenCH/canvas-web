@@ -76,6 +76,62 @@ describe('createRubberBandRect：吸附修正并入几何', () => {
     })
 })
 
+/**
+ * 比例钳（canvas-web-image-ratio-preset 工单 01，spec 决策 3）：可选 ratio
+ * （{w, h} 有理数）长轴驱动钳制——|Δx| ≥ |Δy| 宽驱动（height = round(width ×
+ * h ÷ w)），否则高驱动；两点正规化天然覆盖反向拖；钳先于吸附（钳后缘点进
+ * resolveSnapPoints，命中仅整矩形平移不破钳）；QR 恒方语义不动（两钳互斥）。
+ */
+describe('createRubberBandRect：ratio 长轴驱动钳制', () => {
+    it('宽驱动：16:9 拖 200×10 → height = round(200 × 9 ÷ 16) = round(112.5) = 113（half-up）', () => {
+        const result = createRubberBandRect('ImageLayer', { x: 0, y: 0 }, { x: 200, y: 10 }, NO_AXES, 6, { w: 16, h: 9 })
+        expect(result.rect).toEqual({ x: 0, y: 0, width: 200, height: 113 })
+    })
+
+    it('高驱动：4:3 拖 40×200 → width = round(200 × 4 ÷ 3) = 267', () => {
+        const result = createRubberBandRect('ImageLayer', { x: 0, y: 0 }, { x: 40, y: 200 }, NO_AXES, 6, { w: 4, h: 3 })
+        expect(result.rect).toEqual({ x: 0, y: 0, width: 267, height: 200 })
+    })
+
+    it('9:16 高驱动：拖 10×200 → width = round(200 × 9 ÷ 16) = round(112.5) = 113（half-up）', () => {
+        const result = createRubberBandRect('ImageLayer', { x: 0, y: 0 }, { x: 10, y: 200 }, NO_AXES, 6, { w: 9, h: 16 })
+        expect(result.rect).toEqual({ x: 0, y: 0, width: 113, height: 200 })
+    })
+
+    it('等位移取宽驱动（|Δx| ≥ |Δy| 边界）：50×50 按 16:9 → 28', () => {
+        const result = createRubberBandRect('ImageLayer', { x: 0, y: 0 }, { x: 50, y: 50 }, NO_AXES, 6, { w: 16, h: 9 })
+        expect(result.rect).toEqual({ x: 0, y: 0, width: 50, height: 28 })
+    })
+
+    it('反向拖不翻转：3:4 从右下往左上拖 120×90 → 宽驱动 height = round(120 × 4 ÷ 3) = 160', () => {
+        const result = createRubberBandRect('ImageLayer', { x: 220, y: 190 }, { x: 100, y: 100 }, NO_AXES, 6, { w: 3, h: 4 })
+        expect(result.rect).toEqual({ x: 100, y: 100, width: 120, height: 160 })
+    })
+
+    it('1:1 六档之一：正方形钳（高驱动臂同样成立）', () => {
+        const result = createRubberBandRect('ImageLayer', { x: 10, y: 10 }, { x: 15, y: 90 }, NO_AXES, 6, { w: 1, h: 1 })
+        expect(result.rect).toEqual({ x: 10, y: 10, width: 80, height: 80 })
+    })
+
+    it('钳先于吸附：吸附命中整矩形平移、钳制尺寸原样（1:1 拖 44×40 吸左缘）', () => {
+        // 宽驱动：height = 44；左缘 196 距轴 200 为 4 ≤ 6 → dx = +4 平移
+        const axes: readonly SnapAxis[] = [{ orientation: 'vertical', position: 200, source: 'layer' }]
+        const result = createRubberBandRect('ImageLayer', { x: 196, y: 100 }, { x: 240, y: 140 }, axes, 6, { w: 1, h: 1 })
+        expect(result.rect).toEqual({ x: 200, y: 100, width: 44, height: 44 })
+        expect(result.axes).toEqual(axes)
+    })
+
+    it('QR 层不受 ratio 影响（两钳互斥，恒方语义不动）', () => {
+        const result = createRubberBandRect('QrCodeLayer', { x: 100, y: 100 }, { x: 180, y: 140 }, NO_AXES, 6, { w: 3, h: 4 })
+        expect(result.rect).toEqual({ x: 100, y: 100, width: 80, height: 80 })
+    })
+
+    it('不传 ratio：自由钳现状（height = |dy| 原样）', () => {
+        const result = createRubberBandRect('ImageLayer', { x: 0, y: 0 }, { x: 80, y: 140 }, NO_AXES, 6)
+        expect(result.rect).toMatchObject({ width: 80, height: 140 })
+    })
+})
+
 describe('CREATE_DEAD_ZONE_SCREEN_PX', () => {
     it('死区常量为屏幕 css 像素口径（与拖动吸附阈值同族）', () => {
         expect(CREATE_DEAD_ZONE_SCREEN_PX).toBe(4)

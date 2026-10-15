@@ -10,10 +10,13 @@ import type { Canvas } from '@hankchen/canvas'
 import {
     RESIZE_HANDLES,
     RESIZE_MIN_SIZE_PX,
+    proportionalDrivingAxis,
     resizeBox,
+    resizeBoxProportional,
     resizeHandleAt,
     resizeHandlesAt,
     resizeHandlePoint,
+    resizeProportionalSnapPoints,
     resizeSnapPoints,
     resizableAxesAt,
 } from '../../src/spatial/resize'
@@ -182,6 +185,126 @@ describe('resizableAxesAt / resizeHandlesAt：角色可缩放面', () => {
         const doc: Canvas = { width: 800, height: 600, layers: [imageLayer()] }
         expect(resizableAxesAt(doc, ['layers', 9])).toEqual({ width: false, height: false })
         expect(resizeHandlesAt(doc, ['layers', 9])).toEqual([])
+    })
+})
+
+describe('proportionalDrivingAxis：等比驱动轴（image-ratio-preset 工单 01）', () => {
+    it('角柄取位移较大轴：|dx| > |dy| 宽驱动、|dy| > |dx| 高驱动', () => {
+        expect(proportionalDrivingAxis('se', 40, 10)).toBe('width')
+        expect(proportionalDrivingAxis('nw', -10, -40)).toBe('height')
+    })
+
+    it('角柄等位移取宽驱动（|Δx| ≥ |Δy| 边界，画拉钳同门）', () => {
+        expect(proportionalDrivingAxis('ne', 30, 30)).toBe('width')
+    })
+
+    it('边中柄恒取被拖轴（与位移大小无关）', () => {
+        expect(proportionalDrivingAxis('e', 5, 100)).toBe('width')
+        expect(proportionalDrivingAxis('w', 100, 5)).toBe('width')
+        expect(proportionalDrivingAxis('s', 100, 5)).toBe('height')
+        expect(proportionalDrivingAxis('n', 5, 100)).toBe('height')
+    })
+})
+
+describe('resizeBoxProportional：Shift 等比几何（参照当前盒宽高比）', () => {
+    it('角柄宽驱动：se 拖 40×10 → 宽 240、高 = round(240 × 120 ÷ 200) = 144（对角固定）', () => {
+        expect(resizeBoxProportional(BOX, 'se', { w: 200, h: 120 }, 'width', 40, 10)).toEqual({
+            x: 100,
+            y: 80,
+            width: 240,
+            height: 144,
+        })
+    })
+
+    it('角柄高驱动：se 拖 10×40 → 高 160、宽 = round(160 × 200 ÷ 120) = 267', () => {
+        expect(resizeBoxProportional(BOX, 'se', { w: 200, h: 120 }, 'height', 10, 40)).toEqual({
+            x: 100,
+            y: 80,
+            width: 267,
+            height: 160,
+        })
+    })
+
+    it('nw 角柄宽驱动：对角（右下）固定、x/y 随新尺寸回推', () => {
+        expect(resizeBoxProportional(BOX, 'nw', { w: 200, h: 120 }, 'width', -30, -10)).toEqual({
+            x: 70,
+            y: 62,
+            width: 230,
+            height: 138,
+        })
+    })
+
+    it('round half-up：320×180 盒 se 收到 200 宽 → 高 = round(200 × 180 ÷ 320) = round(112.5) = 113', () => {
+        const big = { x: 0, y: 0, width: 320, height: 180 }
+        expect(resizeBoxProportional(big, 'se', { w: 320, h: 180 }, 'width', -120, 0)).toEqual({
+            x: 0,
+            y: 0,
+            width: 200,
+            height: 113,
+        })
+    })
+
+    it('e 边柄：宽驱动、高派生（dy 不参与）；s 边柄：高驱动、宽派生（dx 不参与）', () => {
+        expect(resizeBoxProportional(BOX, 'e', { w: 200, h: 120 }, 'width', 30, 999)).toEqual({
+            x: 100,
+            y: 80,
+            width: 230,
+            height: 138,
+        })
+        expect(resizeBoxProportional(BOX, 's', { w: 200, h: 120 }, 'height', 999, 20)).toEqual({
+            x: 100,
+            y: 80,
+            width: 233,
+            height: 140,
+        })
+    })
+
+    it('驱动轴钳到 minSize 后派生轴随动（按钳后驱动维派生）', () => {
+        // se 拖过头：高驱动 raw = 120 − 1000 < 0 → 钳 1，宽 = round(1 × 200 ÷ 120) = 2
+        expect(resizeBoxProportional(BOX, 'se', { w: 200, h: 120 }, 'height', -300, -1000)).toEqual({
+            x: 100,
+            y: 80,
+            width: 2,
+            height: RESIZE_MIN_SIZE_PX,
+        })
+    })
+
+    it('派生维低于 minSize 同样钳位（极扁盒派生宽 round(0.01) = 0 → 1）', () => {
+        const thin = { x: 100, y: 80, width: 2, height: 200 }
+        expect(resizeBoxProportional(thin, 'n', { w: 2, h: 200 }, 'height', 0, 300)).toEqual({
+            x: 100,
+            y: 279,
+            width: RESIZE_MIN_SIZE_PX,
+            height: RESIZE_MIN_SIZE_PX,
+        })
+    })
+})
+
+describe('resizeProportionalSnapPoints：仅驱动轴移动缘进吸附候选', () => {
+    it('驱动宽：只给移动垂直缘位点，水平位点为空', () => {
+        expect(resizeProportionalSnapPoints(BOX, 'se', 'width', 5, 999)).toEqual({
+            vertical: [305],
+            horizontal: [],
+        })
+        expect(resizeProportionalSnapPoints(BOX, 'w', 'width', 5, 999)).toEqual({
+            vertical: [105],
+            horizontal: [],
+        })
+        expect(resizeProportionalSnapPoints(BOX, 'e', 'width', 5, 999)).toEqual({
+            vertical: [305],
+            horizontal: [],
+        })
+    })
+
+    it('驱动高：只给移动水平缘位点，垂直位点为空', () => {
+        expect(resizeProportionalSnapPoints(BOX, 'nw', 'height', 999, -5)).toEqual({
+            vertical: [],
+            horizontal: [75],
+        })
+        expect(resizeProportionalSnapPoints(BOX, 's', 'height', 999, 5)).toEqual({
+            vertical: [],
+            horizontal: [205],
+        })
     })
 })
 

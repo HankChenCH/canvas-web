@@ -201,6 +201,61 @@ export function defaultNextTextStyle(): NextTextStyle {
     }
 }
 
+// ---- 建层比例槽与比例预设（image-ratio-preset 工单 01，CONTEXT「建层比例」「比例预设」词条） ----
+
+/**
+ * 建层比例档位（spec 决策 1/2）：'free' = 自由钳（工厂行为兜底），其余五个具名
+ * 有理数比。v1 固定清单、无自定义输入。
+ */
+export type RatioPresetId = 'free' | '1:1' | '4:3' | '3:4' | '16:9' | '9:16'
+
+/** 比例预设档位：具名 id + 有理数宽高比（free 档 ratio = null，即不钳） */
+export interface RatioPreset {
+    readonly id: RatioPresetId
+    readonly ratio: Readonly<{ w: number; h: number }> | null
+}
+
+/** 比例预设常量六档（顺序即面板平铺序：自由在前，其余按惯例短比在前） */
+export const RATIO_PRESETS: readonly RatioPreset[] = [
+    { id: 'free', ratio: null },
+    { id: '1:1', ratio: { w: 1, h: 1 } },
+    { id: '4:3', ratio: { w: 4, h: 3 } },
+    { id: '3:4', ratio: { w: 3, h: 4 } },
+    { id: '16:9', ratio: { w: 16, h: 9 } },
+    { id: '9:16', ratio: { w: 9, h: 16 } },
+]
+
+/** 建层比例槽初值：自由（工厂画拉行为兜底） */
+export function defaultNextLayerRatio(): RatioPresetId {
+    return 'free'
+}
+
+/** 档位 → 钳制用有理数比：'free' → null（不钳），具名档 → {w, h} 副本 */
+export function ratioValue(id: RatioPresetId): { w: number; h: number } | null {
+    const entry = RATIO_PRESETS.find((candidate) => candidate.id === id)
+    return entry?.ratio ? { ...entry.ratio } : null
+}
+
+/**
+ * 建层比例槽的宽容读（prefs 恢复唯一入口）：六档枚举值原样收，其余（旧快照
+ * 缺字段/存储端脏值）回落 'free'。载荷来自宿主 JSON 快照，类型层的形状信任
+ * 不了，运行时验；未知 prefs 键由调用方整体忽略（不进本函数视野）。
+ */
+export function pickNextLayerRatio(raw: unknown): RatioPresetId {
+    return RATIO_PRESETS.some((candidate) => candidate.id === raw) ? (raw as RatioPresetId) : 'free'
+}
+
+/**
+ * 死区点击缺省盒的比例派生（spec 决策 3）：长边 200 定短边——短边 = round(长边
+ * × 短比)（Math.round 对正数 half-up：16:9 → 200×113）。自由档不进本函数
+ * （调用方以 ratioValue 为 null 分流到工厂缺省 200×150）。
+ */
+export function defaultSizeForRatio(ratio: { w: number; h: number }): { width: number; height: number } {
+    return ratio.w >= ratio.h
+        ? { width: 200, height: Math.round((200 * ratio.h) / ratio.w) }
+        : { width: Math.round((200 * ratio.w) / ratio.h), height: 200 }
+}
+
 /**
  * 新层样式字段的宽容读逐字段收口（text-defaults 工单 01；评审合流——捕获与
  * prefs 恢复共用同一谓词，不再双写）：合法字段进合并集，缺字/类型不符忽略

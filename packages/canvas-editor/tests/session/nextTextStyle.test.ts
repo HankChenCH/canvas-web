@@ -243,6 +243,7 @@ describe('prefs 读写对（宽容读逐字段合并）', () => {
         session.applyEditorPrefs({
             rulersVisible: true,
             anchorExpanded: false,
+            nextLayerRatio: 'free',
             nextTextStyle: { font: 'A', fontSize: 30, autowrap: true } as never, // 缺 fontColor/lineHeight
         })
         expect(session.store.ui.nextTextStyle).toMatchObject({ font: 'A', fontSize: 30, autowrap: true })
@@ -252,6 +253,7 @@ describe('prefs 读写对（宽容读逐字段合并）', () => {
         session.applyEditorPrefs({
             rulersVisible: true,
             anchorExpanded: false,
+            nextLayerRatio: 'free',
             nextTextStyle: { font: 42, fontSize: 'big', autowrap: 'yes', lineHeight: -1, fontColor: 'C', junk: 1 } as never,
         })
         expect(session.store.ui.nextTextStyle.fontColor).toBe('C') // 合法字段进
@@ -260,7 +262,7 @@ describe('prefs 读写对（宽容读逐字段合并）', () => {
         expect(session.store.ui.nextTextStyle.autowrap).toBe(true)
         expect(session.store.ui.nextTextStyle.lineHeight).toBe(before.lineHeight) // 非法值忽略
 
-        session.applyEditorPrefs({ rulersVisible: true, anchorExpanded: false, nextTextStyle: null as never })
+        session.applyEditorPrefs({ rulersVisible: true, anchorExpanded: false, nextLayerRatio: 'free', nextTextStyle: null as never })
         expect(session.store.ui.nextTextStyle.font).toBe('A') // 非对象整体忽略
     })
 

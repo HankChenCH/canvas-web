@@ -60,9 +60,12 @@ import { CREATE_DEAD_ZONE_SCREEN_PX, createRubberBandRect } from '../spatial/cre
 import {
     handleResizesHeight,
     handleResizesWidth,
+    proportionalDrivingAxis,
     resizeBox,
+    resizeBoxProportional,
     resizeHandleAt as resizeHandleHit,
     resizeHandlesAt as resizeHandlesForPath,
+    resizeProportionalSnapPoints,
     resizeSnapPoints,
     resizableAxesAt,
     RESIZE_HANDLES,
@@ -107,15 +110,20 @@ import {
     addRootLayerInDraft,
     createDefaultLayer,
     createTemplateTable,
+    defaultSizeForRatio,
     deleteLayerInDraft,
     insertRootLayerAdjacentInDraft,
     insertRootLayerInDraft,
     moveRootLayerInDraft,
     moveTableRowInDraft,
+    pickNextLayerRatio,
     pickNextTextStylePatch,
+    RATIO_PRESETS,
+    ratioValue,
     TEXT_PRESETS,
     type DeletedLayerRef,
     type NextTextStyle,
+    type RatioPresetId,
     type TextPresetId,
 } from '../editing/layerPanel'
 import {
@@ -842,8 +850,17 @@ export class EditorSession {
      *
      * 拖不动写不动的同门守卫：无会话、目标层被结构编辑移除（悬空路径）整体
      * 空转（不发事务、不发布命中轴）。
+     *
+     * Shift 等比（image-ratio-preset 工单 01，spec 决策 5）：仅 ImageLayer 生效
+     * （其余层型 shift 空转走现状——自适应与尺寸耦合面不被触碰），且须双轴皆在
+     * 可缩放面（格内容等强同步面派生轴写不出去，不进等比模式）、起始盒零维空转
+     * （无比例可参照，回落自由）。参照手势起始盒实际宽高比；驱动轴 = 角柄取位
+     * 移较大轴、边中柄取被拖轴；派生维 = round(驱动维 × 短比)（钳后驱动维跟随，
+     * 最小钳位随动）；对缘/对角固定照旧；吸附只在驱动轴移动缘候选（派生轴是算
+     * 术产物不独立吸附，钳先于吸附同门）。等比模式双轴都落声明值（派生轴写算
+     * 术积并清 auto 标志），canonicalize 以驱动轴键收口。
      */
-    resizeTo(sceneX: number, sceneY: number): void {
+    resizeTo(sceneX: number, sceneY: number, shift = false): void {
         const gesture = this.store.ui.resize
         if (!gesture) return
         const doc = this.store.doc
@@ -853,47 +870,72 @@ export class EditorSession {
         const dy = sceneY - gesture.startScene.y
         const widthActive = handleResizesWidth(gesture.handle)
         const heightActive = handleResizesHeight(gesture.handle)
+        const axes = resizableAxesAt(doc, gesture.path)
+        const proportionalDriving =
+            shift
+            && current.type === 'ImageLayer'
+            && gesture.startBox.width > 0
+            && gesture.startBox.height > 0
+            && axes.width
+            && axes.height
+            ? proportionalDrivingAxis(gesture.handle, dx, dy)
+            : null
         const resolution = resolveSnapPoints(
-            resizeSnapPoints(gesture.startBox, gesture.handle, dx, dy),
+            proportionalDriving !== null
+                ? resizeProportionalSnapPoints(gesture.startBox, gesture.handle, proportionalDriving, dx, dy)
+                : resizeSnapPoints(gesture.startBox, gesture.handle, dx, dy),
             this.snapAxesForGesture(gesture.path),
             snapThresholdScene(this.store.ui.viewport.zoom),
         )
-        const target = resizeBox(
-            gesture.startBox,
-            gesture.handle,
-            widthActive ? dx + resolution.dx : dx,
-            heightActive ? dy + resolution.dy : dy,
-        )
+        const target =
+            proportionalDriving !== null
+                ? resizeBoxProportional(
+                      gesture.startBox,
+                      gesture.handle,
+                      { w: gesture.startBox.width, h: gesture.startBox.height },
+                      proportionalDriving,
+                      dx + resolution.dx,
+                      dy + resolution.dy,
+                  )
+                : resizeBox(
+                      gesture.startBox,
+                      gesture.handle,
+                      widthActive ? dx + resolution.dx : dx,
+                      heightActive ? dy + resolution.dy : dy,
+                  )
         // 手势空间父级原点（嵌套路径 position 反解的坐标基准），事务前以求得——
         // 须用写前状态（盒/position/解析尺寸同源，见 gestureParentOrigin）
         const origin = this.gestureParentOrigin(gesture.path, current)
         this.store.transact((draft) => {
             const layer = resolveLayer(draft, gesture.path)
             if (!layer) return
-            // 被拖轴写声明尺寸并清 auto 标志（采纳）；未被拖的轴零接触。
-            // draft 语义解除 readonly；字段形态由领域类型与可缩放面把关
+            // 被拖轴写声明尺寸并清 auto 标志（采纳）；未被拖的轴零接触；
+            // 等比模式派生轴随驱动维落声明值（双轴皆写）。draft 语义解除
+            // readonly；字段形态由领域类型与可缩放面把关
             const shape = layer.shape as {
                 width: number
                 height: number
                 autoWidth: boolean
                 autoHeight: boolean
             }
-            if (widthActive) {
+            if (widthActive || proportionalDriving !== null) {
                 shape.width = target.width
                 shape.autoWidth = false
             }
-            if (heightActive) {
+            if (heightActive || proportionalDriving !== null) {
                 shape.height = target.height
                 shape.autoHeight = false
             }
             // 解码不变量重断言 + 表格强同步（updateSpec 同门）：先同步再反解
             // position——同步可能改写解析尺寸（格内容宽/行高）与父级盒（行高增长），
-            // 反解必须以最终形态为准
+            // 反解必须以最终形态为准；同步键取实际写动的尺寸字段（等比模式取驱动轴）
             renormalizeAutoHeightInDraft(layer)
             canonicalizeTableSyncInDraft(
                 draft,
                 gesture.path,
-                widthActive ? ['shape', 'width'] : ['shape', 'height'],
+                proportionalDriving === 'height' || (proportionalDriving === null && !widthActive)
+                    ? ['shape', 'height']
+                    : ['shape', 'width'],
                 this.textPolicies,
             )
             const resolvedWidth = layerWidth(layer, this.textPolicies)
@@ -933,15 +975,23 @@ export class EditorSession {
      * 分支待命层型，下一次画布按下即开画拉；建层提交或 Esc 即解除——一次性
      * 待命态，无粘性工具（spec 决策 2）。重复武装同型值等短路零通知。
      *
-     * preset（text-defaults 工单 01，CONTEXT「文本预设」词条）：文本预设 = 写
-     * 新层样式槽的快捷方式——命中档位先把档位值并入槽（v1 只 fontSize），再
-     * 武装；仅 TextLayer 生效；未知 id = 跳过写槽、武装照常（评审口径统一：
-     * 「空转」只指写槽，武装层型本身仍合法）。
+     * preset（text-defaults 工单 01 + image-ratio-preset 工单 01）：层型相关预设 =
+     * 写槽的快捷方式——命中档位先把档位值并入对应偏好槽再武装；未知 id = 跳过
+     * 写槽、武装照常（评审口径统一：「空转」只指写槽，武装层型本身仍合法）。
+     * - TextLayer + 文本预设档：写新层样式槽（v1 只 fontSize）；
+     * - ImageLayer + 比例预设档：写建层比例槽（'free' 即显式重置档）；QR 恒方
+     *   是层型硬钳、无比例槽（spec 豁免面）；
+     * - 交叉类型（文本层带比例档/图片层带文本档）各在对方清单查无此档、天然
+     *   跳写槽。
      */
-    armLayerCreate(type: LayerType, preset?: TextPresetId): void {
+    armLayerCreate(type: LayerType, preset?: TextPresetId | RatioPresetId): void {
         if (preset !== undefined && type === 'TextLayer') {
             const entry = TEXT_PRESETS.find((candidate) => candidate.id === preset)
             if (entry) this.store.setNextTextStyle({ fontSize: entry.fontSize })
+        }
+        if (preset !== undefined && type === 'ImageLayer') {
+            const entry = RATIO_PRESETS.find((candidate) => candidate.id === preset)
+            if (entry) this.store.setNextLayerRatio(entry.id)
         }
         this.store.setArmedCreate(type)
     }
@@ -974,22 +1024,36 @@ export class EditorSession {
 
     /**
      * 画拉进行中：橡皮筋求位（spatial/create.createRubberBandRect——两点正规化
-     * + QR 钳 height := width + 左右/上下缘各两点进 resolveSnapPoints，吸附数学
-     * 零新增）写回会话 rect 供 overlay 直读（虚线矩形 + W×H 气泡），命中轴回写
-     * ui.snapAxes 走 GuidesOverlay 既有通道回显（dragTo 同门）。吸附排除面为空
-     * （snapAxesForGesture(null)——新层尚未入库，全部可见根层供轴，copyMode
-     * 首移同门）。零文档事务：修正只进会话几何，落库在 endCreate。
+     * + QR 钳 height := width / 比例钳长轴驱动 + 左右/上下缘各两点进
+     * resolveSnapPoints，吸附数学零新增）写回会话 rect 供 overlay 直读（虚线
+     * 矩形 + W×H 气泡），命中轴回写 ui.snapAxes 走 GuidesOverlay 既有通道回显
+     * （dragTo 同门）。吸附排除面为空（snapAxesForGesture(null)——新层尚未入库，
+     * 全部可见根层供轴，copyMode 首移同门）。零文档事务：修正只进会话几何，
+     * 落库在 endCreate。
+     *
+     * 建层比例槽（image-ratio-preset 工单 01，spec 决策 3/4）：仅 ImageLayer 按槽
+     * 钳制（QR 层不传 ratio、恒方语义不动，两钳互斥；其余层型无槽）；Shift 瞬时
+     * 反转槽态——槽非自由按 Shift = 临时自由、槽自由按 Shift = 临时钳 1:1，按住
+     * 生效松开还原（逐帧求位、不写槽、不改武装态，Figma 惯例的手势瞬时语义）。
      */
-    createTo(sceneX: number, sceneY: number): void {
+    createTo(sceneX: number, sceneY: number, shift = false): void {
         const gesture = this.store.ui.create
         const doc = this.store.doc
         if (!gesture || !doc) return
+        const slotRatio = gesture.type === 'ImageLayer' ? ratioValue(this.store.ui.nextLayerRatio) : null
+        // Shift 瞬时反转：槽非自由 = 临时自由（去钳）、槽自由 = 临时钳 1:1。
+        // 仅 ImageLayer 参与反转（spec 决策 6 豁免面：其余层型无槽、Shift 无效果）
+        const ratio =
+            gesture.type === 'ImageLayer'
+                ? (shift ? (slotRatio === null ? { w: 1, h: 1 } : null) : slotRatio)
+                : null
         const resolution = createRubberBandRect(
             gesture.type,
             gesture.startScene,
             { x: sceneX, y: sceneY },
             this.snapAxesForGesture(null),
             snapThresholdScene(this.store.ui.viewport.zoom),
+            ratio,
         )
         this.store.setCreate({
             ...gesture,
@@ -1004,9 +1068,12 @@ export class EditorSession {
      * + priority）。先清会话再落文档（commitTextEdit 同门——退出路径级联时幂等）：
      * - 死区外：单事务写入「createDefaultLayer 缺省形态 + position 左上角对准
      *   橡皮筋矩形（含吸附修正）+ shape.width/height」并 insertRootLayerInDraft
-     *   置顶（priority min−1、push 数组尾）；
+     *   置顶（priority min−1、push 数组尾）——尺寸取手势末态钳制结果（含 Shift
+     *   反转末态，image-ratio-preset 工单 01 spec 决策 4）；
      * - 死区内（点击兜底，位移按 CREATE_DEAD_ZONE_SCREEN_PX 屏幕 px 随 zoom 折算，
-     *   ALT_DRAG_DEAD_ZONE_SCREEN_PX 同门）：缺省尺寸、左上角对准点击点。
+     *   ALT_DRAG_DEAD_ZONE_SCREEN_PX 同门）：左上角对准点击点；尺寸按槽派生缺省
+     *   盒（image-ratio-preset 工单 01：ImageLayer 长边 200 定短边，自由 = 工厂
+     *   200×150 现状；忽略 shift——无位移可供等比约束；其余层型保持工厂缺省）。
      * 落库后自动选中新层并解除武装；返回新层路径（绑定层消费：文本层据此自动
      * 进文本编辑，spec 决策 6）。无会话/无文档空转返回 null。点击兜底不产生
      * 零尺寸层（缺省形态自带可见尺寸）。
@@ -1027,8 +1094,17 @@ export class EditorSession {
             // 新层样式槽覆盖工厂缺省（text-defaults 工单 01）：工厂仅 TextLayer 臂消费
             const layer = createDefaultLayer(gesture.type, this.store.ui.nextTextStyle) as Draft<Layer>
             if (clicked) {
-                // 点击兜底：缺省尺寸原样，position 左上角对准点击点（拖文件入画布
+                // 点击兜底：ImageLayer 按建层比例槽派生缺省盒（自由档走工厂缺省），
+                // 其余层型缺省尺寸原样；position 左上角对准点击点（拖文件入画布
                 // 「左上角对准释放点」同门，spec 决策 5）
+                if (gesture.type === 'ImageLayer') {
+                    const ratio = ratioValue(this.store.ui.nextLayerRatio)
+                    if (ratio) {
+                        const size = defaultSizeForRatio(ratio)
+                        layer.shape.width = size.width
+                        layer.shape.height = size.height
+                    }
+                }
                 layer.position = { ...layer.position, x: gesture.startScene.x, y: gesture.startScene.y }
             } else {
                 layer.position = { ...layer.position, x: gesture.rect.x, y: gesture.rect.y }
@@ -1235,6 +1311,7 @@ export class EditorSession {
             rulersVisible: ui.rulersVisible,
             anchorExpanded: ui.anchorExpanded,
             nextTextStyle: ui.nextTextStyle,
+            nextLayerRatio: ui.nextLayerRatio,
         }
     }
 
@@ -1242,12 +1319,15 @@ export class EditorSession {
      * 应用偏好（会话建立时一次性，跨会话恢复 prefs 的写入口）：整体替换
      * rulersVisible/anchorExpanded，不进历史；值等写入经 store 短路零通知。
      * 新层样式（text-defaults 工单 01）走宽容读逐字段合并（pickNextTextStylePatch
-     * 共享谓词——与捕获同门，缺字/类型不符保留现值）。
+     * 共享谓词——与捕获同门，缺字/类型不符保留现值）；建层比例（image-ratio-preset
+     * 工单 01）走宽容读枚举收口（pickNextLayerRatio——非六档枚举值/旧快照缺字段
+     * 回落 'free'）。
      */
     applyEditorPrefs(prefs: EditorPrefsState): void {
         this.store.setRulersVisible(prefs.rulersVisible)
         this.store.setAnchorExpanded(prefs.anchorExpanded)
         this.store.setNextTextStyle(pickNextTextStylePatch(prefs.nextTextStyle))
+        this.store.setNextLayerRatio(pickNextLayerRatio(prefs.nextLayerRatio as unknown))
     }
 
     // ---- 对齐画布（layer-align-snap 工单 01）：图层盒整体对齐画布几何 ----

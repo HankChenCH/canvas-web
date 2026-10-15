@@ -19,17 +19,18 @@ import {
     type CanvasEditorState,
     type EditorPrefsState,
 } from '../../src/session/editorState'
-import { defaultNextTextStyle } from '../../src/editing/layerPanel'
+import { defaultNextLayerRatio, defaultNextTextStyle } from '../../src/editing/layerPanel'
 import type { EditorChange } from '../../src/session/store'
 import { textLayer } from '../support/fixtures'
 
 const nullScheduler: FrameScheduler = () => () => {}
 
-/** 完整 prefs 形状（text-defaults 工单 01 后 EditorPrefsState 三字段）：槽未动的测试用工厂缺省对表 */
+/** 完整 prefs 形状（image-ratio-preset 工单 01 后 EditorPrefsState 四字段）：槽未动的测试用工厂缺省对表 */
 const prefs = (overrides: Partial<EditorPrefsState> = {}): EditorPrefsState => ({
     rulersVisible: true,
     anchorExpanded: false,
     nextTextStyle: defaultNextTextStyle(),
+    nextLayerRatio: defaultNextLayerRatio(),
     ...overrides,
 })
 

@@ -106,6 +106,83 @@ export function resizeSnapPoints(
     return { vertical, horizontal }
 }
 
+/** 等比缩放的驱动轴（image-ratio-preset 工单 01）：角柄取位移较大轴（|Δx| ≥
+ *  |Δy| 宽驱动，画拉比例钳同门）、边中柄恒取被拖轴。几何求位与吸附位点消费
+ *  同一判定（resizeBoxProportional 与 resizeProportionalSnapPoints 共读）。 */
+export type ProportionalDrivingAxis = 'width' | 'height'
+
+export function proportionalDrivingAxis(handle: ResizeHandle, dx: number, dy: number): ProportionalDrivingAxis {
+    const corner = handleResizesWidth(handle) && handleResizesHeight(handle)
+    if (corner) return Math.abs(dx) >= Math.abs(dy) ? 'width' : 'height'
+    return handleResizesWidth(handle) ? 'width' : 'height'
+}
+
+/**
+ * Shift 等比缩放求位（image-ratio-preset 工单 01，spec 决策 5）：参照 reference
+ * （手势起始盒的声明宽高比）保持宽高比——驱动维随指针（对缘/对角固定语义与
+ * resizeBox 同款），钳到 minSize 后派生维随动 = round(驱动维 × 短比)（Math.round
+ * 对正数 half-up）；派生维同样钳 minSize（极扁/极窄盒派生维可 round 到 0，不钳
+ * 会产出零尺寸不可见层）。仅接受双轴皆可写的柄（beginResize 的角色过滤已保证，
+ * 派生轴写不出去的面不该进等比模式）。driving 由调用方经 proportionalDrivingAxis
+ * 判定一次传入——与吸附位点（resizeProportionalSnapPoints）消费同一判定，吸附
+ * 修正并入位移后驱动轴不随修正值翻转（单一事实源）。
+ */
+export function resizeBoxProportional(
+    start: ResizeBoxGeometry,
+    handle: ResizeHandle,
+    reference: { w: number; h: number },
+    driving: ProportionalDrivingAxis,
+    dx: number,
+    dy: number,
+    minSize: number = RESIZE_MIN_SIZE_PX,
+): ResizeBoxResult {
+    const west = WEST_HANDLES.has(handle)
+    const north = NORTH_HANDLES.has(handle)
+    let width: number
+    let height: number
+    if (driving === 'width') {
+        width = Math.max(west ? start.width - dx : start.width + dx, minSize)
+        height = Math.max(Math.round((width * reference.h) / reference.w), minSize)
+    } else {
+        height = Math.max(north ? start.height - dy : start.height + dy, minSize)
+        width = Math.max(Math.round((height * reference.w) / reference.h), minSize)
+    }
+    return {
+        x: west ? start.x + start.width - width : start.x,
+        y: north ? start.y + start.height - height : start.y,
+        width,
+        height,
+    }
+}
+
+/**
+ * 等比缩放的吸附位点：只收驱动轴的移动缘——派生维是算术产物，不独立吸附
+ * （钳先于吸附同门：吸附修正施加在驱动轴位移上，进 resizeBoxProportional 后
+ * 派生维按比例跟随，吸附不破比例）。
+ */
+export function resizeProportionalSnapPoints(
+    start: ResizeBoxGeometry,
+    handle: ResizeHandle,
+    driving: ProportionalDrivingAxis,
+    dx: number,
+    dy: number,
+): SnapPoints {
+    if (driving === 'width') {
+        const vertical = WEST_HANDLES.has(handle)
+            ? [start.x + dx]
+            : EAST_HANDLES.has(handle)
+                ? [start.x + start.width + dx]
+                : []
+        return { vertical, horizontal: [] }
+    }
+    const horizontal = NORTH_HANDLES.has(handle)
+        ? [start.y + dy]
+        : SOUTH_HANDLES.has(handle)
+            ? [start.y + start.height + dy]
+            : []
+    return { vertical: [], horizontal }
+}
+
 /** 可缩放轴（width = 横向宽字段可写、height = 纵向高字段可写） */
 export interface ResizeAxes {
     readonly width: boolean
