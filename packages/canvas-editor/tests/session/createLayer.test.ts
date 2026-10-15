@@ -368,6 +368,151 @@ describe('历史：一次手势 = 一步历史', () => {
     })
 })
 
+describe('模板表风味武装（canvas-web-template-table-drag-create 工单 01）', () => {
+    it('armTemplateTableCreate 置武装 + rowsPath 瞬态载荷；不新增 LayerType', () => {
+        const session = makeSession([])
+        session.armTemplateTableCreate('order.items')
+        expect(session.store.ui.armedCreate).toBe('TableLayer')
+        expect(session.store.ui.armedCreateRowsPath).toBe('order.items')
+        session.cancelArmLayerCreate()
+        expect(session.store.ui.armedCreate).toBeNull()
+        expect(session.store.ui.armedCreateRowsPath).toBe('')
+    })
+
+    it('空 rowsPath 武装 no-op（内核防御，表单层已拦）', () => {
+        const session = makeSession([])
+        session.armTemplateTableCreate('')
+        expect(session.store.ui.armedCreate).toBeNull()
+        expect(session.store.ui.armedCreateRowsPath).toBe('')
+    })
+
+    it('重复武装同型同 rowsPath 短路（不惊动订阅方）；换 rowsPath 更新载荷', () => {
+        const session = makeSession([])
+        session.armTemplateTableCreate('order.items')
+        let notified = 0
+        const unsubscribe = session.subscribe((change) => {
+            if (change.scope === 'ui' && change.branch === 'armedCreate') notified += 1
+        })
+        session.armTemplateTableCreate('order.items')
+        expect(notified).toBe(0)
+        session.armTemplateTableCreate('order.lines')
+        expect(notified).toBe(1)
+        expect(session.store.ui.armedCreateRowsPath).toBe('order.lines')
+        unsubscribe()
+    })
+
+    it('G 武装的普通表（armLayerCreate）不携带 rowsPath 载荷', () => {
+        const session = makeSession([])
+        session.armTemplateTableCreate('order.items')
+        session.armLayerCreate('TableLayer')
+        expect(session.store.ui.armedCreate).toBe('TableLayer')
+        expect(session.store.ui.armedCreateRowsPath).toBe('')
+    })
+
+    it('beginLayerCreate 捕获风味与 rowsPath 进建层会话', () => {
+        const session = makeSession([])
+        session.armTemplateTableCreate('order.items')
+        expect(session.beginLayerCreate(10, 10)).toBe(true)
+        expect(session.store.ui.create!.type).toBe('TableLayer')
+        expect(session.store.ui.create!.templateRowsPath).toBe('order.items')
+    })
+
+    it('endCreate 死区外：模板表壳 = 手势正规化矩形，行模板宽耦合表宽，rowsPath 落库', () => {
+        const session = makeSession([textLayer({ priority: 10 })])
+        session.armTemplateTableCreate('order.items')
+        session.beginLayerCreate(220, 190)
+        session.createTo(100, 100) // 反向拖 → 正规化 { x: 100, y: 100, w: 120, h: 90 }
+        session.endCreate()
+        const layer = session.store.doc!.layers[1] as TableLayer
+        expect(layer.type).toBe('TableLayer')
+        expect(layer.rowsPath).toBe('order.items')
+        expect(layer.template).not.toBeNull()
+        expect(layer.rows).toEqual([])
+        expect(layer.position).toMatchObject({ x: 100, y: 100 })
+        expect(layer.shape).toMatchObject({ width: 120, height: 90 })
+        // 行模板宽 := 表宽关 autoWidth、autoHeight 语义原样；格与内容宽随表宽
+        expect(layer.template!.shape).toMatchObject({ width: 120, autoWidth: false, autoHeight: true })
+        expect(layer.template!.cells[0]!.shape.width).toBe(120)
+        expect((layer.template!.cells[0]!.content as TextLayer).shape.width).toBe(120)
+    })
+
+    it('endCreate 死区内：缺省壳 400×120、左上角对准点击点', () => {
+        const session = makeSession([])
+        session.armTemplateTableCreate('order.items')
+        session.beginLayerCreate(50, 50)
+        session.createTo(52, 53) // 死区内 → 点击兜底
+        session.endCreate()
+        const layer = session.store.doc!.layers[0] as TableLayer
+        expect(layer.rowsPath).toBe('order.items')
+        expect(layer.template).not.toBeNull()
+        expect(layer.position).toMatchObject({ x: 50, y: 50 })
+        expect(layer.shape).toMatchObject({ width: 400, height: 120 })
+    })
+
+    it('模板表落库：priority 置顶 + 自动选中 + 解除武装清载荷', () => {
+        const session = makeSession([textLayer({ priority: 10 })])
+        session.armTemplateTableCreate('order.items')
+        session.beginLayerCreate(0, 0)
+        session.createTo(120, 80)
+        const path = session.endCreate()
+        expect(path).toEqual(['layers', 1])
+        expect(session.store.doc!.layers[1]!.priority).toBe(9)
+        expect(session.store.ui.selection).toEqual(['layers', 1])
+        expect(session.store.ui.armedCreate).toBeNull()
+        expect(session.store.ui.armedCreateRowsPath).toBe('')
+        expect(session.store.ui.create).toBeNull()
+    })
+
+    it('模板表画拉 = 一步历史，undo 整体回退', () => {
+        const session = makeSession([textLayer({ priority: 10 })])
+        session.armTemplateTableCreate('order.items')
+        session.beginLayerCreate(100, 100)
+        session.createTo(300, 160)
+        session.createTo(500, 220)
+        session.endCreate()
+        expect(session.store.history).toHaveLength(1)
+        expect(session.store.doc!.layers).toHaveLength(2)
+        session.undo()
+        expect(session.store.doc!.layers).toHaveLength(1)
+        expect(session.store.doc!.layers[0]!.priority).toBe(10)
+    })
+
+    it('cancelCreate 清载荷零副作用零历史，幂等', () => {
+        const session = makeSession([textLayer({ priority: 10 })])
+        const before = session.store.doc
+        session.armTemplateTableCreate('order.items')
+        session.beginLayerCreate(100, 100)
+        session.createTo(220, 190)
+        session.cancelCreate()
+        expect(session.store.doc).toBe(before)
+        expect(session.store.ui.armedCreate).toBeNull()
+        expect(session.store.ui.armedCreateRowsPath).toBe('')
+        expect(session.store.history).toHaveLength(0)
+        session.cancelCreate()
+        expect(session.store.history).toHaveLength(0)
+    })
+
+    it('openDocument 重置武装与载荷', () => {
+        const session = makeSession([])
+        session.armTemplateTableCreate('order.items')
+        session.openDocument(docWith(textLayer()))
+        expect(session.store.ui.armedCreate).toBeNull()
+        expect(session.store.ui.armedCreateRowsPath).toBe('')
+    })
+
+    it('G 回归：画拉普通表仍产 V1 空表（template: null、rowsPath 空串、rows 空数组）', () => {
+        const session = makeSession([])
+        session.armLayerCreate('TableLayer')
+        session.beginLayerCreate(100, 100)
+        session.createTo(300, 220)
+        session.endCreate()
+        const layer = session.store.doc!.layers[0] as TableLayer
+        expect(layer).toMatchObject({ type: 'TableLayer', template: null, rowsPath: '', rows: [] })
+        expect(layer.shape).toMatchObject({ width: 200, height: 120 })
+        expect(session.store.ui.armedCreateRowsPath).toBe('')
+    })
+})
+
 describe('cancelCreate：零副作用零历史', () => {
     it('画拉中取消：文档不动、会话与武装清除、零历史', () => {
         const session = makeSession([textLayer({ priority: 10 })])

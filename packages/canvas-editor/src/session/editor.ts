@@ -996,9 +996,22 @@ export class EditorSession {
         this.store.setArmedCreate(type)
     }
 
-    /** 解除建层武装（取消入口）：仅清待命态，零副作用。 */
+    /** 解除建层武装（取消入口）：仅清待命态（含模板表风味载荷），零副作用。 */
     cancelArmLayerCreate(): void {
         this.store.setArmedCreate(null)
+    }
+
+    /**
+     * 武装模板表建层（canvas-web-template-table-drag-create 工单 01，spec 决策 3）：
+     * 行路径表单确认即武装——rowsPath 随武装进 ui 瞬态载荷（armedCreate 仍为
+     * 'TableLayer'、不新增 LayerType、不进 graph），下一次画拉或死区点击落模板表。
+     * 空串 no-op（内核防御，表单层已拦）；重复武装同 rowsPath 值等短路，换
+     * rowsPath 更新载荷。TableLayer 的 G 武装语义（V1 普通表，armLayerCreate 走
+     * 空载荷）不受染指。
+     */
+    armTemplateTableCreate(rowsPath: string): void {
+        if (rowsPath === '') return
+        this.store.setArmedCreate('TableLayer', rowsPath)
     }
 
     /**
@@ -1013,8 +1026,14 @@ export class EditorSession {
         if (armed === null || this.store.ui.drag || this.store.ui.resize || this.store.ui.create) return false
         if (!this.store.doc) return false
         const point = { x: sceneX, y: sceneY }
+        // 模板表风味捕获（template-table-drag-create 工单 01）：普通表武装载荷为
+        // 空串、不进会话（G 语义原样）；风味武装捕获 rowsPath，endCreate 据此分派
+        const templateRowsPath = armed === 'TableLayer' && this.store.ui.armedCreateRowsPath !== ''
+            ? this.store.ui.armedCreateRowsPath
+            : undefined
         this.store.setCreate({
             type: armed,
+            templateRowsPath,
             startScene: point,
             currentScene: point,
             rect: { x: sceneX, y: sceneY, width: 0, height: 0 },
@@ -1077,6 +1096,10 @@ export class EditorSession {
      * 落库后自动选中新层并解除武装；返回新层路径（绑定层消费：文本层据此自动
      * 进文本编辑，spec 决策 6）。无会话/无文档空转返回 null。点击兜底不产生
      * 零尺寸层（缺省形态自带可见尺寸）。
+     *
+     * 模板表风味（template-table-drag-create 工单 01）：会话载荷 templateRowsPath
+     * 非空即分派 createTemplateTable 工厂（死区外 shape = 手势正规化矩形，死区内
+     * 缺省壳 400×120、左上角对准点击点）；模板层不自动进文本编辑（文本层专属）。
      */
     endCreate(): LayerPath | null {
         const gesture = this.store.ui.create
@@ -1090,9 +1113,25 @@ export class EditorSession {
         const deadZoneScene = CREATE_DEAD_ZONE_SCREEN_PX / this.store.ui.viewport.zoom
         const clicked = Math.hypot(dx, dy) <= deadZoneScene
         const index: TxOut<number> = { v: -1 }
+        // 模板表风味分派（template-table-drag-create 工单 01，spec 决策 4）：
+        // createTemplateTable 工厂（rowsPath 随会话载荷），死区外壳 = 手势正规化
+        // 矩形（行模板宽 := 表宽耦合在工厂内生效）、死区内缺省壳 400×120；其余
+        // 层型走 createDefaultLayer 既有路径
+        const templateRowsPath = gesture.templateRowsPath
         this.store.transact((draft) => {
             // 新层样式槽覆盖工厂缺省（text-defaults 工单 01）：工厂仅 TextLayer 臂消费
-            const layer = createDefaultLayer(gesture.type, this.store.ui.nextTextStyle) as Draft<Layer>
+            const layer = (
+                templateRowsPath !== undefined
+                    ? createTemplateTable(
+                          clicked
+                              ? { rowsPath: templateRowsPath }
+                              : {
+                                    rowsPath: templateRowsPath,
+                                    shape: { width: gesture.rect.width, height: gesture.rect.height },
+                                },
+                      )
+                    : createDefaultLayer(gesture.type, this.store.ui.nextTextStyle)
+            ) as Draft<Layer>
             if (clicked) {
                 // 点击兜底：ImageLayer 按建层比例槽派生缺省盒（自由档走工厂缺省），
                 // 其余层型缺省尺寸原样；position 左上角对准点击点（拖文件入画布

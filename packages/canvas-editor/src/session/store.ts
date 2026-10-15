@@ -81,6 +81,13 @@ export interface ResizeGesture {
 export interface CreateGesture {
     /** 本次画拉的层型（beginLayerCreate 时从 armedCreate 捕获，会话内定死） */
     type: LayerType
+    /**
+     * 模板表风味的行路径载荷（canvas-web-template-table-drag-create 工单 01）：
+     * beginLayerCreate 时从 ui.armedCreateRowsPath 捕获（会话内定死），非空串 =
+     * 模板表风味（endCreate 分派 createTemplateTable）；undefined = 普通武装
+     * （G 快捷键 V1 空表语义原样）。
+     */
+    templateRowsPath?: string
     /** 起点场景坐标（两点正规化与死区判定基准） */
     startScene: Point
     /** 当前指针场景坐标 */
@@ -149,6 +156,14 @@ export interface EditorUi {
      * 解除。无粘性工具态（spec 决策 2）；openDocument 重置。
      */
     armedCreate: LayerType | null
+    /**
+     * 武装 token 的模板表风味载荷（canvas-web-template-table-drag-create 工单 01）：
+     * 行路径表单确认即武装（spec 决策 3）——armedCreate === 'TableLayer' 且本载荷
+     * 非空串 = 模板表风味（endCreate 按风味分派 createTemplateTable）；空串 = 普通
+     * 表武装（G 快捷键语义不受染指）。rowsPath 是 ui 瞬态载荷——不进 graph、
+     * 不进 wire（红线 3 延伸），beginLayerCreate 捕获进建层会话；openDocument 重置。
+     */
+    armedCreateRowsPath: string
     /** 进行中的画拉建层橡皮筋会话（拖拽期纯视觉，文档零变更）；null = 无 */
     create: CreateGesture | null
     /** 进行中的文本编辑会话；null = 非编辑态 */
@@ -319,6 +334,7 @@ export class EditorStore {
         drag: null,
         resize: null,
         armedCreate: null,
+        armedCreateRowsPath: '',
         create: null,
         editing: null,
         renaming: null,
@@ -374,6 +390,7 @@ export class EditorStore {
             drag: null,
             resize: null,
             armedCreate: null,
+            armedCreateRowsPath: '',
             create: null,
             editing: null,
             renaming: null,
@@ -486,10 +503,15 @@ export class EditorStore {
         this.notify({ scope: 'ui', branch: 'resize' })
     }
 
-    /** 建层武装置/解除（null，drag-create 工单 01）；标量值等短路（重复武装同型不通知） */
-    setArmedCreate(type: LayerType | null): void {
-        if (this.uiValue.armedCreate === type) return
-        this.uiValue = { ...this.uiValue, armedCreate: type }
+    /**
+     * 建层武装置/解除（null，drag-create 工单 01）；标量值等短路（重复武装同型
+     * 不通知）。rowsPath（template-table-drag-create 工单 01）：模板表风味载荷
+     * 与层型一体写——同层型同载荷才短路（重复武装同型换载荷要更新），解除
+     * （null）一律清载荷。
+     */
+    setArmedCreate(type: LayerType | null, rowsPath = ''): void {
+        if (this.uiValue.armedCreate === type && this.uiValue.armedCreateRowsPath === rowsPath) return
+        this.uiValue = { ...this.uiValue, armedCreate: type, armedCreateRowsPath: type === null ? '' : rowsPath }
         this.notify({ scope: 'ui', branch: 'armedCreate' })
     }
 

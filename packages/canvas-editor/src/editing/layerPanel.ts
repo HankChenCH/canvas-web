@@ -348,10 +348,15 @@ export function createDefaultLayer(type: LayerType, textDefaults?: Partial<NextT
  * 高按解码归一为 0、宽 := 表宽关 autoWidth）+ 满宽 60 高缺省格带缺省文本内容
  * （内容宽度同步、零高度耦合，ADR 0006）。rowsPath 由调用方必填（解码
  * rows_path_missing 硬约束，创建表单校验前置）；缺省格 60 高保证空态预览行可见
- * 可点（合成高 = 最高格，03 票 E1 机制）。
+ * 可点（合成高 = 最高格，03 票 E1 机制）。shape（template-table-drag-create 工单
+ * 01）：画拉建层的手势矩形尺寸参数化——表壳宽高照落，行模板/格/内容宽 := 表宽
+ * 的既有耦合自然生效；缺省 400×120 不变。
  */
-export function createTemplateTable(options: { rowsPath: string }): TableLayer {
-    const table = createDefaultLayer('TableLayer') as TableLayer
+export function createTemplateTable(options: { rowsPath: string; shape?: { width: number; height: number } }): TableLayer {
+    const defaultTable = createDefaultLayer('TableLayer') as TableLayer
+    const table = options.shape
+        ? { ...defaultTable, shape: { ...defaultTable.shape, width: options.shape.width, height: options.shape.height } }
+        : defaultTable
     const templateBase = createDefaultLayer('TableRowTemplate') as TableRowTemplateLayer
     const cellBase = createDefaultLayer('TableCellLayer') as TableCellLayer
     const contentBase = createDefaultLayer('TextLayer') as TextLayer

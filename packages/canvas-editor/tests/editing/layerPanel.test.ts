@@ -6,6 +6,7 @@ import { EditorSession } from '../../src/session/editor'
 import {
     buildLayerOutline,
     createDefaultLayer,
+    createTemplateTable,
     insertRootLayerAdjacentInDraft,
     type LayerOutlineNode,
 } from '../../src/editing/layerPanel'
@@ -694,5 +695,22 @@ describe('deleteLayer：删除图层（含子树）', () => {
         session.deleteLayer(['layers'])
         expect(session.store.doc).toBe(before)
         expect(session.store.history).toHaveLength(1)
+    })
+})
+
+describe('createTemplateTable：shape 参数化（template-table-drag-create 工单 01）', () => {
+    it('缺省形状不变：400×120 表壳', () => {
+        const table = createTemplateTable({ rowsPath: 'order.items' })
+        expect(table.shape).toMatchObject({ width: 400, height: 120 })
+        expect(table.template!.shape.width).toBe(400)
+    })
+
+    it('shape 参数落表壳；行模板宽 := 表宽关 autoWidth、autoHeight 语义原样；格与内容宽随表宽', () => {
+        const table = createTemplateTable({ rowsPath: 'order.items', shape: { width: 260, height: 90 } })
+        expect(table.shape).toMatchObject({ width: 260, height: 90 })
+        expect(table.template!.shape).toMatchObject({ width: 260, autoWidth: false, autoHeight: true, height: 0 })
+        expect(table.template!.cells[0]!.shape.width).toBe(260)
+        const content = table.template!.cells[0]!.content
+        expect(content && content.type === 'TextLayer' ? content.shape.width : null).toBe(260)
     })
 })
