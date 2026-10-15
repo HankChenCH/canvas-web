@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest'
 
 import { TEXT_PRESETS } from '@hankchen/canvas-editor'
 
-import { ADD_LAYER_MENU, ADD_MENU, ADD_TEXT_PRESET_MENU, PANEL_ADD_MENU } from '../../src/layer-panel/addMenu'
+import { ADD_LAYER_MENU, ADD_TEXT_PRESET_MENU, PANEL_ADD_MENU } from '../../src/layer-panel/addMenu'
 
 describe('addMenu 文本预设：面板专用清单（text-defaults 工单 02）', () => {
     it('ADD_TEXT_PRESET_MENU 三档：heading/subheading/body，文案与 title 非空', () => {
@@ -54,8 +54,21 @@ describe('addMenu 文本预设：面板专用清单（text-defaults 工单 02）
         ])
     })
 
-    it('工具栏视图不受影响：ADD_LAYER_MENU 仍恰四类层型、无预设项', () => {
-        expect(ADD_LAYER_MENU.map((entry) => entry.type)).toEqual(['TextLayer', 'ImageLayer', 'QrCodeLayer', 'TableLayer'])
-        expect(ADD_MENU.map((entry) => entry.kind)).toEqual(['layer', 'layer', 'layer', 'layer', 'template-table'])
+    it('工具栏视图不受影响：ADD_LAYER_MENU 无预设项（模板表同序收尾，template-table-drag-create 工单 03）', () => {
+        expect(ADD_LAYER_MENU.filter((entry) => entry.kind === 'layer').map((entry) => entry.type)).toEqual([
+            'TextLayer',
+            'ImageLayer',
+            'QrCodeLayer',
+            'TableLayer',
+        ])
+        // 模板表同序收尾（template-table-drag-create 工单 03）；类型面本就排除了
+        // text-preset 档位，此处钉序列防视图收窄回层型子集
+        expect(ADD_LAYER_MENU.map((entry) => entry.kind)).toEqual([
+            'layer',
+            'layer',
+            'layer',
+            'layer',
+            'template-table',
+        ])
     })
 })

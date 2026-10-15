@@ -3,7 +3,9 @@
  * 图层项 = 武装画拉；template-table-drag-create 工单 02 起模板表项 = 表单确认
  * 改武装）。editor-top-toolbar 工单 03 起从
  * LayerPanel.vue 抽出为独立模块：工具栏「＋插入▾」与面板＋同源消费（文案与
- * title 单点维护，改这里两处入口自动跟随），模板表项只属面板、不进工具栏。
+ * title 单点维护，改这里两处入口自动跟随）；template-table-drag-create 工单 03
+ * 起模板表项同序收入工具栏派生视图（spec 决策 5：四图层项后收尾，点击 = 弹层
+ * 表单 → 确认武装）。
  */
 import { RATIO_PRESETS, TEXT_PRESETS, type LayerType, type RatioPresetId, type TextPresetId } from '@hankchen/canvas-editor'
 
@@ -87,7 +89,7 @@ export const PANEL_ADD_MENU: readonly (AddMenuKind | AddTextPresetKind | AddRati
 )
 
 /** 层型项视图（工具栏「＋插入▾」消费，editor-top-toolbar 工单 03）：ADD_MENU 的
- *  四类图层项，模板表项不进工具栏 */
-export const ADD_LAYER_MENU: readonly Extract<AddMenuKind, { kind: 'layer' }>[] = ADD_MENU.filter(
-    (entry): entry is Extract<AddMenuKind, { kind: 'layer' }> => entry.kind === 'layer',
-)
+ *  四类图层项。template-table-drag-create 工单 03 起模板表项同序收入（spec 决策
+ *  5，四图层项后收尾）——视图 = ADD_MENU 全量恒等派生，工具栏与面板同序同文案；
+ *  分发差异（模板表项弹层表单、四图层项直接武装）归消费面（LayerPanel / 宿主） */
+export const ADD_LAYER_MENU: readonly AddMenuKind[] = ADD_MENU
