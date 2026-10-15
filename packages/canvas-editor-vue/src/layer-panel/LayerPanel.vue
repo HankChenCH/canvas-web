@@ -9,20 +9,21 @@
  * 等宽显示闭合片段串——只读 outline 投影字段，面板零计算。
  * 新增菜单画拉建层（drag-create 工单 03）：四类图层项点击 = 武装一次画拉
  * （armLayerCreate，落位与尺寸归画布拉出的橡皮筋），状态栏瞬时提示操作方式；
- * 模板表项保持表单直建不变（rowsPath 必填校验就地拦）。
+ * 模板表项弹 rowsPath 表单（共享组件 TemplateTableForm，template-table-drag-create
+ * 工单 02）——确认不再直建落层，改为武装（armTemplateTableCreate，工单 01 缝）+
+ * 关菜单 + 状态栏瞬时提示（与四图层项同款），落库归画拉 endCreate；取消/Esc 关
+ * 表单不武装、零副作用。
  * 新增菜单比例档位（image-ratio-preset 工单 02，spec 决策 2）：六档平铺在
  * 「图片层」之后——应用即写建层比例槽再武装（画拉按槽钳制，Shift 瞬时反转；
  * 数据面在 ./addMenu），普通「图片层」项分发不带 preset（武装后按槽值钳制，
  * 「自由」档位即显式重置入口）。
  * 新增菜单走 shared 下拉底座（editor-top-toolbar 工单 05）：#trigger 自绘＋方钮、
- * #body 受控插槽承载 rowsPath 表单（模板表项 keepsOpen 交换出表单体），开合/
+ * #body 受控插槽承载共享 rowsPath 表单（模板表项 keepsOpen 交换出表单体），开合/
  * 点外收/Esc 收/a11y/键盘导航全归底座；aside 是 overflow 滚动容器——底座弹层
  * fixed 定位天然逃出裁切（工具栏同款），旧「右缘对齐 + 遮罩」手搓随之退役。
- * 建表表单 rowsPath 补全（rows-path-completion 工单 04）：useDataSourceSchema 桥
- * 取编译后 schema 组装候选源（恒根起点——addTemplateTable 只建根层表，不经起点
- * 判别件，D3）接 usePathCompletion 到表单输入；候选态 Enter 归浮层接受（落值经
- * v-model 与手输同路）、再 Enter 走既有提交管线不动（D10）；无 schema 静默不弹
- * （D7）；Esc 候选态止于浮层收口、菜单不连坐收起。
+ * 建表表单 rowsPath 补全（rows-path-completion 工单 04）：接线随共享组件
+ * TemplateTableForm 内聚（本组件零补全态）——恒根起点直连、无 schema 静默不弹、
+ * 候选态键位归浮层。
  * 视觉沿用 .cn-props 主题命名空间（与属性面板同一套设计令牌）；行卡片化 +
  * 根层拖拽把手见 panel-theme.css 的 cn-layers 区块（工单 08）。
  *
@@ -50,12 +51,8 @@ import DropdownMenu from '../shared/DropdownMenu.vue'
 import type { DropdownMenuEntry } from '../shared/useDropdownMenu'
 import { ARM_LAYER_CREATE_HINT, detectShortcutPlatform, shortcutActionLabel } from '../shared/shortcutsHelp'
 import { useTransientFeedback } from '../shared/useTransientFeedback'
-import { useDataSourceSchema } from '../shared/useDataSourceSchema'
-import { rowsPathCompletionSource } from '../shared/rowsPathCompletionSource'
-import { usePathCompletion } from '../shared/usePathCompletion'
-import ExpressionCompletionPopup from '../shared/ExpressionCompletionPopup.vue'
-import type { CompletionSource } from '../shared/completion'
 import { PANEL_ADD_MENU } from './addMenu'
+import TemplateTableForm from './TemplateTableForm.vue'
 import { isUpperHalf, useLayerPanel } from './useLayerPanel'
 const props = defineProps<{ editor: EditorSession }>()
 
@@ -81,20 +78,12 @@ interface FlatRow {
     draggable: boolean
 }
 
-/** 新增菜单（工单 05 迁 DropdownMenu 底座）：本组件持菜单项数据面 + rowsPath
- *  表单态（#body 受控插槽承载表单视图——issues/05 拍板受控插槽方案，表单留场
- *  菜单内不变）；开合/点外收/Esc 收/键盘导航归底座。菜单数据面（PANEL_ADD_MENU/
- *  类型）在 ./addMenu——面板完整序（层型 + 文本预设 + 模板表，text-defaults 工单 02） */
+/** 新增菜单（工单 05 迁 DropdownMenu 底座）：本组件持菜单项数据面 + 表单开合态
+ *  （#body 受控插槽承载共享表单组件 TemplateTableForm——工单 02 抽出，草稿/错误
+ *  态随组件实例收挂即弃）；开合/点外收/Esc 收/键盘导航归底座。菜单数据面
+ *  （PANEL_ADD_MENU/类型）在 ./addMenu——面板完整序（层型 + 文本预设 + 模板表，
+ *  text-defaults 工单 02） */
 const templateFormOpen = ref(false)
-const templateRowsPath = ref('')
-const templateRowsPathInvalid = ref(false)
-
-/** 表单态重置（创建成功/取消/随收三路共用）：菜单每次打开都是干净的列表态 */
-function resetTemplateForm(): void {
-    templateFormOpen.value = false
-    templateRowsPath.value = ''
-    templateRowsPathInvalid.value = false
-}
 
 /** 菜单项：模板表项 keepsOpen 交换出表单体（items 清空、菜单留场），图层四项
  *  武装画拉（drag-create 工单 03：点击 = 武装一次画拉，落库归画拉 endCreate）
@@ -148,72 +137,24 @@ const addMenuItems = computed<DropdownMenuEntry[]>(() =>
           ),
 )
 
-/** 表单创建（rowsPath 必填校验就地拦，spec §2.1 N1）：空串标错不留场，成功建表
- *  （内核 addTemplateTable，自动选中）后重置 + 收菜单 */
-function addTemplateTable(closeMenu: () => void): void {
-    const rowsPath = templateRowsPath.value.trim()
-    if (rowsPath === '') {
-        templateRowsPathInvalid.value = true
-        return
-    }
-    props.editor.addTemplateTable(rowsPath)
-    resetTemplateForm()
+/** 表单确认（工单 02，spec 决策 1）：不再直建落层——非空 rowsPath 武装模板表建层
+ *  （内核 armTemplateTableCreate，工单 01 缝；非空校验归共享组件就地拦）+ 关菜单
+ *  + 状态栏瞬时提示（与四图层项武装同句）；落库归画拉 endCreate */
+function onTemplateFormConfirm(rowsPath: string, closeMenu: () => void): void {
+    props.editor.armTemplateTableCreate(rowsPath)
+    useTransientFeedback().show(ARM_LAYER_CREATE_HINT)
     closeMenu()
 }
 
-/** 表单取消：重置 + 收菜单（净效果 = 菜单与表单态全部归零） */
-function cancelTemplateForm(closeMenu: () => void): void {
-    resetTemplateForm()
+/** 表单取消：关菜单不武装、零副作用（草稿/错误态随组件实例收挂即弃） */
+function onTemplateFormCancel(closeMenu: () => void): void {
+    templateFormOpen.value = false
     closeMenu()
 }
 
-/** 菜单随收清理（底座 closed 事件，Esc/点外/触发钮点收各路）：表单态不跨开合残留 */
+/** 菜单随收清理（底座 closed 事件，Esc/点外/触发钮点收各路）：表单开合态不跨开合残留 */
 function onAddMenuClosed(): void {
-    resetTemplateForm()
-}
-
-// ---- 建表表单 rowsPath 补全（rows-path-completion 工单 04，D3/D7/D10） ----
-
-/** schema 声明切片桥（shared 域，状态栏同源）：候选源的唯一来源 */
-const dataSourceSchema = useDataSourceSchema(props.editor)
-
-/**
- * 候选源：工单 01 枚举器根起点直连——addTemplateTable 只建根层表
- * （insertRootLayerInDraft），不经起点三分流判别件（D3 表单行恒根起点）；
- * 「行数组」文案在公共组装处置入（工单 03/04 合流点）。schema 未注入 = null 源，
- * 静默不弹（D7），手输不受阻。
- */
-const templateRowsPathSource = computed<CompletionSource | null>(() =>
-    rowsPathCompletionSource(dataSourceSchema.value),
-)
-
-/** 表单输入元素（v-if 条件挂载——ref 随挂/卸置空，composable 换绑跟随） */
-const rowsPathInputEl = ref<HTMLInputElement | null>(null)
-const pathPopupRef = ref<InstanceType<typeof ExpressionCompletionPopup> | null>(null)
-
-const { popup: pathPopup, accept: acceptPathCandidate } = usePathCompletion({
-    target: rowsPathInputEl,
-    // 门 = 表单在场（菜单收起即闭）；schema 缺席由 null 源在 resolve 内收口
-    enabled: () => templateFormOpen.value,
-    resolve: (input) => templateRowsPathSource.value?.(input) ?? null,
-    popupEl: computed(() => pathPopupRef.value?.rootEl ?? null),
-})
-
-/**
- * 表单输入键位路由（Vue 模板监听先于 composable 的元素监听注册——候选态在这里
- * 让位浮层，接受手术归 composable）：候选态 Enter 不触发提交（浮层 accept 落值经
- * v-model 与手输同路），再 Enter 浮层已收回到既有提交管线（D10 不动）；Esc 候选态
- * 止于浮层收口——stop 阻断到菜单根，菜单不连坐收起（表单编辑不被撕掉）；占位态
- * （open 提示行）与无浮层键位全部让路原生/既有管线（composable 占位态本就不吞键）。
- */
-function onRowsPathKeydown(event: KeyboardEvent, closeMenu: () => void): void {
-    if (event.key === 'Enter') {
-        if (pathPopup.open && pathPopup.items.length > 0) return
-        event.preventDefault()
-        addTemplateTable(closeMenu)
-        return
-    }
-    if (event.key === 'Escape' && pathPopup.open) event.stopPropagation()
+    templateFormOpen.value = false
 }
 
 /**
@@ -524,47 +465,17 @@ watch(panel.renaming, async (path) => {
                         </button>
                     </template>
                     <template #body="{ closeMenu }">
-                        <template v-if="templateFormOpen">
-                            <p class="px-2 pt-1 text-[11px] leading-4 text-cn-muted">模板行按数据行路径展开成表</p>
-                            <input
-                                ref="rowsPathInputEl"
-                                v-model="templateRowsPath"
-                                data-template-rows-path
-                                type="text"
-                                placeholder="如 order.items"
-                                class="mx-1 my-1 w-[calc(100%-8px)] rounded border bg-cn-field px-2 py-1 text-[12px] text-cn-fg outline-none focus:border-cn-accent/60"
-                                :class="templateRowsPathInvalid ? 'border-cn-danger' : 'border-cn-field-line'"
-                                @keydown="onRowsPathKeydown($event, closeMenu)"
-                            />
-                            <p v-if="templateRowsPathInvalid" class="px-2 pb-1 text-[11px] text-cn-danger">rowsPath 必填</p>
-                            <div class="flex gap-1 p-1">
-                                <button
-                                    type="button"
-                                    data-template-confirm
-                                    class="flex-1 rounded bg-cn-accent/20 px-2 py-1 text-[12px] text-cn-accent hover:bg-cn-accent/30"
-                                    @click="addTemplateTable(closeMenu)"
-                                >
-                                    创建
-                                </button>
-                                <button
-                                    type="button"
-                                    class="flex-1 rounded px-2 py-1 text-[12px] text-cn-muted hover:text-cn-fg"
-                                    @click="cancelTemplateForm(closeMenu)"
-                                >
-                                    取消
-                                </button>
-                            </div>
-                        </template>
+                        <!-- 共享 rowsPath 表单（工单 02 抽出）：确认 = 武装 + 关菜单 +
+                             瞬时提示；取消/Esc 关表单不武装。v-if 挂载——草稿/错误态
+                             随实例收挂即弃，菜单每次打开都是干净的表单态 -->
+                        <TemplateTableForm
+                            v-if="templateFormOpen"
+                            :editor="props.editor"
+                            @confirm="onTemplateFormConfirm($event, closeMenu)"
+                            @cancel="onTemplateFormCancel(closeMenu)"
+                        />
                     </template>
                 </DropdownMenu>
-                <!-- rowsPath 补全浮层（工单 04）：portal 到 body，仅表单在场渲染；
-                     弹层随 state.open 开合，rootEl 供视口右缘收口量宽 -->
-                <ExpressionCompletionPopup
-                    v-if="templateFormOpen"
-                    ref="pathPopupRef"
-                    :state="pathPopup"
-                    @select="acceptPathCandidate"
-                />
             </div>
         </header>
 

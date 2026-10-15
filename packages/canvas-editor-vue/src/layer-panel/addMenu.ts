@@ -1,6 +1,7 @@
 /**
  * 图层面板「＋」新增菜单的数据面（工单 10/12 引入；drag-create 工单 03 起四类
- * 图层项 = 武装画拉、模板表项保持表单直建）。editor-top-toolbar 工单 03 起从
+ * 图层项 = 武装画拉；template-table-drag-create 工单 02 起模板表项 = 表单确认
+ * 改武装）。editor-top-toolbar 工单 03 起从
  * LayerPanel.vue 抽出为独立模块：工具栏「＋插入▾」与面板＋同源消费（文案与
  * title 单点维护，改这里两处入口自动跟随），模板表项只属面板、不进工具栏。
  */

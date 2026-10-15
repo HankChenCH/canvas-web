@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest'
 import { ADD_LAYER_MENU, ADD_MENU } from '../../src/layer-panel/addMenu'
 
 describe('addMenu：面板＋与工具栏插入▾ 的同源数据面', () => {
-    it('ADD_MENU 五项：四类图层（武装画拉）+ 模板表（表单直建，只属面板）', () => {
+    it('ADD_MENU 五项：四类图层（武装画拉）+ 模板表（表单确认改武装，只属面板）', () => {
         expect(ADD_MENU.map((entry) => entry.kind)).toEqual([
             'layer',
             'layer',

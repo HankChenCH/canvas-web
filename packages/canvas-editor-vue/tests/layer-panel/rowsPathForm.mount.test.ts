@@ -11,7 +11,11 @@
  * 降级面：无 schema 注入零弹层、手输不受阻（D7）；空串提交校验行为不变（D10）；
  * Esc 候选态只收浮层、菜单留场（表单编辑不被连坐收起）。
  *
- * 恒根起点（D3）：addTemplateTable 只建根层表（insertRootLayerInDraft），表单不经
+ * 确认语义（template-table-drag-create 工单 02，spec 决策 1）：确认不再直建落层，
+ * 改为武装（armedCreate = 'TableLayer' + rowsPath 载荷）+ 关菜单 + 状态栏瞬时提示；
+ * 文档零变化（落库归画拉 endCreate）。
+ *
+ * 恒根起点（D3）：建表只落根层（insertRootLayerInDraft），表单不经
  * 工单 01 起点三分流判别件——候选恒自载荷根 schema 起。
  */
 import { afterEach, describe, expect, it } from 'vitest'
@@ -20,6 +24,8 @@ import { mount, type VueWrapper } from '@vue/test-utils'
 
 import { EditorSession, type FrameScheduler } from '@hankchen/canvas-editor'
 
+import { ARM_LAYER_CREATE_HINT } from '../../src/shared/shortcutsHelp'
+import { useTransientFeedback } from '../../src/shared/useTransientFeedback'
 import LayerPanel from '../../src/layer-panel/LayerPanel.vue'
 
 const nullScheduler: FrameScheduler = () => () => {}
@@ -93,12 +99,11 @@ const optionSegments = (): string[] =>
     optionEls().map((option) => option.querySelector('.cn-completion__segment')?.textContent ?? '')
 const optionTexts = (): string[] => optionEls().map((option) => option.textContent ?? '')
 
-function createdTable(editor: EditorSession): { rowsPath: string; templateCells: number } {
-    const layers = editor.store.doc!.layers
-    expect(layers).toHaveLength(1)
-    const table = layers[0]!
-    if (table.type !== 'TableLayer') throw new Error('expected TableLayer')
-    return { rowsPath: table.rowsPath, templateCells: table.template?.cells.length ?? -1 }
+function armed(editor: EditorSession): { armedCreate: string; rowsPath: string } {
+    return {
+        armedCreate: editor.store.ui.armedCreate ?? 'null',
+        rowsPath: editor.store.ui.armedCreateRowsPath,
+    }
 }
 
 afterEach(() => {
@@ -152,8 +157,8 @@ describe('建表表单弹层全链路（根起点直连，D3）', () => {
     })
 })
 
-describe('接受候选后提交（既有建表管线不动，D10）', () => {
-    it('接受 + 再 Enter 提交：table.rowsPath 落 graph（建表 mount 用例形态）', async () => {
+describe('接受候选后确认（工单 02：确认 = 武装，D10 管线不动）', () => {
+    it('接受 + 再 Enter 确认：armedCreate 态 + 关菜单 + 瞬时提示，文档零变化', async () => {
         const editor = makeEditor()
         editor.setDataSourceSchema(RAW_SCHEMA)
         const wrapper = mountPanel(editor)
@@ -162,13 +167,18 @@ describe('接受候选后提交（既有建表管线不动，D10）', () => {
         await typeRowsPath(wrapper, 'order.', 6)
         await pressKey(wrapper, 'Enter')
         expect(editor.store.doc!.layers).toHaveLength(0)
-        // 浮层已收，Enter 回到既有提交管线（自动选中 + 缺省格带文本）
+        // 浮层已收，Enter 回到既有提交管线（改武装：armedCreate + rowsPath 载荷）
         await pressKey(wrapper, 'Enter')
-        expect(createdTable(editor)).toEqual({ rowsPath: 'order.items', templateCells: 1 })
-        expect(editor.store.ui.selection).toEqual(['layers', 0])
+        expect(armed(editor)).toEqual({ armedCreate: 'TableLayer', rowsPath: 'order.items' })
+        // 关菜单 + 表单态随收
+        expect(rowsPathInput(wrapper).exists()).toBe(false)
+        // 状态栏瞬时提示与四图层项武装同款
+        expect(useTransientFeedback().message.value).toBe(ARM_LAYER_CREATE_HINT)
+        // 文档零变化——落库归画拉 endCreate
+        expect(editor.store.doc!.layers).toHaveLength(0)
     })
 
-    it('鼠标点选接受 + 创建钮提交：同落 graph（pointerdown 不被菜单点外收连坐）', async () => {
+    it('鼠标点选接受 + 创建钮确认：同武装（pointerdown 不被菜单点外收连坐）', async () => {
         const editor = makeEditor()
         editor.setDataSourceSchema(RAW_SCHEMA)
         const wrapper = mountPanel(editor)
@@ -186,7 +196,33 @@ describe('接受候选后提交（既有建表管线不动，D10）', () => {
         expect(popupOpen()).toBe(false)
         expect(rowsPathInput(wrapper).element.value).toBe('order.items')
         await wrapper.find('[data-template-confirm]').trigger('click')
-        expect(createdTable(editor)).toEqual({ rowsPath: 'order.items', templateCells: 1 })
+        expect(armed(editor)).toEqual({ armedCreate: 'TableLayer', rowsPath: 'order.items' })
+        expect(rowsPathInput(wrapper).exists()).toBe(false)
+    })
+
+    it('取消（取消钮 / 浮层已收后 Esc）不武装、文档零变化', async () => {
+        const editor = makeEditor()
+        editor.setDataSourceSchema(RAW_SCHEMA)
+        const wrapper = mountPanel(editor)
+        await openTemplateForm(wrapper)
+
+        await typeRowsPath(wrapper, 'order.items', 4)
+        await pressKey(wrapper, 'Escape')
+        expect(editor.store.ui.armedCreate).toBeNull()
+        // 候选态 Esc 只收浮层：表单留场（菜单不连坐）
+        expect(rowsPathInput(wrapper).exists()).toBe(true)
+        // 浮层已收再 Esc = 取消：关菜单、表单随收
+        await pressKey(wrapper, 'Escape')
+        expect(rowsPathInput(wrapper).exists()).toBe(false)
+        expect(editor.store.doc!.layers).toHaveLength(0)
+
+        // 再开：取消钮同语义
+        await openTemplateForm(wrapper)
+        await typeRowsPath(wrapper, 'order.items', 4)
+        await wrapper.find('[data-template-cancel]').trigger('click')
+        expect(editor.store.ui.armedCreate).toBeNull()
+        expect(rowsPathInput(wrapper).exists()).toBe(false)
+        expect(editor.store.doc!.layers).toHaveLength(0)
     })
 
     it('229 合成期不接受：keydown 229 Enter 不触发接受也不触发提交（浮层保持、值不变）', async () => {
@@ -202,6 +238,7 @@ describe('接受候选后提交（既有建表管线不动，D10）', () => {
         expect(popupOpen()).toBe(true)
         expect(rowsPathInput(wrapper).element.value).toBe('order.')
         expect(editor.store.doc!.layers).toHaveLength(0)
+        expect(editor.store.ui.armedCreate).toBeNull()
     })
 })
 

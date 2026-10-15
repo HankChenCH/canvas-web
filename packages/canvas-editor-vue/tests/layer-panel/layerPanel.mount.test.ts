@@ -704,8 +704,8 @@ describe('LayerPanel：显示/隐藏（工单 10）', () => {
 
 // ---- 模板创作（spec §2.1/§2.2/§2.5）：菜单建模板表 + 模板态大纲操作面 ----
 
-describe('LayerPanel：模板表创建菜单（spec §2.1）', () => {
-    it('模板表经菜单表单创建：rowsPath 必填（空串就地拦）→ 创建 + 自动选中', async () => {
+describe('LayerPanel：模板表创建菜单（template-table-drag-create 工单 02：确认 = 武装）', () => {
+    it('模板表经菜单表单确认：rowsPath 必填（空串就地拦）→ 武装 + 关菜单 + 瞬时提示', async () => {
         const editor = makeEditor([])
         const wrapper = mount(LayerPanel, { props: { editor } })
 
@@ -713,26 +713,28 @@ describe('LayerPanel：模板表创建菜单（spec §2.1）', () => {
         await wrapper.find('[data-add-layer="template-table"]').trigger('click')
         expect(wrapper.find('[data-template-rows-path]').exists()).toBe(true)
 
-        // 空串确认 → 就地标错、文档零变化
+        // 空串确认 → 就地标错、零武装零建层
         await wrapper.find('[data-template-rows-path]').setValue('  ')
         await wrapper.find('[data-template-confirm]').trigger('click')
         expect(editor.store.doc!.layers).toHaveLength(0)
+        expect(editor.store.ui.armedCreate).toBeNull()
         expect(wrapper.find('[data-template-rows-path]').classes().some((c) => c.includes('border-cn-danger'))).toBe(true)
 
-        // 非空确认 → 建表 + 选中（缺省格带文本内容）；模板表保持表单直建语义
-        // （spec 决策 3 唯一直建例外，不武装不提示——rowsPath 必填校验就地拦）
+        // 非空确认 → 武装（armedCreate + rowsPath 载荷）+ 关菜单 + 状态栏瞬时提示
+        //（与四图层项武装提示同句）；文档零变化——落库归画拉 endCreate（工单 01 缝）
         await wrapper.find('[data-template-rows-path]').setValue('order.items')
         await wrapper.find('[data-template-confirm]').trigger('click')
-        const layers = editor.store.doc!.layers
-        expect(layers).toHaveLength(1)
-        const table = layers[0]!
-        if (table.type !== 'TableLayer') throw new Error('expected TableLayer')
-        expect(table.rowsPath).toBe('order.items')
-        expect(table.template).not.toBeNull()
-        expect(table.template!.cells).toHaveLength(1)
-        expect(table.template!.cells[0]!.content?.type).toBe('TextLayer')
-        expect(editor.store.ui.selection).toEqual(['layers', 0])
+        expect(editor.store.ui.armedCreate).toBe('TableLayer')
+        expect(editor.store.ui.armedCreateRowsPath).toBe('order.items')
+        expect(editor.store.doc!.layers).toHaveLength(0)
+        expect(useTransientFeedback().message.value).toBe('画拉或点击落层，Esc 取消')
+        // 关菜单：表单态随收
+        expect(wrapper.find('[data-template-rows-path]').exists()).toBe(false)
+
+        // cancelCreate 清武装清载荷（武装态 Esc 链路的一角，内核语义归工单 01）
+        editor.cancelCreate()
         expect(editor.store.ui.armedCreate).toBeNull()
+        expect(editor.store.ui.armedCreateRowsPath).toBe('')
         wrapper.unmount()
     })
 })
