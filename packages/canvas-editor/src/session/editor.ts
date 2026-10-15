@@ -2433,20 +2433,6 @@ export class EditorSession {
     }
 
     /**
-     * 新增模板表（「+」选择器入口，spec §2.1）：createTemplateTable 缺省形态 +
-     * 置顶 + 自动选中；一次调用 = 一步历史。rowsPath 必填（解码 rows_path_missing
-     * 硬约束的对齐兜底，表单校验前置），空串 no-op。
-     */
-    addTemplateTable(rowsPath: string): void {
-        if (!this.store.doc || rowsPath === '') return
-        const index: TxOut<number> = { v: -1 }
-        this.store.transact((draft) => {
-            index.v = insertRootLayerInDraft(draft, createTemplateTable({ rowsPath }) as Draft<Layer>)
-        })
-        if (index.v >= 0) this.store.setSelection(['layers', index.v])
-    }
-
-    /**
      * 模板行加格（spec §3.1）：addTemplateCellInDraft 重建路径（末格宽/首格行宽、
      * 零高度耦合），自动选中新格；一次调用 = 一步历史。非模板态 no-op。
      */

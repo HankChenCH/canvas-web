@@ -656,10 +656,17 @@ const emptyTemplateTable = (): WireLayerNode => ({
     template: wireNode('TableRowTemplate', shapeWire(400, 0, { autoHeight: true }), { cells: [] }),
 })
 
-describe('addTemplateTable：新建空模板表（缺省形态，spec §2.1）', () => {
+describe('模板表新建等价面（直建 action 已退役，template-table-drag-create 工单 04 迁移）：armTemplateTableCreate + 死区点击', () => {
+    /** 直建退役后的生产等价路径：风味武装 + 无位移画拉（死区点击兜底 = 缺省壳落点击点） */
+    const createTemplateTableByGesture = (session: EditorSession, rowsPath: string): void => {
+        session.armTemplateTableCreate(rowsPath)
+        if (!session.beginLayerCreate(60, 50)) return
+        session.endCreate()
+    }
+
     it('缺省形态：表壳 400×120 + auto 行模板（宽=表宽、声明高归零）+ 满宽 60 高缺省格带文本；rowsPath 落域', () => {
         const session = openTableDoc(basicTable())
-        session.addTemplateTable('order.items')
+        createTemplateTableByGesture(session, 'order.items')
 
         expect(session.store.doc!.layers).toHaveLength(2)
         const table = tableAt(session, 1)
@@ -688,16 +695,17 @@ describe('addTemplateTable：新建空模板表（缺省形态，spec §2.1）',
 
     it('置顶 + 自动选中 + 一步历史，undo 整表移除', () => {
         const session = openTableDoc(basicTable())
-        session.addTemplateTable('order.items')
+        createTemplateTableByGesture(session, 'order.items')
         expect(session.store.ui.selection).toEqual(['layers', 1])
         expect(stepCount(session)).toBe(1)
         session.undo()
         expect(session.store.doc!.layers).toHaveLength(1)
     })
 
-    it('rowsPath 空串 no-op（解码硬约束对齐）：零图层变化、零历史步', () => {
+    it('rowsPath 空串 no-op（内核防御，表单层已拦）：不武装、零图层变化、零历史步', () => {
         const session = openTableDoc(basicTable())
-        session.addTemplateTable('')
+        createTemplateTableByGesture(session, '')
+        expect(session.store.ui.armedCreate).toBeNull()
         expect(session.store.doc!.layers).toHaveLength(1)
         expect(stepCount(session)).toBe(0)
     })

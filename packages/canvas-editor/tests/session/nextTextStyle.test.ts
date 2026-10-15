@@ -172,7 +172,11 @@ describe('消费：建层入口以槽值覆盖工厂缺省', () => {
         const session = makeSession([textLayer()])
         session.updateSpec(['layers', 0], ['font'], 'Noto Sans SC')
         session.updateSpec(['layers', 0], ['fontSize'], 40)
-        session.addTemplateTable('rows')
+        // 直建 action 已退役（template-table-drag-create 工单 04）：生产等价路径 =
+        // 风味武装 + 死区点击兜底（缺省壳落点击点）
+        session.armTemplateTableCreate('rows')
+        expect(session.beginLayerCreate(60, 50)).toBe(true)
+        session.endCreate()
         const table = session.store.doc!.layers[1] as TableLayer
         expect(table.type).toBe('TableLayer')
         const content = table.template!.cells[0]!.content as TextLayer
