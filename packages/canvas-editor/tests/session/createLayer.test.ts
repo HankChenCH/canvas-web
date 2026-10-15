@@ -10,6 +10,7 @@
  */
 import { describe, expect, it } from 'vitest'
 
+import { decodeGraph, encodeGraph } from '@hankchen/canvas'
 import type { Canvas, Layer, TableLayer, TextLayer } from '@hankchen/canvas'
 
 import { EditorSession, type FrameScheduler } from '../../src/session/editor'
@@ -510,6 +511,31 @@ describe('模板表风味武装（canvas-web-template-table-drag-create 工单 0
         expect(layer).toMatchObject({ type: 'TableLayer', template: null, rowsPath: '', rows: [] })
         expect(layer.shape).toMatchObject({ width: 200, height: 120 })
         expect(session.store.ui.armedCreateRowsPath).toBe('')
+    })
+
+    it('持久化往返（template-table-drag-create 工单 04）：画拉模板表 → encode → decode 恒等，rows_path_missing 不可触发', () => {
+        const session = makeSession([])
+        session.armTemplateTableCreate('org.name')
+        session.beginLayerCreate(10, 20)
+        session.createTo(230, 140)
+        const path = session.endCreate()
+        expect(path).not.toBeNull()
+        // 保存产物 = canonical encode JSON：模板态 data.rowsPath 落库、template 键
+        // 在场、rows 不落（template ⊕ rows XOR 的 wire 面）
+        const json = JSON.stringify(encodeGraph(session.store.doc!))
+        const tableWire = JSON.parse(json).layers[0] as Record<string, unknown>
+        expect(tableWire.type).toBe('TableLayer')
+        expect((tableWire.data as { rowsPath: string }).rowsPath).toBe('org.name')
+        expect(tableWire.template).toBeDefined()
+        expect('rows' in tableWire).toBe(false)
+        // 重开 = decodeGraph：rows_path_missing 不触发（rowsPath 非空由表单必填保证），
+        // 域形态 template !== null + rows 恒空；再 encode 字节级恒等（往返无损）
+        const reopened = decodeGraph(JSON.parse(json))
+        const table = reopened.layers[0] as TableLayer
+        expect(table.template).not.toBeNull()
+        expect(table.rows).toEqual([])
+        expect(table.rowsPath).toBe('org.name')
+        expect(JSON.stringify(encodeGraph(reopened))).toBe(json)
     })
 })
 
