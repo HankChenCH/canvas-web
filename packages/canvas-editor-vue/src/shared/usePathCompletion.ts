@@ -30,8 +30,9 @@
  *   全是候选确认/预编辑操作，接受、导航、刷新一律不触发；compositionend 后
  *   按落定文本刷新。
  * - 锚点/视口收口与表达式控件同语（mirror div 测光标 + fixed + scroll/resize
- *   重算 + 右缘收口）——定位逻辑在表达式 composable 内私有，约束「不动
- *   useExpressionCompletion」故就地落件不抽公共（两控件各自演进互不牵连）。
+ *   重算）——落点经 placePopupInViewport 单点（工单 06 伴生修复随 05 抽公共：
+ *   下方放不上向上翻转、翻转仍不足钳制视口内，横向右缘收口；表达式控件同函数
+ *   消费，两控件定位行为恒一致）。
  *
  * 无 schema/降级态零弹层（D7）：候选源 null = 无补全态，浮层不开、手输不受阻。
  * 呈现态复用 ExpressionCompletionState 契约（ExpressionCompletionPopup 直用）。
@@ -42,13 +43,8 @@ import type { ExpressionScanFragment } from '@hankchen/canvas-editor'
 
 import { applyCompletion, type CompletionSource } from './completion'
 import { measureCursorAnchor } from './completionAnchor'
+import { placePopupInViewport } from './popupPosition'
 import type { ExpressionCompletionState } from './useExpressionCompletion'
-
-/** 光标下缘与浮层上缘的间隙（px；与表达式控件同语） */
-const ANCHOR_GAP = 4
-
-/** 浮层右缘与视口右缘的最小留白（px） */
-const VIEWPORT_MARGIN = 4
 
 /** 光标移动键：浮层开着时 keyup 按光标处段落重算；↑↓ 归浮层导航不在此列 */
 const CURSOR_MOVE_KEYS = ['ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown']
@@ -100,20 +96,19 @@ export function usePathCompletion(options: {
     function reposition(): void {
         if (!popup.open || !el) return
         const anchor = measureCursorAnchor(el)
-        popup.top = anchor.bottom + ANCHOR_GAP
-        popup.left = clampToViewport(anchor.left)
-    }
-
-    /**
-     * 视口右缘收口（与表达式控件同语）：光标贴近视口右缘时浮层左移，右缘不越
-     * innerWidth；量不到宽（首帧未渲染）按原锚放——首开路径由 recompute 延一拍
-     * 补量。
-     */
-    function clampToViewport(left: number): number {
+        // 视口收口（工单 06 伴生修复，表达式控件同款）：placePopupInViewport 单点
+        // ——下方放不下向上翻转、翻转仍不足钳制视口内；横向右缘收口同函数。
+        // 量不到宽高（首帧未渲染/降级）按原锚下方放——首开路径由 recompute 延一拍补量
         const node = options.popupEl ? toValue(options.popupEl) : null
-        const width = node?.offsetWidth ?? 0
-        if (width <= 0) return left
-        return Math.max(0, Math.min(left, window.innerWidth - VIEWPORT_MARGIN - width))
+        const placed = placePopupInViewport({
+            anchor,
+            popupWidth: node?.offsetWidth ?? 0,
+            popupHeight: node?.offsetHeight ?? 0,
+            viewportWidth: window.innerWidth,
+            viewportHeight: window.innerHeight,
+        })
+        popup.top = placed.top
+        popup.left = placed.left
     }
 
     /**

@@ -129,56 +129,49 @@ describe('表达式态数据字段：语法错误实时标错', () => {
     })
 })
 
-describe('资源字段：资源单值门诊断（resource-expression-single-ref 工单 03，ADR 0020）', () => {
-    /** QR 内容字段走 text 控件；表达式态带 cn-field--expression 标识（色值/字体的
-     *  text input 不带，定位精确到内容字段） */
-    function qrField(wrapper: VueWrapper) {
-        return wrapper.find('input.cn-field--expression')
-    }
-
-    async function typeQr(wrapper: VueWrapper, value: string): Promise<void> {
-        const field = qrField(wrapper)
-        ;(field.element as HTMLInputElement).value = value
-        await field.trigger('input')
-        await nextTick()
-    }
-
-    async function mountQr(): Promise<VueWrapper> {
-        const editor = makeEditor([qrLayer({ value: '{{', expression: '{{' })])
+describe('资源字段：资源单值门诊断（工单 03 门 + 工单 05 选择器换装面）', () => {
+    /** QR 内容字段表达式态 = 级联路径选择器（resourceValue 控件，工单 05）：违例
+     *  形态（旧拼接/函数/尾缀字面）是文档存量，非选择器可产出——经内核写入口
+     *  构造；诊断红边落选择器根盒（fallthrough），提示行纯展示（div 根无从落
+     *  选区）。无 schema 注入 → 选择器无菜单钮（引用以声明为门，只读回显）。 */
+    async function mountQr(template: string): Promise<VueWrapper> {
+        const editor = makeEditor([qrLayer({ value: template, expression: template })])
         const wrapper = mountPanel(editor)
         editor.setSelection(['layers', 0])
         await nextTick()
         return wrapper
     }
 
-    it('片段外字面（尾缀）→ 单值门标错（资源教学文案，非片段扫描文案）', async () => {
-        const wrapper = await mountQr()
-        await typeQr(wrapper, '{{orderNo}}-qr')
+    it('片段外字面（尾缀）→ 单值门标错（资源教学文案）+ 选择器原文只读回显', async () => {
+        const wrapper = await mountQr('{{orderNo}}-qr')
 
         expect(invalidField(wrapper).exists()).toBe(true)
         expect(errorHint(wrapper).text()).toBe('表达式语法错误：资源内容必须是单个字段路径，不支持拼接文字')
+        expect(wrapper.find('.cn-pathpicker__value').text()).toBe('{{orderNo}}-qr')
+        // 提示行纯展示（div 根无从落选区，不渲染可点击暗示）
+        expect(errorHint(wrapper).classes()).not.toContain('cursor-pointer')
+        // 无 schema（引用以声明为门）：菜单钮不渲染，整体只读
+        expect(wrapper.find('.cn-pathpicker__toggle').exists()).toBe(false)
     })
 
     it('函数调用 → 资源面禁函数（独立 kind 文案）', async () => {
-        const wrapper = await mountQr()
-        await typeQr(wrapper, '{{number(orderNo, 2)}}')
+        const wrapper = await mountQr('{{number(orderNo, 2)}}')
 
         expect(errorHint(wrapper).text()).toBe('表达式语法错误：资源内容不支持函数调用')
     })
 
     it('多片段拼接（文本面合法形态）在资源面被拦——门是整串判定', async () => {
-        const wrapper = await mountQr()
-        await typeQr(wrapper, '{{orderNo}}{{orderNo}}')
+        const wrapper = await mountQr('{{orderNo}}{{orderNo}}')
 
         expect(errorHint(wrapper).text()).toBe('表达式语法错误：资源内容必须是单个字段路径，不支持拼接文字')
     })
 
-    it('合法单值裸路径零提示零红边', async () => {
-        const wrapper = await mountQr()
-        await typeQr(wrapper, '{{orderNo}}')
+    it('合法单值裸路径零提示零红边 + 选择器拆壳回显裸路径', async () => {
+        const wrapper = await mountQr('{{orderNo}}')
 
         expect(errorHint(wrapper).exists()).toBe(false)
         expect(invalidField(wrapper).exists()).toBe(false)
+        expect(wrapper.find('.cn-pathpicker__value').text()).toBe('orderNo')
     })
 
     it('文本层多片段插值照旧零标错（文本字段走既有诊断不动）', async () => {
@@ -191,17 +184,5 @@ describe('资源字段：资源单值门诊断（resource-expression-single-ref 
 
         expect(errorHint(wrapper).exists()).toBe(false)
         expect(invalidField(wrapper).exists()).toBe(false)
-    })
-
-    it('点击提示：聚焦控件并选中整串（门诊断 span = 整个模板串）', async () => {
-        const wrapper = await mountQr()
-        await typeQr(wrapper, '{{orderNo}}-qr')
-
-        const input = qrField(wrapper).element as HTMLInputElement
-        await errorHint(wrapper).trigger('click')
-
-        expect(document.activeElement).toBe(input)
-        // HTMLInputElement 的 selection 可空（textarea 型非空，lib.dom 5.9）；选中态已断言在先
-        expect(input.value.slice(input.selectionStart ?? 0, input.selectionEnd ?? 0)).toBe('{{orderNo}}-qr')
     })
 })

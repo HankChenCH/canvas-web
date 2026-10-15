@@ -39,6 +39,7 @@ export type FieldControl =
     | 'border'
     | 'font'
     | 'imageSrc'
+    | 'resourceValue'
 
 /**
  * 自适应 prefix 钮描述（pair 子字段用）：key 相对 pair 值对象上的布尔键；
@@ -77,8 +78,7 @@ export interface FieldDef {
     /**
      * 资源类内容字段（resource-expression-single-ref 工单 03，ADR 0020）：表达式态
      * 诊断走内核资源单值门（resourcePathDiagnostics——恰一闭合片段 + 裸点路径，
-     * 禁拼接/函数），不走片段级扫描诊断。图片地址/二维码值两类声明；二维码内容
-     * 字段用 text 控件、control 无法判别，故显式标记。
+     * 禁拼接/函数），不走片段级扫描诊断。图片地址/二维码值两类声明。
      */
     readonly resource?: true
     /**
@@ -248,7 +248,10 @@ const IMAGE_SECTION: FieldSection = {
 
 const QR_SECTION: FieldSection = {
     title: '二维码',
-    fields: [{ key: ['value'], label: '内容', control: 'text', data: true, resource: true }],
+    // 内容（resource-expression-single-ref 工单 05，ADR 0020）：表达式态作者面 =
+    // 级联路径选择器（resourceValue 控件，壳拆装 {{}} ⇄ 裸路径）；资源表达式必须
+    // 恰为单个裸路径片段，纯菜单点选不设手输缝
+    fields: [{ key: ['value'], label: '内容', control: 'resourceValue', data: true, resource: true }],
 }
 
 /**

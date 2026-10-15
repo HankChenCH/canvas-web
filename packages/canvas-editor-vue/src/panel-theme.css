@@ -252,3 +252,27 @@
     background-color: var(--cn-accent-soft);
     color: var(--cn-accent);
 }
+
+/* ---- 资源路径选择器浮层（resource-expression-single-ref 工单 05）----
+   portal 到 body 后脱离面板 DOM 子树，根元素自带 .cn-props 重建令牌命名空间；
+   抬升底色/投影与高亮态与补全浮层同语言（option 几何以 tailwind utility 留在
+   组件模板）。只读展示框的盒子视觉（bg/border/圆角）同 cn-field 输入框族。 */
+.cn-props.cn-pathpicker__menu {
+    background-color: var(--cn-bg-elevated);
+    box-shadow: 0 16px 40px -12px rgba(2, 6, 23, 0.55);
+}
+
+.cn-props .cn-pathpicker__option--active {
+    background-color: var(--cn-accent-soft);
+}
+
+/* 选择器的状态描边（工单 05）：PropertyField 的状态类（cn-field--expression/
+   cn-field--invalid）经 fallthrough 落在选择器根盒（flex 容器无边框），描边经
+   后代选择器落到只读展示框——与 cn-field--invalid 单类规则同值的定向版 */
+.cn-props .cn-field--expression .cn-pathpicker__value {
+    border-color: var(--cn-accent);
+}
+
+.cn-props .cn-field--invalid .cn-pathpicker__value {
+    border-color: var(--cn-danger);
+}

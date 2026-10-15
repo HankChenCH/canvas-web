@@ -13,7 +13,10 @@
  * 收口——状态栏读数段与建表表单两域共用）与字体清单注入缝 fontPicker（
  * edit-overlay-toolbar 工单 04 自属性面板域迁入——面板字体控件与编辑浮层工具条
  * 字体段两域共用）与字段权威写 mergeKey 约定 mergeKey（面板与工具条双入口同键
- * 合并的格式单点）。
+ * 合并的格式单点）与资源表达式级联路径选择器 ExpressionPathPicker + `{{}}` 拆装
+ * 纯函数 resourceTemplate + 弹层视口定位纯函数 popupPosition（resource-expression-
+ * single-ref 工单 05/06：资源内容字段的作者面 = 纯菜单点选，垂直翻转/钳制定位
+ * 两浮层与选择器菜单共用）。
  * 这是唯一允许被各域引用的层——域间横向 import 被依赖红线
  * （editor-vue-*-isolation）禁止，跨域消费一律收口到这里。
  */
@@ -33,6 +36,7 @@ export {
 } from './shortcutsHelp'
 export { isEditableEventTarget } from './editableTarget'
 export { default as ExpressionCompletionPopup } from './ExpressionCompletionPopup.vue'
+export { default as ExpressionPathPicker } from './ExpressionPathPicker.vue'
 export { applyCompletion, type CompletionItem, type CompletionResult, type CompletionSource } from './completion'
 export { measureCursorAnchor, type CompletionAnchor } from './completionAnchor'
 export {
@@ -44,6 +48,15 @@ export { useExpressionCompletion, type ExpressionCompletionState } from './useEx
 export { expressionDiagnosticHint, useExpressionDiagnostics } from './useExpressionDiagnostics'
 export { usePathCompletion } from './usePathCompletion'
 export { rowsPathCompletionSource } from './rowsPathCompletionSource'
+export { attachResourceTemplate, stripResourceTemplate } from './resourceTemplate'
+export { pathPickerEntries, type PathPickerEntry } from './pathPickerModel'
+export {
+    placePopupInViewport,
+    POPUP_GAP,
+    POPUP_MARGIN,
+    type PopupAnchorBox,
+    type PopupViewportPosition,
+} from './popupPosition'
 export { useHistory, type HistoryAvailability } from './useHistory'
 export { useSelection } from './useSelection'
 export { useDataSourceSchema } from './useDataSourceSchema'

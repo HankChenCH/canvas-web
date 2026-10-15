@@ -694,6 +694,32 @@ describe('portal 与锚点重算（jsdom 布局为零，rect 经 mock 钉坐标�
         await nextTick()
         expect(popup.style.top).toBe('226.4px')
     })
+
+    it('视口下方放不下：浮层向上翻转（工单 06 伴生修复，placePopupInViewport 接线）', async () => {
+        Object.defineProperty(window, 'innerHeight', { value: 500, configurable: true })
+        const harness = mountHost('input', headSource)
+        const field = harness.field()
+        // 字段贴视口底缘：下方 424 + 浮层 200 > 496 → 翻转：400 − 4 − 200 = 196 ≥ margin
+        vi.spyOn(field, 'getBoundingClientRect').mockReturnValue(rectOf({ top: 400, bottom: 420, y: 400 }))
+        // jsdom 零布局：浮层量高口径按类名钉在 prototype
+        const heightSpy = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) {
+            return this.classList.contains('cn-completion') ? 200 : 0
+        })
+
+        await type(harness, '{{', 2)
+        await nextTick()
+        const popup = popupEl()!
+        expect(popup.style.top).toBe('196px')
+
+        // 翻转也放不下（下方溢出且锚上空间不足）：钳制视口内，下缘贴 viewport − margin
+        vi.spyOn(field, 'getBoundingClientRect').mockReturnValue(rectOf({ top: 150, bottom: 300, height: 150, y: 150 }))
+        window.dispatchEvent(new Event('resize'))
+        await nextTick()
+        expect(popup.style.top).toBe(`${500 - 4 - 200}px`)
+
+        heightSpy.mockRestore()
+        Object.defineProperty(window, 'innerHeight', { value: 768, configurable: true })
+    })
 })
 
 /* ------------------------------------------------- 调用片段补全（工单 12） */

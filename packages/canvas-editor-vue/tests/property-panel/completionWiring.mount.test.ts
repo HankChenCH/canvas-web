@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 /**
- * 补全浮层三字段接线 + 上下文感知集成测试（content-completion 工单 05）。
+ * 补全浮层接线 + 上下文感知集成测试（content-completion 工单 05；工单 05 换装
+ * 收敛：浮层面只剩文本层 textarea——资源内容字段 QR/imageSrc 换级联路径选择器，
+ * ADR 0020 纯菜单点选不设手输缝）。
  *
  * 面板全链路（真实候选源 = 内核枚举器，非桩）：表达式态输入 `{{` 自动弹出 →
  * 候选集随上下文切换（根层 = 载荷顶层键 + $root；模板格内容层 = + row/$index，
@@ -12,7 +14,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 import { mount, type VueWrapper } from '@vue/test-utils'
 
-import { createTemplateTable, EditorSession, type FrameScheduler, type LayerPath } from '@hankchen/canvas-editor'
+import { createTemplateTable, EditorSession, type FrameScheduler, type Layer, type LayerPath } from '@hankchen/canvas-editor'
 
 import { imageLayer, textLayer } from '../../../canvas-editor/tests/support/fixtures'
 import PropertyPanel from '../../src/property-panel/PropertyPanel.vue'
@@ -322,20 +324,84 @@ describe('接受与历史：与手工输入同路（一步历史、镜像恢复�
         expect(restored.type === 'TextLayer' && restored.text).toBe('{{')
     })
 
-    it('src/value 字段同面接线：图片层资源地址表达式态同样弹出', async () => {
-        const editor = makeEditor([imageLayer({ src: '{{', expression: '{{' })])
+    it('src/value 字段换装（工单 05）：资源表达式态 = 级联路径选择器，浮层面不复存在', async () => {
+        const editor = makeEditor([
+            imageLayer({ src: '{{orderNo}}', expression: '{{orderNo}}' }),
+            { ...textLayer(), type: 'QrCodeLayer', value: '{{orderNo}}', expression: '{{orderNo}}' } as Layer,
+        ])
         editor.setDataSourceSchema(RAW_SCHEMA)
         const wrapper = mountPanel(editor)
         editor.setSelection(['layers', 0])
         await nextTick()
 
-        // 表达式态标识类唯一定位数据字段输入（前面还有 position/color 等输入控件）
-        const fieldEl = wrapper.find('input.cn-field--expression').element as HTMLInputElement
-        fieldEl.value = '{{or'
-        fieldEl.setSelectionRange(5, 5)
-        fieldEl.dispatchEvent(new Event('input', { bubbles: true }))
+        // 拆装回显裸路径；手输面/浮层面不复存在（ADR 0020：纯菜单点选不设手输缝）
+        expect(wrapper.find('.cn-pathpicker__value').text()).toBe('orderNo')
+        expect(wrapper.find('input.cn-field--expression').exists()).toBe(false)
+
+        // 菜单点选（order → items）→ 包壳模板走既有 commit 管线（updateDataExpression
+        // 表达式分键 + 镜像同改，面板管线零改动）
+        await wrapper.find('.cn-pathpicker__toggle').trigger('click')
         await nextTick()
-        expect(popupOpen()).toBe(true)
-        expect(optionSegments()).toEqual(['orderNo', 'order'])
+        const options = () => Array.from(document.body.querySelectorAll<HTMLElement>('.cn-pathpicker__option'))
+        await options()[1]!.click() // order（object）下钻
+        await nextTick()
+        await options()[0]!.click() // items（数组叶子）
+        await nextTick()
+        const layer = editor.store.doc!.layers[0]!
+        expect(layer.type === 'ImageLayer' && layer.expression).toBe('{{order.items}}')
+        expect(layer.type === 'ImageLayer' && layer.src).toBe('{{order.items}}')
+        expect(editor.store.history).toHaveLength(1)
+
+        // QR 同面：resourceValue 控件同款选择器
+        editor.setSelection(['layers', 1])
+        await nextTick()
+        expect(wrapper.find('.cn-pathpicker__value').text()).toBe('orderNo')
+    })
+
+    it('模板格内容层二维码（工单 05 验收第二形态）：选择器行上下文候选 + row 下钻', async () => {
+        const base = createTemplateTable({ rowsPath: 'order.items' })
+        const template = base.template!
+        const cell = template.cells[0]!
+        const table = {
+            ...base,
+            template: {
+                ...template,
+                cells: [
+                    {
+                        ...cell,
+                        content: {
+                            ...textLayer(),
+                            type: 'QrCodeLayer',
+                            value: '{{row.name}}',
+                            expression: '{{row.name}}',
+                        } as Layer,
+                    },
+                ],
+            },
+        }
+        const editor = makeEditor([table])
+        editor.setDataSourceSchema(RAW_SCHEMA)
+        const contentPath: LayerPath = ['layers', 0, 'template', 'cells', 0, 'content']
+        const wrapper = mountPanel(editor)
+        editor.setSelection(contentPath)
+        await nextTick()
+
+        // 拆壳回显裸路径（row 是合法路径头，整体即裸路径）
+        expect(wrapper.find('.cn-pathpicker__value').text()).toBe('row.name')
+
+        // 菜单头部 = 行上下文：根键 + $root + row/$index（面板行上下文判定同源）
+        await wrapper.find('.cn-pathpicker__toggle').trigger('click')
+        await nextTick()
+        const segments = () =>
+            Array.from(document.body.querySelectorAll('.cn-pathpicker__option .cn-pathpicker__segment')).map(
+                (s) => s.textContent ?? '',
+            )
+        expect(segments()).toEqual(['orderNo', 'order', '$root', 'row', '$index'])
+
+        // 点 row（object）下钻 → 行键树（rowsPath 数组 items 声明）
+        const options = () => Array.from(document.body.querySelectorAll<HTMLElement>('.cn-pathpicker__option'))
+        await options()[3]!.click()
+        await nextTick()
+        expect(segments()).toEqual(['name', 'quantity'])
     })
 })

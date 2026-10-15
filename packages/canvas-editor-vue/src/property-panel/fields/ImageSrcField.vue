@@ -6,25 +6,35 @@
  * uploadImage 动作换引用）+ 紧凑路径行（复用 TextField 的 IME 守卫与提交语义，
  * 兼作精确回显与外链/相对路径手写通道）。上传完成以 change 收口提交引用——
  * 走 updateData 字面接管管线，一步历史；失败不上报 change，错误挂入口提示
- * （与 FontField 同门）。降级（无上传缝/canUpload=false）与表达式态退化为纯
- * 路径输入——上传写字面会清表达式标记（字面接管），表达式态不提供上传通道。
+ * （与 FontField 同门）。
+ *
+ * 表达式态（resource-expression-single-ref 工单 05，ADR 0020）：资源表达式必须
+ * 恰为单个裸路径片段——退化 TextField 换装级联路径选择器（复用 resourceValue
+ * 控件的拆装壳：`{{path}}` ⇄ 裸路径，存量违例原文只读回显，菜单点选整值替换；
+ * 纯菜单点选不设手输缝）。上传通道在表达式态不存在（写引用会字面接管清标记）。
+ * 静态态（缩略图 + 上传 + 路径行）不动。
  */
 import { computed, ref } from 'vue'
 
 import type { ResourceStatus } from '@hankchen/canvas-editor'
 
+import type { CompletionSource } from '../../shared/completion'
 import type { FieldDef } from '../fieldSchema'
 import { injectImageUpload } from '../imageUpload'
 import { uploadFileFromDom } from '../../shared/uploadFile'
+import ResourceValueField from './ResourceValueField.vue'
 import TextField from './TextField.vue'
 
 const props = defineProps<{
     field: FieldDef
     modelValue: string | null
-    /** 取值方式（面板按 expression 标记派生）：表达式态走表达式视觉与退化面 */
+    /** 取值方式（面板按 expression 标记派生）：表达式态走选择器，静态态走上传形态 */
     dataMode?: 'static' | 'expression'
     /** 当前 src 的物化态（面板从 ui.resourceStatuses 切片解析下发）：角标与画布失败标识同源 */
     resourceStatus?: ResourceStatus
+    /** 候选源（面板同款注入缝，PropertyField 经 resource 门下发）；null = 未绑声明只读 */
+    source?: CompletionSource | null
+    disabled?: boolean
 }>()
 
 const emit = defineEmits<{ input: [value: string]; change: [value: string] }>()
@@ -72,10 +82,9 @@ async function onFileChange(event: Event): Promise<void> {
 </script>
 
 <template>
-    <!-- 全形态（静态 + 可上传）：缩略图框 + 路径行；退化为纯路径输入时根 =
-         TextField（表达式补全浮层与 cn-field--expression 视觉经 fallthrough
-         落到 input——与 FontField 的双根分支同构，PropertyField 的 target 取
-         $el 需要 input 根） -->
+    <!-- 全形态（静态 + 可上传）：缩略图框 + 路径行；表达式态 = 级联路径选择器
+         （resourceValue 控件同款拆装壳，无手输缝）；降级（无上传缝/canUpload）
+         静态态退化为纯路径输入（TextField 根 = input，外链/相对路径手写通道） -->
     <div v-if="full" class="flex flex-col gap-1.5">
         <button
             type="button"
@@ -123,6 +132,16 @@ async function onFileChange(event: Event): Promise<void> {
             >清除</button>
         </div>
     </div>
+    <ResourceValueField
+        v-else-if="dataMode === 'expression'"
+        :field="field"
+        :model-value="modelValue"
+        data-mode="expression"
+        :source="source ?? null"
+        :disabled="disabled"
+        @input="emit('input', $event)"
+        @change="emit('change', $event)"
+    />
     <TextField
         v-else
         :field="field"

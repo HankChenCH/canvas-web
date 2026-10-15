@@ -22,6 +22,7 @@ import ImageSrcField from './fields/ImageSrcField.vue'
 import NumberField from './fields/NumberField.vue'
 import PaddingField from './fields/PaddingField.vue'
 import PairField from './fields/PairField.vue'
+import ResourceValueField from './fields/ResourceValueField.vue'
 import SelectField from './fields/SelectField.vue'
 import TextField from './fields/TextField.vue'
 import TextareaField from './fields/TextareaField.vue'
@@ -40,4 +41,5 @@ export const controlRegistry: Record<FieldControl, Component> = {
     border: markRaw(BorderField),
     font: markRaw(FontField),
     imageSrc: markRaw(ImageSrcField),
+    resourceValue: markRaw(ResourceValueField),
 }

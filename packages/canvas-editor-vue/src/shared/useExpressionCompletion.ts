@@ -22,10 +22,10 @@
  *   isComposing/keyCode 229 的键全是候选确认/预编辑操作，接受、导航、刷新
  *   一律不触发（延伸 TextareaField/TextField 既有 composing 守卫语义）；
  *   compositionend 后键位恢复。
- * - 锚点：mirror div 测光标（completionAnchor.ts），浮层 fixed 定位在光标
- *   下方；scroll（捕获，任意滚动容器）/resize 重算；光标贴近视口右缘时按
- *   浮层实测宽左移收口（右缘不越 innerWidth——量不到宽按原锚放，首开浮层
- *   未渲染延一拍补量）。
+ * - 锚点：mirror div 测光标（completionAnchor.ts），浮层 fixed 定位在光标下方；
+ *   scroll（捕获，任意滚动容器）/resize 重算；落点经 placePopupInViewport 单点
+ *   （工单 06 伴生修复）：下方放不下向上翻转、翻转仍不足钳制视口内，横向右缘
+ *   收口——量不到宽高按原锚下方放（首开浮层未渲染延一拍补量）。
  * - 自动配对（工单 07）：表达式态键入第二个 `{` 自动补出 `}}`、光标回移片段
  *   内，候选浮层经 input 路径自然弹出（未闭合 `{{` 的实害是静默错：文本层按
  *   字面渲染、二维码层把原文编进码——配对在源头消除整类失误）。只认键入插入
@@ -47,6 +47,7 @@ import {
 
 import { applyCompletion, type CompletionItem, type CompletionSource } from './completion'
 import { measureCursorAnchor } from './completionAnchor'
+import { placePopupInViewport } from './popupPosition'
 
 /** 浮层呈现态（传给 ExpressionCompletionPopup 的 state prop） */
 export interface ExpressionCompletionState {
@@ -57,9 +58,6 @@ export interface ExpressionCompletionState {
     top: number
     left: number
 }
-
-/** 光标下缘与浮层上缘的间隙（px） */
-const ANCHOR_GAP = 4
 
 /** 光标移动键：浮层开着时 keyup 重新判定光标是否仍在片段；↑↓ 归浮层导航不在此列 */
 const CURSOR_MOVE_KEYS = ['ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown']
@@ -116,23 +114,19 @@ export function useExpressionCompletion(options: {
         // scale 折算（工单 03）：画布 textarea 整体在 transform: scale(zoom) 系，
         // mirror 布局偏移按缩放折算；缺省 1（面板宿主无变换）恒等
         const anchor = measureCursorAnchor(el, toValue(options.scale ?? 1))
-        popup.top = anchor.bottom + ANCHOR_GAP
-        popup.left = clampToViewport(anchor.left)
-    }
-
-    /** 浮层右缘与视口右缘的最小留白（px；与锚点间隙同级的最小呼吸位） */
-    const VIEWPORT_MARGIN = 4
-
-    /**
-     * 视口右缘收口：光标贴近视口右缘时浮层左移，右缘不越 innerWidth；视口比
-     * 浮层还窄时钉在左缘。量不到宽（首帧未渲染/降级）按原锚放——首开路径由
-     * recompute 延一拍补量（fixed 定位于 body，无 containing block 干扰）。
-     */
-    function clampToViewport(left: number): number {
+        // 视口收口（工单 06 伴生修复）：placePopupInViewport 单点——下方放不下
+        // 向上翻转、翻转仍不足钳制视口内；横向右缘收口同函数。量不到宽高（首帧
+        // 未渲染/降级）按原锚下方放——首开路径由 recompute 延一拍补量
         const node = options.popupEl ? toValue(options.popupEl) : null
-        const width = node?.offsetWidth ?? 0
-        if (width <= 0) return left
-        return Math.max(0, Math.min(left, window.innerWidth - VIEWPORT_MARGIN - width))
+        const placed = placePopupInViewport({
+            anchor,
+            popupWidth: node?.offsetWidth ?? 0,
+            popupHeight: node?.offsetHeight ?? 0,
+            viewportWidth: window.innerWidth,
+            viewportHeight: window.innerHeight,
+        })
+        popup.top = placed.top
+        popup.left = placed.left
     }
 
     /**

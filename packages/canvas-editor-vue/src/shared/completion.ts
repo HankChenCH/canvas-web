@@ -38,6 +38,15 @@ export interface CompletionItem {
      * 一起按 partial 过滤（segment 是整段调用文本，直接过滤永不匹配）
      */
     filterKey?: string
+    /**
+     * 显式分桶判别（resource-expression-single-ref 工单 03/05，ADR 0020）：'path' =
+     * 字段/结构头路径候选，'function' = 函数名建议 + 形状分桶调用插入——资源面
+     * 选择器（ExpressionPathPicker）按 `kind === 'path'` 过滤函数桶，不用
+     * filterKey/含 ( 启发式（工单 12 内部约定不作契约）。缺省 = 两桶之外的
+     * 建议面（date 格式快捷项等）；镜像内核 ExpressionCandidate 同名字段
+     * （结构兼容面），文本浮层零感知。
+     */
+    kind?: 'path' | 'function'
 }
 
 /**

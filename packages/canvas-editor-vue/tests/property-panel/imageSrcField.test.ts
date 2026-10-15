@@ -3,19 +3,38 @@
  * ImageSrcField（imageSrc 控件）：图片资源地址的上传形态——缩略图常显当前 src
  * （点击替换）、上传经注入缝走内核 uploadImage 动作（change 收口提交引用）、
  * 紧凑路径行复用 TextField 语义（外链/相对路径手写通道）、清除 = 提交空串。
- * 降级语义与 FontField 同门：未注入上传缝或 canUpload=false 或表达式态 →
- * 纯路径输入（上传写字面会清表达式标记，表达式态不提供上传通道）。
+ * 降级语义与 FontField 同门：未注入上传缝或 canUpload=false → 纯路径输入。
+ * 表达式态（resource-expression-single-ref 工单 05）：资源表达式必须恰为单个
+ * 裸路径片段——退化 TextField 换装级联路径选择器（resourceValue 控件同款拆装
+ * 壳：{{path}} ⇄ 裸路径，菜单点选整值替换，不设手输缝）。
  */
-import { describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 
-import type { UploadFile } from '@hankchen/canvas-editor'
+import { parseExpressionSchema, type ExpressionSchemaNode, type UploadFile } from '@hankchen/canvas-editor'
 
 import ImageSrcField from '../../src/property-panel/fields/ImageSrcField.vue'
 import { IMAGE_UPLOAD_KEY, type ImageUploadContext } from '../../src/property-panel/imageUpload'
 import type { FieldDef } from '../../src/property-panel/fieldSchema'
+import { expressionCompletionSource } from '../../src/shared/expressionContext'
 
-const field: FieldDef = { key: ['src'], label: '资源地址', control: 'imageSrc', data: true }
+const field: FieldDef = { key: ['src'], label: '资源地址', control: 'imageSrc', data: true, resource: true }
+
+const RAW_SCHEMA = {
+    type: 'object',
+    properties: {
+        cover: { type: 'string', description: '封面图' },
+    },
+}
+
+function schemaOf(raw: unknown): ExpressionSchemaNode {
+    const parsed = parseExpressionSchema(raw)
+    if (!parsed.ok) throw new Error(parsed.detail)
+    return parsed.schema
+}
+
+const source = expressionCompletionSource(schemaOf(RAW_SCHEMA), { kind: 'root', rowSchema: null })
 
 const domFile = (name = 'a.png', mime = 'image/png'): File =>
     new File([new Uint8Array([1, 2, 3])], name, { type: mime })
@@ -28,13 +47,24 @@ function uploadContext(overrides: Partial<ImageUploadContext> = {}): ImageUpload
     }
 }
 
-const mountedWith = (context: ImageUploadContext | null, modelValue: string | null = null, extraProps: Record<string, unknown> = {}) =>
-    mount(ImageSrcField, {
-        props: { field, modelValue, ...extraProps },
+const wrappers: VueWrapper[] = []
+
+const mountedWith = (context: ImageUploadContext | null, modelValue: string | null = null, extraProps: Record<string, unknown> = {}) => {
+    const wrapper = mount(ImageSrcField, {
+        props: { field, modelValue, source, ...extraProps },
+        attachTo: document.body,
         global: context ? { provide: { [IMAGE_UPLOAD_KEY as symbol]: context } } : {},
     })
+    wrappers.push(wrapper)
+    return wrapper
+}
 
-describe('ImageSrcField：降级形态（未注入/不可上传/表达式态 = 纯路径输入）', () => {
+afterEach(() => {
+    wrappers.splice(0).forEach((wrapper) => wrapper.unmount())
+    document.body.innerHTML = ''
+})
+
+describe('ImageSrcField：降级形态（未注入/不可上传 = 纯路径输入）', () => {
     it('未注入上传缝：渲染文本框（手写通道），无缩略图与 file input', async () => {
         const wrapper = mountedWith(null, '/a.png')
         const input = wrapper.find('input[type="text"]')
@@ -54,12 +84,43 @@ describe('ImageSrcField：降级形态（未注入/不可上传/表达式态 = �
         expect(wrapper.find('.cn-imagesrc__thumb').exists()).toBe(false)
         expect(wrapper.find('input[type="file"]').exists()).toBe(false)
     })
+})
 
+describe('ImageSrcField：表达式态 = 级联路径选择器（工单 05 换装）', () => {
     it('表达式态：即使可上传也不渲染上传通道（写引用会字面接管清标记）', () => {
-        const wrapper = mountedWith(uploadContext(), '{{row.fileUrl}}', { dataMode: 'expression' })
-        expect(wrapper.find('input[type="text"]').exists()).toBe(true)
+        const wrapper = mountedWith(uploadContext(), '{{cover}}', { dataMode: 'expression' })
         expect(wrapper.find('.cn-imagesrc__thumb').exists()).toBe(false)
         expect(wrapper.find('input[type="file"]').exists()).toBe(false)
+        expect(wrapper.find('input[type="text"]').exists()).toBe(false)
+    })
+
+    it('拆装回显与菜单点选：{{cover}} ⇄ cover，点选提交包壳模板（不设手输缝）', async () => {
+        const wrapper = mountedWith(uploadContext(), '{{cover}}', { dataMode: 'expression' })
+        // 拆壳回显裸路径
+        expect(wrapper.find('.cn-pathpicker__value').text()).toBe('cover')
+        // 菜单点选（真实候选源）：头部候选 cover 叶子 → 提交包壳模板
+        await wrapper.find('.cn-pathpicker__toggle').trigger('click')
+        await nextTick()
+        const leaf = document.body.querySelector<HTMLElement>('.cn-pathpicker__option')!
+        await leaf.click()
+        await nextTick()
+        expect(wrapper.emitted('change')!.at(-1)).toEqual(['{{cover}}'])
+    })
+
+    it('存量违例拆不动：原文只读回显（诊断红边归 PropertyField resource 门）', () => {
+        const wrapper = mountedWith(uploadContext(), '{{a}}{{b}}', { dataMode: 'expression' })
+        expect(wrapper.find('.cn-pathpicker__value').text()).toBe('{{a}}{{b}}')
+    })
+
+    it('无 source（未绑声明）：选择器只读不渲染菜单钮', () => {
+        const wrapper = mount(ImageSrcField, {
+            props: { field, modelValue: '{{cover}}', source: null, dataMode: 'expression' },
+            attachTo: document.body,
+            global: { provide: { [IMAGE_UPLOAD_KEY as symbol]: uploadContext() } },
+        })
+        wrappers.push(wrapper)
+        expect(wrapper.find('.cn-pathpicker__value').exists()).toBe(true)
+        expect(wrapper.find('.cn-pathpicker__toggle').exists()).toBe(false)
     })
 })
 

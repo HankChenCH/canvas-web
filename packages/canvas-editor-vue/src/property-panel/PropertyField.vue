@@ -13,13 +13,14 @@
  * 编辑保持标记（镜像字面）。模式由面板按图层 expression 标记派生传入，本组件
  * 零本地状态；切换语义仍上抛 toggle-mode 归面板 toggleDataMode（管线不动）。
  *
- * 表达式路径补全（content-completion 工单 05）：数据字段（textarea/text/imageSrc
- * 控件）在表达式态接入浮层控件（工单 04 的 useExpressionCompletion +
- * ExpressionCompletionPopup）——target 取控件根元素（textarea/input 双形态），
- * 候选源由面板按选中路径下发（completionSource：根层 = 根候选集 / 模板格内容层
- * = 行候选集）。静态态/未注入 schema 时 enabled 恒假，事件入口全短路零补全。
- * `{{` 自动配对（工单 07）独立于 schema 注入：表达式态即配对（防未闭合静默错），
- * 静态态 `{{` 是字面不配对。
+ * 表达式路径补全（content-completion 工单 05；工单 05 换装收敛）：数据字段中只剩
+ * 文本层（textarea 控件）在表达式态接入浮层控件（工单 04 的 useExpressionCompletion +
+ * ExpressionCompletionPopup）——target 取控件根元素，候选源由面板按选中路径下发
+ * （completionSource：根层 = 根候选集 / 模板格内容层 = 行候选集）。静态态/未注入
+ * schema 时 enabled 恒假，事件入口全短路零补全。`{{` 自动配对（工单 07）独立于
+ * schema 注入：表达式态即配对（防未闭合静默错），静态态 `{{` 是字面不配对。
+ * 资源内容字段不再走浮层（ADR 0020：resourceValue 控件/imageSrc 表达式态 = 级联
+ * 路径选择器，候选源经 props.completion 下发进控件，纯菜单点选不设手输缝）。
  *
  * 裸路径补全（rows-path-completion 工单 03，D6）：接线门扩为「data 门或 completion
  * 标记门」——rowsPath 字段（completion: 'rowsPath' 标记）按标记走 usePathCompletion
@@ -108,20 +109,19 @@ const rowClass = computed(() =>
 const controlClass = computed(() => (props.field.data === true ? 'col-span-2' : ''))
 
 /**
- * 补全接线门（双门取并，单字段只落一门——data 与 completion 标记互斥声明）：
- * - data 门：数据文本字段（fieldSchema 中 data:true 且 textarea/text/imageSrc
- *   控件——现状即 text/src/value 内容字段与图片资源字段）；
- * - 标记门（rows-path-completion 工单 03，D6）：completion === 'rowsPath'
- *   （rowsPath 字段，结构语义不走 data 门）。
+ * 补全接线门（resource-expression-single-ref 工单 05 收敛后）：表达式浮层只剩
+ * 文本层（textarea 数据字段）。资源内容字段已换装——QR 走 resourceValue 控件、
+ * imageSrc 表达式态走选择器（候选源经 props.completion 下发进控件），纯菜单
+ * 点选不设手输缝（ADR 0020），浮层/手输面不复存在；rowsPath 标记门（工单 03，
+ * D6）不变。
  * 其余字段零接线。
  */
-const wiresExpressionCompletion = computed(
-    () =>
-        props.field.data === true &&
-        (props.field.control === 'textarea' || props.field.control === 'text' || props.field.control === 'imageSrc'),
-)
+const wiresExpressionCompletion = computed(() => props.field.data === true && props.field.control === 'textarea')
 const wiresPathCompletion = computed(() => props.field.completion === 'rowsPath')
 const wiresCompletion = computed(() => wiresExpressionCompletion.value || wiresPathCompletion.value)
+
+/** 资源内容字段（field.resource：resourceValue/imageSrc）：候选源下发进控件的选择器 */
+const wiresPathPicker = computed(() => props.field.resource === true)
 
 /** 控件根元素（组件实例 $el；textarea/input 双形态，其余控件给 null 不绑） */
 const controlRef = ref<ComponentPublicInstance | null>(null)
@@ -129,23 +129,22 @@ const controlRef = ref<ComponentPublicInstance | null>(null)
 /**
  * 表达式语法诊断（expression-syntax-diagnostics 工单 02）：表达式态数据字段
  * 实时标错——面板 input 实时 commit（props.value 即最新文本），computed 直算
- * 零监听（画布侧非受控宿主才走 useExpressionDiagnostics 监听同步）；门与补全
- * 接线门同面（textarea/text/imageSrc 数据字段），静态态恒空（{{ 是字面）。
- * 资源类字段（resource-expression-single-ref 工单 03，field.resource 标记：
- * QR/imageSrc）走内核资源单值门 resourcePathDiagnostics（恰一闭合片段 + 裸点
- * 路径，ADR 0020 求值端同源同语义）；文本字段走片段扫描诊断不动。
+ * 零监听（画布侧非受控宿主才走 useExpressionDiagnostics 监听同步）；静态态恒空
+ * （{{ 是字面）。工单 05 换装后门分两支：资源类字段（field.resource 标记：
+ * QR 的 resourceValue/imageSrc）走内核资源单值门 resourcePathDiagnostics（恰一
+ * 闭合片段 + 裸点路径，ADR 0020 求值端同源同语义——红边落在选择器框上，点击
+ * 定位随 div 根自然退化为纯展示）；文本层 textarea 走片段扫描诊断不动。
  */
 const expressionErrors = computed<readonly ExpressionFragmentDiagnostic[]>(() => {
-    if (!(wiresExpressionCompletion.value && isExpression.value && typeof props.value === 'string')) return []
-    return props.field.resource === true
-        ? resourcePathDiagnostics(props.value)
-        : expressionDiagnostics(props.value)
+    if (!(props.field.data === true && isExpression.value && typeof props.value === 'string')) return []
+    if (props.field.resource === true) return resourcePathDiagnostics(props.value)
+    return wiresExpressionCompletion.value ? expressionDiagnostics(props.value) : []
 })
 const expressionErrorHint = computed(() => expressionDiagnosticHint(expressionErrors.value))
 
-/** 点击定位的可用面：textarea/text 控件根是可 selection 的输入元素；imageSrc
- *  全形态根是 div（选区无从落），提示行退化为纯展示（不渲染可点击暗示） */
-const diagnosticLocatable = computed(() => props.field.control === 'textarea' || props.field.control === 'text')
+/** 点击定位的可用面：textarea 控件根是可 selection 的输入元素；resourceValue/imageSrc
+ *  表达式态根是 div（选择器，选区无从落），提示行退化为纯展示（不渲染可点击暗示） */
+const diagnosticLocatable = computed(() => props.field.control === 'textarea')
 
 /** 点击提示：聚焦控件并选中出错子范围（value 即模板串，at 模板坐标可直接落 selection） */
 function locateFirstError(): void {
@@ -245,7 +244,8 @@ function relaySubCommit(field: FieldDef, value: unknown, final: boolean): void {
             :model-value="value"
             :disabled="locked"
             :displays="field.control === 'pair' ? displays : undefined"
-            :data-mode="field.control === 'imageSrc' ? dataMode : undefined"
+            :data-mode="field.control === 'imageSrc' || field.control === 'resourceValue' ? dataMode : undefined"
+            :source="wiresPathPicker ? completion : undefined"
             :resource-status="field.control === 'imageSrc' ? resourceStatus : undefined"
             @input="emit('input', $event)"
             @change="emit('change', $event)"
