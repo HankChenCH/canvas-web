@@ -291,12 +291,15 @@ onMounted(() => {
                 last = { x: e.clientX, y: e.clientY }
             } else if (active.mode === 'resize') {
                 const scene = sceneAt(e)
-                editor.resizeTo(scene.x, scene.y)
+                // Shift 等比缩放（image-ratio-preset 工单 02）：指针事件现成字段逐帧透传，
+                // 仅图片层生效与其余语义全归内核
+                editor.resizeTo(scene.x, scene.y, e.shiftKey)
             } else if (active.mode === 'create') {
                 // 画拉求位（drag-create 工单 02）：橡皮筋纯视觉，吸附轴回显在内核
-                // createTo 内回写 ui.snapAxes 走 GuidesOverlay 既有通道
+                // createTo 内回写 ui.snapAxes 走 GuidesOverlay 既有通道；Shift 瞬时反转
+                // 建层比例槽态（image-ratio-preset 工单 02），逐帧透传同 resize
                 const scene = sceneAt(e)
-                editor.createTo(scene.x, scene.y)
+                editor.createTo(scene.x, scene.y, e.shiftKey)
             } else {
                 const scene = sceneAt(e)
                 editor.dragTo(scene.x, scene.y)

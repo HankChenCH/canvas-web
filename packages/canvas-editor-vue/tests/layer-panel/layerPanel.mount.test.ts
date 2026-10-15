@@ -354,7 +354,7 @@ describe('LayerPanel：表格容器结构编辑（工单 12）', () => {
 })
 
 describe('LayerPanel：V2 绑定面（工票 03）', () => {
-    it('新增菜单八入口（text-defaults 工单 02）：四类图层 + 文本预设三项（插在「文本层」之后）+ 模板表（行模板不单卖，template-table 是表的创建形态）', async () => {
+    it('新增菜单十四入口（text-defaults 工单 02 + image-ratio-preset 工单 02）：四类图层 + 文本预设三项（插在「文本层」之后）+ 比例六档（平铺在「图片层」之后）+ 模板表（行模板不单卖，template-table 是表的创建形态）', async () => {
         const editor = makeEditor([])
         const wrapper = mount(LayerPanel, { props: { editor } })
 
@@ -365,6 +365,12 @@ describe('LayerPanel：V2 绑定面（工票 03）', () => {
             'TextLayer',
             'TextLayer',
             'TextLayer',
+            'ImageLayer',
+            'ImageLayer',
+            'ImageLayer',
+            'ImageLayer',
+            'ImageLayer',
+            'ImageLayer',
             'ImageLayer',
             'QrCodeLayer',
             'TableLayer',
@@ -380,7 +386,60 @@ describe('LayerPanel：V2 绑定面（工票 03）', () => {
             null,
             null,
             null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
         ])
+        // 比例六档带面板专用标识 data-ratio-preset（image-ratio-preset 工单 02，spec 决策 2）
+        expect(adds.map((button) => button.attributes('data-ratio-preset') ?? null)).toEqual([
+            null,
+            null,
+            null,
+            null,
+            null,
+            'free',
+            '1:1',
+            '4:3',
+            '3:4',
+            '16:9',
+            '9:16',
+            null,
+            null,
+            null,
+        ])
+        wrapper.unmount()
+    })
+
+    it('比例档位点击 = armLayerCreate 带 ratio preset（image-ratio-preset 工单 02，spec 决策 2）：写槽（16:9）+ 武装 + 菜单收起 + 瞬时提示', async () => {
+        const editor = makeEditor([])
+        const wrapper = mount(LayerPanel, { props: { editor } })
+
+        await wrapper.find('[data-add-menu]').trigger('click')
+        await wrapper.find('[data-ratio-preset="16:9"]').trigger('click')
+        // 预设 = 写建层比例槽的快捷方式：槽先行（16:9），文档零变化
+        expect(editor.store.history).toHaveLength(0)
+        expect(editor.store.ui.nextLayerRatio).toBe('16:9')
+        expect(editor.store.ui.armedCreate).toBe('ImageLayer')
+        expect(wrapper.find('[data-add-layer]').exists()).toBe(false)
+        expect(useTransientFeedback().message.value).toBe('画拉或点击落层，Esc 取消')
+        wrapper.unmount()
+    })
+
+    it('普通「图片层」项分发不带 preset（spec 决策 2：武装后按槽值钳制，槽是唯一偏好源）：槽不被重置、仅武装', async () => {
+        const editor = makeEditor([])
+        editor.armLayerCreate('ImageLayer', '16:9') // 先经档位把槽写到 16:9
+        editor.cancelArmLayerCreate()
+        const wrapper = mount(LayerPanel, { props: { editor } })
+
+        await wrapper.find('[data-add-menu]').trigger('click')
+        // 普通图片层项 = 无 data-ratio-preset 的那个（档位项同携 data-add-layer="ImageLayer"）
+        const plainImage = wrapper.findAll('[data-add-layer="ImageLayer"]').find((button) => button.attributes('data-ratio-preset') === undefined)
+        await plainImage!.trigger('click')
+        expect(editor.store.ui.armedCreate).toBe('ImageLayer')
+        expect(editor.store.ui.nextLayerRatio).toBe('16:9') // 槽原样 = 分发未带 preset
         wrapper.unmount()
     })
 

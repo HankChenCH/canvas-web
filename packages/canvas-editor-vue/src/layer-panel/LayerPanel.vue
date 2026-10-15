@@ -10,6 +10,10 @@
  * 新增菜单画拉建层（drag-create 工单 03）：四类图层项点击 = 武装一次画拉
  * （armLayerCreate，落位与尺寸归画布拉出的橡皮筋），状态栏瞬时提示操作方式；
  * 模板表项保持表单直建不变（rowsPath 必填校验就地拦）。
+ * 新增菜单比例档位（image-ratio-preset 工单 02，spec 决策 2）：六档平铺在
+ * 「图片层」之后——应用即写建层比例槽再武装（画拉按槽钳制，Shift 瞬时反转；
+ * 数据面在 ./addMenu），普通「图片层」项分发不带 preset（武装后按槽值钳制，
+ * 「自由」档位即显式重置入口）。
  * 新增菜单走 shared 下拉底座（editor-top-toolbar 工单 05）：#trigger 自绘＋方钮、
  * #body 受控插槽承载 rowsPath 表单（模板表项 keepsOpen 交换出表单体），开合/
  * 点外收/Esc 收/a11y/键盘导航全归底座；aside 是 overflow 滚动容器——底座弹层
@@ -95,7 +99,9 @@ function resetTemplateForm(): void {
 /** 菜单项：模板表项 keepsOpen 交换出表单体（items 清空、菜单留场），图层四项
  *  武装画拉（drag-create 工单 03：点击 = 武装一次画拉，落库归画拉 endCreate）
  *  + 状态栏瞬时提示（与快捷键入口同句），分发即收归底座；文本预设项（text-defaults
- *  工单 02）= 内核 armLayerCreate 带 preset——先写新层样式槽再武装 */
+ *  工单 02）= 内核 armLayerCreate 带 preset——先写新层样式槽再武装；比例档位项
+ *  （image-ratio-preset 工单 02）同门——先写建层比例槽再武装，普通「图片层」项
+ *  分发不带 preset（武装后按槽值钳制，槽是唯一偏好源） */
 const addMenuItems = computed<DropdownMenuEntry[]>(() =>
     templateFormOpen.value
         ? []
@@ -120,15 +126,25 @@ const addMenuItems = computed<DropdownMenuEntry[]>(() =>
                               useTransientFeedback().show(ARM_LAYER_CREATE_HINT)
                           },
                       }
-                    : {
-                          label: kind.label,
-                          title: kind.title,
-                          dataAttrs: { 'data-add-layer': 'template-table' },
-                          keepsOpen: true,
-                          run: () => {
-                              templateFormOpen.value = true
-                          },
-                      },
+                    : kind.kind === 'ratio-preset'
+                      ? {
+                            label: kind.label,
+                            title: kind.title,
+                            dataAttrs: { 'data-add-layer': 'ImageLayer', 'data-ratio-preset': kind.preset },
+                            run: () => {
+                                props.editor.armLayerCreate('ImageLayer', kind.preset)
+                                useTransientFeedback().show(ARM_LAYER_CREATE_HINT)
+                            },
+                        }
+                      : {
+                            label: kind.label,
+                            title: kind.title,
+                            dataAttrs: { 'data-add-layer': 'template-table' },
+                            keepsOpen: true,
+                            run: () => {
+                                templateFormOpen.value = true
+                            },
+                        },
           ),
 )
 

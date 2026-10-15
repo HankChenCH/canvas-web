@@ -20,7 +20,7 @@ import { EditorSession, type FrameScheduler, type OverlayPainter } from '@hankch
 
 import CanvasSurface from '../../src/canvas/CanvasSurface.vue'
 import { drawCreateRubberBand } from '../../src/canvas/createBand'
-import { cellLayer, rowLayer, tableLayer, textLayer } from '../../../canvas-editor/tests/support/fixtures'
+import { cellLayer, imageLayer, rowLayer, tableLayer, textLayer } from '../../../canvas-editor/tests/support/fixtures'
 
 // ---- jsdom 环境桩 ----
 
@@ -566,6 +566,67 @@ describe('画拉建层接线（drag-create 工单 02）：武装态手势 + Esc 
         scheduler.flush()
         expect(bandCtx.texts).toEqual(['80 × 40', '120 × 100']) // 会话清空：不再画
         expect(bandCtx.strokes).toHaveLength(2) // 落库帧只有清屏（无新笔画）
+        cleanup()
+    })
+})
+
+describe('手势 Shift 传缝（image-ratio-preset 工单 02）：pointermove 逐帧透传 shiftKey', () => {
+    // jsdom 无 PointerEvent/布局：MouseEvent 按类型直发；视口缺省 {0,0,1} →
+    // 场景点 == 客户端像素
+    const surfaceHost = () => document.querySelector('.cn-surface')!
+    const dispatchPointer = (type: string, init: MouseEventInit = {}) =>
+        surfaceHost().dispatchEvent(new MouseEvent(type, { bubbles: true, ...init }))
+
+    it('画拉：Shift 瞬时反转槽态（槽自由 + Shift = 临时钳 1:1），松开还原自由、落库取末态', () => {
+        const { editor, cleanup } = mountSurface()
+        editor.openDocument({ width: 800, height: 600, layers: [] })
+        editor.armLayerCreate('ImageLayer')
+
+        dispatchPointer('pointerdown', { button: 0, clientX: 300, clientY: 200 })
+        dispatchPointer('pointermove', { clientX: 360, clientY: 240, shiftKey: true })
+        expect(editor.store.ui.create?.rect).toEqual({ x: 300, y: 200, width: 60, height: 60 }) // 1:1 钳
+
+        dispatchPointer('pointermove', { clientX: 360, clientY: 240 }) // 松开：还原自由
+        expect(editor.store.ui.create?.rect).toEqual({ x: 300, y: 200, width: 60, height: 40 })
+
+        dispatchPointer('pointerup', { clientX: 360, clientY: 240 })
+        expect(editor.store.doc!.layers).toHaveLength(1)
+        expect(editor.store.doc!.layers[0]!.shape).toMatchObject({ width: 60, height: 40 }) // 末态自由
+        cleanup()
+    })
+
+    it('画拉：槽钳生效与 Shift 反转（档位 16:9 写槽——普通画拉钳 16:9、按 Shift 临时自由）', () => {
+        const { editor, cleanup } = mountSurface()
+        editor.openDocument({ width: 800, height: 600, layers: [] })
+        editor.armLayerCreate('ImageLayer', '16:9')
+
+        dispatchPointer('pointerdown', { button: 0, clientX: 300, clientY: 200 })
+        // 长轴驱动：|Δx| ≥ |Δy| 宽驱动 60 → 高 = round(60 × 9 ÷ 16) = 34
+        dispatchPointer('pointermove', { clientX: 360, clientY: 240 })
+        expect(editor.store.ui.create?.rect).toEqual({ x: 300, y: 200, width: 60, height: 34 })
+
+        dispatchPointer('pointermove', { clientX: 360, clientY: 240, shiftKey: true }) // 临时自由
+        expect(editor.store.ui.create?.rect).toEqual({ x: 300, y: 200, width: 60, height: 40 })
+        cleanup()
+    })
+
+    it('八柄缩放：Shift 等比保持盒比例（宽驱动派生高），松开还原自由缩放', () => {
+        const { editor, cleanup } = mountSurface()
+        // 图片层 fixture 缺省盒 (0,0) 100×50，se 柄中心 = (100,50)
+        editor.openDocument({ width: 800, height: 600, layers: [imageLayer()] })
+        editor.setSelection(['layers', 0])
+
+        dispatchPointer('pointerdown', { button: 0, clientX: 100, clientY: 50 })
+        expect(editor.store.ui.resize?.handle).toBe('se')
+        // Δ=(30,30) 并列宽驱动：宽 130 → 高 = round(130 × 50 ÷ 100) = 65
+        dispatchPointer('pointermove', { clientX: 130, clientY: 80, shiftKey: true })
+        expect(editor.store.doc!.layers[0]!.shape).toMatchObject({ width: 130, height: 65 })
+
+        dispatchPointer('pointermove', { clientX: 160, clientY: 120 }) // 松开：自由缩放
+        expect(editor.store.doc!.layers[0]!.shape).toMatchObject({ width: 160, height: 120 })
+
+        dispatchPointer('pointerup', { clientX: 160, clientY: 120 })
+        expect(editor.store.history).toHaveLength(1) // 一次手势 = 一步历史
         cleanup()
     })
 })

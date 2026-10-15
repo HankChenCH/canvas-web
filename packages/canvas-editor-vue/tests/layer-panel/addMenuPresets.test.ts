@@ -25,15 +25,29 @@ describe('addMenu 文本预设：面板专用清单（text-defaults 工单 02）
         }
     })
 
-    it('PANEL_ADD_MENU 面板完整序：预设三项插在「文本层」之后、模板表仍收尾', () => {
+    it('PANEL_ADD_MENU 面板完整序：预设三项插在「文本层」之后、比例六档平铺在「图片层」之后（image-ratio-preset 工单 02）、模板表仍收尾', () => {
         expect(
-            PANEL_ADD_MENU.map((entry) => (entry.kind === 'text-preset' ? `preset:${entry.preset}` : entry.kind === 'layer' ? `layer:${entry.type}` : 'template-table')),
+            PANEL_ADD_MENU.map((entry) =>
+                entry.kind === 'text-preset'
+                    ? `preset:${entry.preset}`
+                    : entry.kind === 'ratio-preset'
+                        ? `ratio:${entry.preset}`
+                        : entry.kind === 'layer'
+                            ? `layer:${entry.type}`
+                            : 'template-table',
+            ),
         ).toEqual([
             'layer:TextLayer',
             'preset:heading',
             'preset:subheading',
             'preset:body',
             'layer:ImageLayer',
+            'ratio:free',
+            'ratio:1:1',
+            'ratio:4:3',
+            'ratio:3:4',
+            'ratio:16:9',
+            'ratio:9:16',
             'layer:QrCodeLayer',
             'layer:TableLayer',
             'template-table',
