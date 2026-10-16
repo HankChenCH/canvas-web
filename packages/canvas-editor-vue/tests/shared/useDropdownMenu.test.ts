@@ -8,13 +8,20 @@
  * - 开态才挂监听：收起即摘除（行为可观察——摘除后派发不再驱动开合态）；
  * - 卸载兜底：开态卸载后监听已摘除（onScopeDispose）；
  * - 菜单键盘导航落点 nextEnabledItemIndex 纯函数（issues/04）：↑↓ 循环跳置灰、
- *   Home/End 首尾、全置灰返回 -1（调用方回焦菜单根）。
+ *   Home/End 首尾、全置灰返回 -1（调用方回焦菜单根）；
+ * - 焦点落点判定 focusTargetOnOpen / focusTargetOnSubmenuClose /
+ *   focusTargetOnMenuClose 三纯函数（canvas-web-preset-submenu 评审整改 F5，自
+ *   呈现件 DropdownMenu.vue 抽入）：开入首启用项兜底容器根、收二级回 ▸、收菜单
+ *   回触发钮——DOM 只读判形，focus() 副作用留呈现件。
  */
 import { describe, expect, it } from 'vitest'
 import { defineComponent, h, nextTick, ref } from 'vue'
 import { mount } from '@vue/test-utils'
 
 import {
+    focusTargetOnMenuClose,
+    focusTargetOnOpen,
+    focusTargetOnSubmenuClose,
     nextEnabledItemIndex,
     nextOpenSubmenu,
     placeSubmenuInViewport,
@@ -248,5 +255,72 @@ describe('submenuKeyAction：二级键盘动作判定（工单 02）', () => {
         expect(submenuKeyAction(' ')).toEqual({ type: 'activate' })
         expect(submenuKeyAction('Tab')).toEqual({ type: 'close-menu' })
         expect(submenuKeyAction('a')).toEqual({ type: 'none' })
+    })
+})
+
+// ---- 焦点落点判定三纯函数（canvas-web-preset-submenu 评审整改 F5）：DOM 只读
+// 判形（querySelector/closest/hasAttribute），focus() 写副作用留呈现件 ----
+
+/** 菜单项形元素（data-dropdown-item 可选 disabled） */
+const menuItemEl = (disabled = false): HTMLElement => {
+    const el = document.createElement('button')
+    el.setAttribute('data-dropdown-item', '')
+    if (disabled) el.setAttribute('disabled', '')
+    return el
+}
+
+describe('focusTargetOnOpen：开焦点落点（评审整改 F5）', () => {
+    it('条目 DOM 序首个启用项：前置置灰项跳过（菜单开入/二级键盘开入共用判定）', () => {
+        const container = document.createElement('div')
+        const disabled = menuItemEl(true)
+        const enabled = menuItemEl(false)
+        container.append(disabled, enabled)
+        expect(focusTargetOnOpen([disabled, enabled], container)).toBe(enabled)
+        expect(focusTargetOnOpen([enabled, disabled], container)).toBe(enabled)
+    })
+
+    it('全置灰或空清单回落容器根（菜单根/二级浮层根 tabindex=-1 可编程聚焦）', () => {
+        const container = document.createElement('div')
+        expect(focusTargetOnOpen([menuItemEl(true), menuItemEl(true)], container)).toBe(container)
+        expect(focusTargetOnOpen([], container)).toBe(container)
+    })
+})
+
+describe('focusTargetOnSubmenuClose：收二级回焦 ▸ 落点（评审整改 F5）', () => {
+    /** 两段式行宿主（data-dropdown-submenu-host + 主体 + ▸ 钮） */
+    const submenuHost = (): { host: HTMLElement; main: HTMLElement; arrow: HTMLElement } => {
+        const host = document.createElement('div')
+        host.setAttribute('data-dropdown-submenu-host', '')
+        const main = menuItemEl(false)
+        const arrow = document.createElement('button')
+        arrow.setAttribute('data-dropdown-submenu-arrow', '')
+        host.append(main, arrow)
+        document.body.appendChild(host)
+        return { host, main, arrow }
+    }
+
+    it('焦点在两段式行内（主体或 ▸）→ 该行 ▸ 钮（APG「关子菜单回父项」惯例）', () => {
+        const { main, arrow } = submenuHost()
+        expect(focusTargetOnSubmenuClose(main)).toBe(arrow)
+        expect(focusTargetOnSubmenuClose(arrow)).toBe(arrow)
+    })
+
+    it('多行嵌套各回各的 ▸：closest 最近宿主，不串行', () => {
+        submenuHost()
+        const { main, arrow } = submenuHost()
+        expect(focusTargetOnSubmenuClose(main)).toBe(arrow)
+    })
+
+    it('焦点不在行内（body/无 active）→ null = 不迁焦（只收不追焦）', () => {
+        expect(focusTargetOnSubmenuClose(document.body)).toBeNull()
+        expect(focusTargetOnSubmenuClose(null)).toBeNull()
+    })
+})
+
+describe('focusTargetOnMenuClose：收菜单回焦触发钮落点（评审整改 F5）', () => {
+    it('触发钮在场 → 回焦该钮；#trigger 自绘钮未接 triggerRef 的退化（null）→ 不迁焦', () => {
+        const trigger = document.createElement('button')
+        expect(focusTargetOnMenuClose(trigger)).toBe(trigger)
+        expect(focusTargetOnMenuClose(null)).toBeNull()
     })
 })

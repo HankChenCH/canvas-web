@@ -20,7 +20,8 @@
  * 增 submenu 形态（主体直建 + ▸ 预设二级，见 DropdownSubmenuEntry），三决策抽
  * 纯函数在本文模块级导出——开合切换 nextOpenSubmenu（单开不变量）、翻转定位
  * placeSubmenuInViewport（右缘钳位翻左）、二级键盘动作 submenuKeyAction；焦点
- * 编排（开入首项/收回 ▸/按键路由）在呈现件。
+ * 落点计算（开入首启用项/收二级回 ▸/收菜单回触发钮，评审整改 F5 自呈现件抽入）
+ * 亦在本文模块级导出，焦点编排（何时迁移焦点）留呈现件。
  */
 import { onScopeDispose, ref, watch, type ComponentPublicInstance, type Ref } from 'vue'
 
@@ -275,4 +276,38 @@ export function submenuKeyAction(key: string): SubmenuKeyAction {
     if (key === 'Enter' || key === ' ') return { type: 'activate' }
     if (key === 'Tab') return { type: 'close-menu' }
     return { type: 'none' }
+}
+
+// ---- 焦点落点判定（canvas-web-preset-submenu 评审整改 F5，spec 决策 3 收口）----
+// 开入/收回的落点计算自呈现件 DropdownMenu.vue 抽入本模块（带单测）：三函数都是
+// 只读判形——DOM 侧仅 querySelector/closest/hasAttribute 读查询，无 focus() 写
+// 副作用、不碰开合态；焦点迁移的执行与「哪些收起路回焦」的编排留呈现件。
+
+/**
+ * 开焦点落点（纯函数）：条目 DOM 序首个启用项（无 disabled 属性），全置灰或空
+ * 清单回落容器根（菜单根/二级浮层根 tabindex=-1 可编程聚焦）。菜单开时入菜单
+ * 与二级键盘开入首项共用同一判定。
+ */
+export function focusTargetOnOpen(items: readonly HTMLElement[], container: HTMLElement): HTMLElement {
+    return items.find((el) => !el.hasAttribute('disabled')) ?? container
+}
+
+/**
+ * 收二级回焦落点（纯函数）：焦点在两段式行宿主内 → 该行 ▸ 钮（APG「关子菜单
+ * 回父项」惯例）；焦点不在行内（防御路径）→ null = 不迁焦（只收不追焦）。
+ */
+export function focusTargetOnSubmenuClose(active: HTMLElement | null): HTMLElement | null {
+    return (
+        active?.closest<HTMLElement>('[data-dropdown-submenu-host]')?.querySelector<HTMLElement>('[data-dropdown-submenu-arrow]') ??
+        null
+    )
+}
+
+/**
+ * 收菜单回焦落点（纯函数）：触发钮元素在场 → 回焦该钮（APG menu button 惯例，
+ * 幸免菜单 v-if 卸载时焦点坠 body）；#trigger 自绘钮未接 triggerRef 的退化 →
+ * null = 不迁焦。哪些收起路回焦（点外收不回焦等）的编排归呈现件。
+ */
+export function focusTargetOnMenuClose(trigger: HTMLElement | null): HTMLElement | null {
+    return trigger
 }
