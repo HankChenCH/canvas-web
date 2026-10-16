@@ -88,6 +88,17 @@ export function shortcutActionLabel(action: EditorShortcutAction, platform: Shor
 export const ARM_LAYER_CREATE_HINT = '画拉或点击落层，Esc 取消'
 
 /**
+ * 武装建层瞬时提示·带档变体（canvas-web-preset-submenu 工单 03）：面板预设二级
+ * 子项分发专用——「画拉建{层型}（{档名}）」句式带档名让用户确认本次画拉吃的是
+ * 哪一档（层型名与档名在分发点均已知，取自面板菜单常量，无需内核查询口），操作
+ * 指引尾沿现句；快捷键/一级主体/工具栏三入口恒非预设语义，维持现句
+ * ARM_LAYER_CREATE_HINT 不变。
+ */
+export function armLayerCreatePresetHint(layerLabel: string, presetLabel: string): string {
+    return `画拉建${layerLabel}（${presetLabel}），${ARM_LAYER_CREATE_HINT}`
+}
+
+/**
  * 平台侦测：userAgentData.platform（Client Hints 新 API，Safari 尚无——三源拼串
  * 一次匹配）与 platform/userAgent 含 mac 形态 → mac；未知/其余 → win 文本系。
  * userAgentData 未进全量 TS DOM lib，结构化局部读取免随 lib 版本漂移。

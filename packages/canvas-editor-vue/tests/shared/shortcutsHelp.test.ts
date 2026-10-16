@@ -13,6 +13,7 @@ import type { ShortcutCombo } from '@hankchen/canvas-editor'
 import {
     SHORTCUT_GROUP_LABELS,
     SHORTCUT_GROUP_ORDER,
+    armLayerCreatePresetHint,
     detectShortcutPlatform,
     shortcutActionLabel,
     shortcutKeyLabel,
@@ -95,6 +96,13 @@ describe('shortcutActionLabel：注册表动作 → 平台键位符号（提示�
     it('锁定/解锁 ⇧⌘L 与 Ctrl+Shift+L 两平台', () => {
         expect(shortcutActionLabel('toggleLayerLock', 'mac')).toBe('⇧⌘L')
         expect(shortcutActionLabel('toggleLayerLock', 'win')).toBe('Ctrl+Shift+L')
+    })
+})
+
+describe('armLayerCreatePresetHint：武装提示·带档变体（canvas-web-preset-submenu 工单 03）', () => {
+    it('「画拉建{层型}（{档名}）」句式 + 现句尾：档名入句、操作指引保留', () => {
+        expect(armLayerCreatePresetHint('图片层', '1:1')).toBe('画拉建图片层（1:1），画拉或点击落层，Esc 取消')
+        expect(armLayerCreatePresetHint('文本层', '标题')).toBe('画拉建文本层（标题），画拉或点击落层，Esc 取消')
     })
 })
 
