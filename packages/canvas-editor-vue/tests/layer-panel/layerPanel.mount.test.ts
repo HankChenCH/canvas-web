@@ -7,7 +7,7 @@
  * - 拖放重排：根层走 priority 中点插值、表格行直接改数组序（合成事件流）
  */
 import { describe, expect, it, vi } from 'vitest'
-import { mount, type DOMWrapper } from '@vue/test-utils'
+import { flushPromises, mount, type DOMWrapper } from '@vue/test-utils'
 
 import {
     EditorSession,
@@ -106,6 +106,14 @@ function mockRect(row: DOMWrapper<Element>): void {
     vi.spyOn(row.element as HTMLElement, 'getBoundingClientRect').mockReturnValue({ height: 32, top: 0 } as DOMRect)
 }
 
+/** ▸ 悬停驱动开二级（工单 03）：mouseenter 不冒泡，直接在目标上派发
+ *  （dropdownMenu.mount 同式）+ flushPromises 等落位编排走完 */
+async function hoverSubmenuArrow(wrapper: ReturnType<typeof mount>, index: number): Promise<void> {
+    const arrow = wrapper.findAll('[data-dropdown-submenu-arrow]')[index]!
+    ;(arrow.element as HTMLElement).dispatchEvent(new MouseEvent('mouseenter'))
+    await flushPromises()
+}
+
 /** 模板态表 + 一格的最小文档：格内容由调用方给（缺省 null = 无内容） */
 function templateTableDoc(content: Layer | null = null): Layer[] {
     const table: Layer = {
@@ -184,7 +192,7 @@ describe('LayerPanel：渲染与联动', () => {
         wrapper.unmount()
     })
 
-    it('新增菜单点击 = armLayerCreate 武装（drag-create 工单 03）：不再直建落层——文档零变化、armedCreate 置层型、菜单收起、瞬时提示上状态栏', async () => {
+    it('一级主体点击 = armLayerCreate 无 preset 直建（drag-create 工单 03 + preset-submenu 工单 03 γ 语义）：armedCreate 置层型、零载荷、菜单收起、现句提示', async () => {
         const editor = makeEditor([textLayer(30, '底'), textLayer(10, '顶')])
         const wrapper = mount(LayerPanel, { props: { editor } })
 
@@ -194,25 +202,34 @@ describe('LayerPanel：渲染与联动', () => {
         expect(editor.store.doc!.layers).toHaveLength(2)
         expect(editor.store.history).toHaveLength(0)
         expect(editor.store.ui.armedCreate).toBe('TextLayer')
+        // 主体恒无 preset（γ：文本按新层样式槽、图片恒自由——载荷零残留）
+        expect(editor.store.ui.armedCreatePreset).toBe('')
         // 菜单即收（武装是面板外的画布手势，弹层不留场）
         expect(wrapper.find('[data-add-layer]').exists()).toBe(false)
-        // 武装态状态栏瞬时提示（useTransientFeedback 通道，面板与快捷键两入口同句）
+        // 武装态状态栏瞬时提示（现句——一级主体与快捷键/工具栏三入口同句）
         expect(useTransientFeedback().message.value).toBe('画拉或点击落层，Esc 取消')
         wrapper.unmount()
     })
 
-    it('文本预设点击 = armLayerCreate 带 preset（text-defaults 工单 02，spec 决策 4/5）：写槽（heading→fontSize 40）+ 武装 + 菜单收起 + 瞬时提示', async () => {
-        const editor = makeEditor([])
+    it('文本预设二级子项点击 = armLayerCreate 带档载荷（preset-submenu 工单 03 γ 语义，ADR 0021）：写载荷不写槽 + 带档名提示 + 菜单收起', async () => {
+        const editor = makeEditor([textLayer(10, '样式源')])
+        // 属性面板信号先行：新层样式槽写到 24（γ 语义的对照面——预设不得覆盖）
+        editor.updateSpec(['layers', 0], ['fontSize'], 24)
+        const historyAfterSetup = editor.store.history.length // 槽预写恰一步历史
         const wrapper = mount(LayerPanel, { props: { editor } })
 
         await wrapper.find('[data-add-menu]').trigger('click')
+        // ▸ 悬停唤出文本层二级（jsdom 无几何，落位退化首帧锚点不影响挂载）
+        await hoverSubmenuArrow(wrapper, 0)
         await wrapper.find('[data-text-preset="heading"]').trigger('click')
-        // 预设 = 写新层样式槽的快捷方式：槽先行（fontSize 40），文档零变化
-        expect(editor.store.history).toHaveLength(0)
-        expect(editor.store.ui.nextTextStyle.fontSize).toBe(40)
+        // γ：档位入武装载荷（endCreate 一次性消费）、新层样式槽不被预设覆盖（24 原样）
+        expect(editor.store.history).toHaveLength(historyAfterSetup)
         expect(editor.store.ui.armedCreate).toBe('TextLayer')
+        expect(editor.store.ui.armedCreatePreset).toBe('heading')
+        expect(editor.store.ui.nextTextStyle.fontSize).toBe(24)
         expect(wrapper.find('[data-add-layer]').exists()).toBe(false)
-        expect(useTransientFeedback().message.value).toBe('画拉或点击落层，Esc 取消')
+        // 带档名提示（armLayerCreatePresetHint——档名取自菜单常量）
+        expect(useTransientFeedback().message.value).toBe('画拉建文本层（标题），画拉或点击落层，Esc 取消')
         wrapper.unmount()
     })
 
@@ -354,92 +371,83 @@ describe('LayerPanel：表格容器结构编辑（工单 12）', () => {
 })
 
 describe('LayerPanel：V2 绑定面（工票 03）', () => {
-    it('新增菜单十四入口（text-defaults 工单 02 + image-ratio-preset 工单 02）：四类图层 + 文本预设三项（插在「文本层」之后）+ 比例六档（平铺在「图片层」之后）+ 模板表（行模板不单卖，template-table 是表的创建形态）', async () => {
+    it('面板树形 IA（preset-submenu 工单 03，spec 决策 4）：一级 5 行（文本/图片两段式 + 二维码/表格/模板表），预设二级随 ▸ 唤出（文本 3 档/图片具名 5 档 + 灰字后缀）', async () => {
         const editor = makeEditor([])
         const wrapper = mount(LayerPanel, { props: { editor } })
 
         await wrapper.find('[data-add-menu]').trigger('click')
-        const adds = wrapper.findAll('[data-add-layer]')
-        expect(adds.map((button) => button.attributes('data-add-layer'))).toEqual([
+        // 一级 5 行：主体 data-add-layer（模板表 keepsOpen 项同钩子），预设不再平铺
+        expect(wrapper.findAll('[data-add-layer]').map((node) => node.attributes('data-add-layer'))).toEqual([
             'TextLayer',
-            'TextLayer',
-            'TextLayer',
-            'TextLayer',
-            'ImageLayer',
-            'ImageLayer',
-            'ImageLayer',
-            'ImageLayer',
-            'ImageLayer',
-            'ImageLayer',
             'ImageLayer',
             'QrCodeLayer',
             'TableLayer',
             'template-table',
         ])
-        // 文本预设三项带面板专用标识 data-text-preset（spec 决策 5）
-        expect(adds.map((button) => button.attributes('data-text-preset') ?? null)).toEqual([
-            null,
-            'heading',
-            'subheading',
-            'body',
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-        ])
-        // 比例六档带面板专用标识 data-ratio-preset（image-ratio-preset 工单 02，spec 决策 2）
-        expect(adds.map((button) => button.attributes('data-ratio-preset') ?? null)).toEqual([
-            null,
-            null,
-            null,
-            null,
-            null,
-            'free',
-            '1:1',
-            '4:3',
-            '3:4',
-            '16:9',
-            '9:16',
-            null,
-            null,
-            null,
+        // 两段式行目验钩子：文本层/图片层两行是 submenu 宿主（▸ 钮在场），其余行不是
+        expect(wrapper.findAll('[data-dropdown-submenu-host]')).toHaveLength(2)
+        expect(wrapper.findAll('[data-dropdown-submenu-arrow]')).toHaveLength(2)
+        // 二级未开：浮层与预设子项不在场（▸ 唤出才挂载；free 档无独立入口）
+        expect(wrapper.find('[data-dropdown-submenu]').exists()).toBe(false)
+        expect(wrapper.find('[data-text-preset]').exists()).toBe(false)
+        expect(wrapper.find('[data-ratio-preset]').exists()).toBe(false)
+
+        // 文本层二级（宿主 0）：3 档带 data-text-preset + 字号灰字后缀
+        await hoverSubmenuArrow(wrapper, 0)
+        const textFlyout = wrapper.find('[data-dropdown-submenu]')
+        expect(textFlyout.exists()).toBe(true)
+        expect(textFlyout.attributes('role')).toBe('menu')
+        const textChildren = wrapper.findAll('[data-dropdown-submenu] [data-dropdown-submenu-item]')
+        expect(textChildren.map((node) => node.attributes('data-text-preset'))).toEqual(['heading', 'subheading', 'body'])
+        expect(textChildren.map((node) => node.attributes('data-add-layer'))).toEqual(['TextLayer', 'TextLayer', 'TextLayer'])
+        expect(textChildren.map((node) => node.find('.cn-dropdown__shortcut').text())).toEqual(['40号', '28号', '16号'])
+
+        // 换开图片层二级（单开不变量：文本浮层随收）：5 档带 data-ratio-preset + 形状灰字后缀
+        await hoverSubmenuArrow(wrapper, 1)
+        expect(wrapper.findAll('[data-dropdown-submenu]')).toHaveLength(1)
+        const imageChildren = wrapper.findAll('[data-dropdown-submenu] [data-dropdown-submenu-item]')
+        expect(imageChildren.map((node) => node.attributes('data-ratio-preset'))).toEqual(['1:1', '4:3', '3:4', '16:9', '9:16'])
+        expect(imageChildren.map((node) => node.attributes('data-add-layer'))).toEqual(['ImageLayer', 'ImageLayer', 'ImageLayer', 'ImageLayer', 'ImageLayer'])
+        expect(imageChildren.map((node) => node.find('.cn-dropdown__shortcut').text())).toEqual([
+            '正方形',
+            '横向',
+            '纵向',
+            '横向',
+            '纵向',
         ])
         wrapper.unmount()
     })
 
-    it('比例档位点击 = armLayerCreate 带 ratio preset（image-ratio-preset 工单 02，spec 决策 2）：写槽（16:9）+ 武装 + 菜单收起 + 瞬时提示', async () => {
+    it('比例预设二级子项点击 = armLayerCreate 带档载荷（preset-submenu 工单 03 γ 语义，ADR 0021）：档位入载荷不写槽 + 带档名提示 + 菜单收起', async () => {
         const editor = makeEditor([])
         const wrapper = mount(LayerPanel, { props: { editor } })
 
         await wrapper.find('[data-add-menu]').trigger('click')
+        // ▸ 悬停唤出图片层二级（宿主 1）
+        await hoverSubmenuArrow(wrapper, 1)
         await wrapper.find('[data-ratio-preset="16:9"]').trigger('click')
-        // 预设 = 写建层比例槽的快捷方式：槽先行（16:9），文档零变化
+        // γ：档位入武装载荷（画拉按档钳制橡皮筋与死区缺省盒，endCreate 一次性消费）；
+        // 建层比例槽已整槽退役（工单 01）——无槽可写、零粘性
         expect(editor.store.history).toHaveLength(0)
-        expect(editor.store.ui.nextLayerRatio).toBe('16:9')
         expect(editor.store.ui.armedCreate).toBe('ImageLayer')
+        expect(editor.store.ui.armedCreatePreset).toBe('16:9')
         expect(wrapper.find('[data-add-layer]').exists()).toBe(false)
-        expect(useTransientFeedback().message.value).toBe('画拉或点击落层，Esc 取消')
+        // 带档名提示（armLayerCreatePresetHint——「画拉建图片层（16:9）」句式）
+        expect(useTransientFeedback().message.value).toBe('画拉建图片层（16:9），画拉或点击落层，Esc 取消')
         wrapper.unmount()
     })
 
-    it('普通「图片层」项分发不带 preset（spec 决策 2：武装后按槽值钳制，槽是唯一偏好源）：槽不被重置、仅武装', async () => {
+    it('普通「图片层」主体分发无 preset（preset-submenu 工单 03 γ 语义，ADR 0021）：图片恒自由——不落任何档位载荷', async () => {
         const editor = makeEditor([])
-        editor.armLayerCreate('ImageLayer', '16:9') // 先经档位把槽写到 16:9
+        editor.armLayerCreate('ImageLayer', '16:9') // 先带档武装（上一手势残留场景）
         editor.cancelArmLayerCreate()
         const wrapper = mount(LayerPanel, { props: { editor } })
 
         await wrapper.find('[data-add-menu]').trigger('click')
-        // 普通图片层项 = 无 data-ratio-preset 的那个（档位项同携 data-add-layer="ImageLayer"）
-        const plainImage = wrapper.findAll('[data-add-layer="ImageLayer"]').find((button) => button.attributes('data-ratio-preset') === undefined)
-        await plainImage!.trigger('click')
+        // 普通图片层主体 = 两段式行主体（预设已收二级，一级无档位项可混淆）
+        await wrapper.find('[data-add-layer="ImageLayer"]').trigger('click')
         expect(editor.store.ui.armedCreate).toBe('ImageLayer')
-        expect(editor.store.ui.nextLayerRatio).toBe('16:9') // 槽原样 = 分发未带 preset
+        expect(editor.store.ui.armedCreatePreset).toBe('') // 恒自由：不带任何档位载荷
         wrapper.unmount()
     })
 
