@@ -14,7 +14,14 @@ import { describe, expect, it } from 'vitest'
 import { defineComponent, h, nextTick, ref } from 'vue'
 import { mount } from '@vue/test-utils'
 
-import { nextEnabledItemIndex, useDropdownMenu, type DropdownMenuController } from '../../src/shared/useDropdownMenu'
+import {
+    nextEnabledItemIndex,
+    nextOpenSubmenu,
+    placeSubmenuInViewport,
+    submenuKeyAction,
+    useDropdownMenu,
+    type DropdownMenuController,
+} from '../../src/shared/useDropdownMenu'
 
 /** 测试挂载壳：setup 内消费 composable，容器 ref 绑到根 div（真实使用路径） */
 let controller: DropdownMenuController | null = null
@@ -162,5 +169,84 @@ describe('nextEnabledItemIndex：菜单键盘导航落点（issues/04）', () =>
         expect(nextEnabledItemIndex([false, false], -1, 'End')).toBe(-1)
         expect(nextEnabledItemIndex([true, false, false], 0, 'ArrowDown')).toBe(0)
         expect(nextEnabledItemIndex([true, false, false], 0, 'ArrowUp')).toBe(0)
+    })
+})
+
+// ---- submenu 两段式条目底座（canvas-web-preset-submenu 工单 02）：纯函数面 ----
+// 开合态以条目引用为键（身份等价，免下标簿记）；单测用 number 代条目钉语义。
+
+describe('nextOpenSubmenu：二级开合切换（工单 02）', () => {
+    it('open 换开：▸ 悬停/键盘 → 恒开指定行——异行换开（A 开 → open B 收 A 开 B）、同行保持', () => {
+        expect(nextOpenSubmenu(0, { type: 'open', target: 2 })).toBe(2)
+        expect(nextOpenSubmenu(2, { type: 'open', target: 2 })).toBe(2)
+    })
+
+    it('toggle 同行翻转（▸ 点击）：已开收起、未开打开；异行点击换开', () => {
+        expect(nextOpenSubmenu(2, { type: 'toggle', target: 2 })).toBeNull()
+        expect(nextOpenSubmenu(null, { type: 'toggle', target: 2 })).toBe(2)
+        expect(nextOpenSubmenu(0, { type: 'toggle', target: 2 })).toBe(2)
+    })
+
+    it('close 收起（移出菜单/菜单随收/子项分发）：任一态都落全关', () => {
+        expect(nextOpenSubmenu(1, { type: 'close' })).toBeNull()
+        expect(nextOpenSubmenu(null, { type: 'close' })).toBeNull()
+    })
+})
+
+describe('placeSubmenuInViewport：二级翻转判定与钳位（工单 02）', () => {
+    /** 视口 1024×768（jsdom 同值），留白 2、间隙 6 与组件常量同语 */
+    const anchor = { top: 100, bottom: 124, left: 10, right: 200 }
+    const place = (anchorBox: { top: number; bottom: number; left: number; right: number }, width: number, height: number) =>
+        placeSubmenuInViewport({ anchor: anchorBox, flyoutWidth: width, flyoutHeight: height, viewportWidth: 1024, viewportHeight: 768 })
+
+    it('右缘放得下：弹触发行右侧（左缘 = 行右缘 + 间隙 6、顶缘对齐行顶缘）', () => {
+        expect(place(anchor, 150, 120)).toEqual({ left: 206, top: 100, side: 'right' })
+    })
+
+    it('右缘放不下翻左侧：右缘贴行左缘 − 间隙 6（图层面板停靠左缘、二级向右弹的主路径反例）', () => {
+        const nearRight = { top: 100, bottom: 124, left: 950, right: 1020 }
+        // 右侧：1020 + 6 + 150 = 1176 > 1022 → 翻左：950 − 6 − 150 = 794
+        expect(place(nearRight, 150, 120)).toEqual({ left: 794, top: 100, side: 'left' })
+    })
+
+    it('翻左仍越左缘（钳不出正位）：左缘压回视口留白 2', () => {
+        const wide = { top: 100, bottom: 124, left: 100, right: 1020 }
+        // 左 = 100 − 6 − 150 = −56 → 钳回 2
+        const placed = place(wide, 150, 120)
+        expect(placed.side).toBe('left')
+        expect(placed.left).toBe(2)
+    })
+
+    it('垂直钳位：行顶贴视口下缘时收回（下缘不越 766）、行顶越上缘时压回留白', () => {
+        const lowRow = { top: 720, bottom: 744, left: 10, right: 200 }
+        // 720 + 120 = 840 > 766 → top = 768 − 2 − 120 = 646
+        expect(place(lowRow, 150, 120).top).toBe(646)
+        const highRow = { top: -10, bottom: 14, left: 10, right: 200 }
+        expect(place(highRow, 150, 120).top).toBe(2)
+    })
+
+    it('尺寸量不到（宽/高 0——首帧未渲染）：不翻转不移动，首帧锚点原样', () => {
+        expect(place(anchor, 0, 0)).toEqual({ left: 206, top: 100, side: 'right' })
+    })
+})
+
+describe('submenuKeyAction：二级键盘动作判定（工单 02）', () => {
+    it('↑↓/Home/End → 二级内推进（落点仍归 nextEnabledItemIndex）', () => {
+        expect(submenuKeyAction('ArrowDown')).toEqual({ type: 'move', key: 'ArrowDown' })
+        expect(submenuKeyAction('ArrowUp')).toEqual({ type: 'move', key: 'ArrowUp' })
+        expect(submenuKeyAction('Home')).toEqual({ type: 'move', key: 'Home' })
+        expect(submenuKeyAction('End')).toEqual({ type: 'move', key: 'End' })
+    })
+
+    it('← 与 Esc → 收二级（菜单留场，两段收的第一段）', () => {
+        expect(submenuKeyAction('ArrowLeft')).toEqual({ type: 'close' })
+        expect(submenuKeyAction('Escape')).toEqual({ type: 'close' })
+    })
+
+    it('Enter/Space → 激活焦点子项；Tab → 收整个菜单（沿现状）；其余 none（模态吞掉）', () => {
+        expect(submenuKeyAction('Enter')).toEqual({ type: 'activate' })
+        expect(submenuKeyAction(' ')).toEqual({ type: 'activate' })
+        expect(submenuKeyAction('Tab')).toEqual({ type: 'close-menu' })
+        expect(submenuKeyAction('a')).toEqual({ type: 'none' })
     })
 })
