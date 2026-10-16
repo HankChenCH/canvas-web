@@ -52,9 +52,9 @@ import {
 import PanelIcon from '../shared/PanelIcon.vue'
 import DropdownMenu from '../shared/DropdownMenu.vue'
 import type { DropdownMenuEntry } from '../shared/useDropdownMenu'
-import { ARM_LAYER_CREATE_HINT, armLayerCreatePresetHint, detectShortcutPlatform, shortcutActionLabel } from '../shared/shortcutsHelp'
+import { ARM_LAYER_CREATE_HINT, detectShortcutPlatform, shortcutActionLabel } from '../shared/shortcutsHelp'
 import { useTransientFeedback } from '../shared/useTransientFeedback'
-import { PANEL_ADD_MENU } from './addMenu'
+import { PANEL_ADD_MENU, armLayerCreatePresetHint } from './addMenu'
 import TemplateTableForm from './TemplateTableForm.vue'
 import { isUpperHalf, useLayerPanel } from './useLayerPanel'
 const props = defineProps<{ editor: EditorSession }>()

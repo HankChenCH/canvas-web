@@ -1,12 +1,13 @@
 /**
  * 跨域切片桥出口：选择/视口/历史/快捷键切片桥、快捷键帮助面板（开合单例态 +
  * 展示件）、快捷键展示侧纯函数与常量（键位符号/平台侦测/武装提示句——包内
- * 散落组件与宿主工具栏共用，editor-top-toolbar 工单 03 起入出口；带档变体
- * armLayerCreatePresetHint 随 preset-submenu 工单 03 增设——面板预设二级分发专用）、可编辑目标
+ * 散落组件与宿主工具栏共用，editor-top-toolbar 工单 03 起入出口；带档变体提示
+ * armLayerCreatePresetHint 住 layer-panel 域 addMenu——面板预设二级分发专用，
+ * 单域消费不进 shared，评审整改 F1）、可编辑目标
  * 谓词、面板图标统一封装、DOM File 上传组装、状态栏瞬时反馈单例、下拉菜单底座
  * （呈现件 + 开合逻辑 composable；工具栏三下拉内建触发钮直用，状态栏缩放菜单/
  * 面板＋经 #trigger/#body 受控插槽迁移消费——issues/05）与表达式补全五件（数据
- * 契约/锚点测量/浮层控件/呈现件/上下文判定与候选源适配——属性面板与画布文本
+ * 契约/锚点测量/浮层控件/上下文判定与候选源适配——属性面板与画布文本
  * 编辑两域共用）及裸路径补全控件 usePathCompletion（rows-path-completion 工单
  * 02：复用同门 Popup/Anchor/applyCompletion，触发语义分轨——裸路径输入即弹）、
  * rowsPath 候选源组装 rowsPathCompletionSource（工单 03/04：「行数组」文案置入
@@ -45,7 +46,6 @@ export {
 } from './useDropdownMenu'
 export {
     ARM_LAYER_CREATE_HINT,
-    armLayerCreatePresetHint,
     detectShortcutPlatform,
     shortcutActionLabel,
 } from './shortcutsHelp'
