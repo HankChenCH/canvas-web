@@ -372,7 +372,7 @@ describe('订阅清理', () => {
     })
 })
 
-describe('rowsPathSource（rows-path-completion 工单 03：行相对候选源）', () => {
+describe('rowsPathSource/rowsPathDrifted（rows-path-picker 工单 03：点选器候选源与漂移判定）', () => {
     /** 三层嵌套 schema：order.items 行 = name 标量 + lines 数组；lines 行 = sku 标量 + subitems 数组 */
     const RAW_SCHEMA = {
         type: 'object',
@@ -415,7 +415,7 @@ describe('rowsPathSource（rows-path-completion 工单 03：行相对候选源�
         return tableLayer([], { rowsPath: 'order.items', template: rowTemplateLayer([cellLayer(innerTable)]) })
     }
 
-    it('schema 未注入 → null 源（零弹层态）', () => {
+    it('schema 未注入 → null 源（门态，菜单钮不渲染）', () => {
         const editor = makeEditor([createTemplateTable({ rowsPath: 'order.items' })])
         const { scope, panel } = bind(editor)
         editor.setSelection(['layers', 0])
@@ -423,19 +423,23 @@ describe('rowsPathSource（rows-path-completion 工单 03：行相对候选源�
         scope.stop()
     })
 
-    it('根层表 = 根起点：标量不出、array 候选带「行数组」文案置入', () => {
-        const editor = makeEditor([createTemplateTable({ rowsPath: '' })])
+    it('根层表 = 根起点：剪枝候选（标量不出）按前缀给层，数组终点带 type array 语义标记', () => {
+        const editor = makeEditor([createTemplateTable({ rowsPath: 'order.items' })])
         editor.setDataSourceSchema(RAW_SCHEMA)
         const { scope, panel } = bind(editor)
         editor.setSelection(['layers', 0])
 
         const source = panel.rowsPathSource.value
         if (source === null) throw new Error('schema 注入后应有源')
-        const result = source('order.')
-        if (result === null) throw new Error('尾点应枚举成功')
-        expect(result.partial).toBe('')
-        expect(result.candidates.map((c) => c.segment)).toEqual(['items'])
-        expect(result.candidates[0]!.type).toBe('行数组')
+        // 头部层（''）：orderNo 标量剪掉，order 对象中间站在列
+        const head = source('')
+        expect(head).not.toBeNull()
+        expect(head!.partial).toBe('')
+        expect(head!.candidates.map((c) => c.path)).toEqual(['order'])
+        // 尾点下钻层：items 数组终点，type 'array' 语义标记（徽标文案归组件层映射）
+        const drill = source('order.')
+        expect(drill).not.toBeNull()
+        expect(drill!.candidates.map((c) => [c.path, c.type])).toEqual([['order.items', 'array']])
         scope.stop()
     })
 
@@ -447,10 +451,10 @@ describe('rowsPathSource（rows-path-completion 工单 03：行相对候选源�
 
         const source = panel.rowsPathSource.value
         if (source === null) throw new Error('深层嵌套应有源')
-        // 叶起点 = 内层行 schema（sku 标量 + subitems 数组）：候选只出 subitems
-        const result = source('sub')
-        if (result === null) throw new Error('应枚举成功')
-        expect(result.candidates.map((c) => c.segment)).toEqual(['subitems'])
+        // 叶起点 = 内层行 schema（sku 标量 + subitems 数组）：候选只出 subitems 终点
+        const result = source('')
+        expect(result).not.toBeNull()
+        expect(result!.candidates.map((c) => c.path)).toEqual(['subitems'])
         scope.stop()
     })
 
@@ -468,7 +472,55 @@ describe('rowsPathSource（rows-path-completion 工单 03：行相对候选源�
         editor.updateSpec(['layers', 0], ['rowsPath'], 'order.items', { mergeKey: 'fix' })
         const source = panel.rowsPathSource.value
         if (source === null) throw new Error('修复后应有源')
-        expect(source('li')?.candidates.map((c) => c.segment)).toEqual(['lines'])
+        // 起点 = 外层行 schema（name 标量 + lines 数组）：候选只出 lines 终点
+        expect(source('')?.candidates.map((c) => c.path)).toEqual(['lines'])
+        scope.stop()
+    })
+
+    it('rowsPathDrifted：合法数组终点 = false；枚举不出/终点非数组 = true（判已提交值）', () => {
+        const editor = makeEditor([createTemplateTable({ rowsPath: 'order.items' })])
+        editor.setDataSourceSchema(RAW_SCHEMA)
+        const { scope, panel } = bind(editor)
+        editor.setSelection(['layers', 0])
+        expect(panel.rowsPathDrifted.value).toBe(false)
+
+        // 途经漂移（段缺失）→ 枚举不出
+        editor.updateSpec(['layers', 0], ['rowsPath'], 'order.missing', { mergeKey: 'd1' })
+        expect(panel.rowsPathDrifted.value).toBe(true)
+        // 终点非数组（对象落点）→ 漂移
+        editor.updateSpec(['layers', 0], ['rowsPath'], 'order', { mergeKey: 'd2' })
+        expect(panel.rowsPathDrifted.value).toBe(true)
+        // 数组内下钻（数组套数组内层不可达）→ 枚举不出
+        editor.updateSpec(['layers', 0], ['rowsPath'], 'order.items.lines', { mergeKey: 'd3' })
+        expect(panel.rowsPathDrifted.value).toBe(true)
+
+        // 修复为合法数组终点 → 随 doc 切片联动红退
+        editor.updateSpec(['layers', 0], ['rowsPath'], 'order.items', { mergeKey: 'fix' })
+        expect(panel.rowsPathDrifted.value).toBe(false)
+        scope.stop()
+    })
+
+    it('rowsPathDrifted：未绑 schema = 门态不判漂移（恒 false，弱提示替代标红）', () => {
+        const editor = makeEditor([createTemplateTable({ rowsPath: 'whatever. drift' })])
+        const { scope, panel } = bind(editor)
+        editor.setSelection(['layers', 0])
+        expect(panel.rowsPathDrifted.value).toBe(false)
+        scope.stop()
+    })
+
+    it('rowsPathDrifted：非模板表目标恒 false（字段面外不判定）；嵌套表按行相对起点判', () => {
+        const editor = makeEditor([nestedTableLayer()])
+        editor.setDataSourceSchema(RAW_SCHEMA)
+        const { scope, panel } = bind(editor)
+        // 未选中（画布级目标）：不判定
+        expect(panel.rowsPathDrifted.value).toBe(false)
+
+        // 内层表选中：行相对起点 = items 行 schema，lines 是合法数组终点
+        editor.setSelection(['layers', 0, 'template', 'cells', 0, 'content'])
+        expect(panel.rowsPathDrifted.value).toBe(false)
+        // 行相对漂移：外层行 schema 下 sku 是叶表键，不在 items 行
+        editor.updateSpec(['layers', 0, 'template', 'cells', 0, 'content'], ['rowsPath'], 'sku', { mergeKey: 'd' })
+        expect(panel.rowsPathDrifted.value).toBe(true)
         scope.stop()
     })
 })

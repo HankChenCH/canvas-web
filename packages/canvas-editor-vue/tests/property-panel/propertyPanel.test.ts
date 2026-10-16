@@ -86,6 +86,7 @@ describe('PropertyField：<component :is> 注册表分发', () => {
             'border',
             'imageSrc',
             'resourceValue',
+            'rowsPath',
         ]
         for (const kind of kinds) {
             const component = controlRegistry[kind]

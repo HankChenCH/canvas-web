@@ -433,34 +433,19 @@ describe('fieldSectionsForPath：模板态（模板创作 spec）', () => {
         expect(keys).not.toContain('shape.autoWidth')
     })
 
-    it('rowsPath 仅模板态显示：V1 表无数据节，模板态表出现且带 nonEmpty/占位', () => {
+    it('rowsPath 仅模板态显示：V1 表无数据节，模板态表出现且为点选器控件（label 翻新「取行路径」，rows-path-picker 工单 03）', () => {
         const v1: Layer = { ...templateTable, template: null, rowsPath: '' }
         expect(fieldKeys(fieldSectionsForPath(['layers', 0], v1))).not.toContain('rowsPath')
 
         const dataSection = fieldSectionsForPath(['layers', 0], templateTable).find((s) => s.title === '数据')!
         const rowsPath = dataSection.fields.find((f) => f.key[0] === 'rowsPath')!
-        expect(rowsPath.nonEmpty).toBe(true)
-        expect(rowsPath.placeholder).toBeTruthy()
-    })
-
-    it('rowsPath 字段带 rowsPath 补全标记（工单 03，D6 标记门）：全注册表唯一', () => {
-        const dataSection = fieldSectionsForPath(['layers', 0], templateTable).find((s) => s.title === '数据')!
-        const rowsPath = dataSection.fields.find((f) => f.key[0] === 'rowsPath')!
-        expect(rowsPath.completion).toBe('rowsPath')
-
-        // 标记不扩散：其余字段（含 data 门三字段）一个不带
-        const marked: string[] = []
-        for (const sections of Object.values(FIELD_SECTIONS_BY_TYPE)) {
-            for (const section of sections) {
-                for (const field of section.fields) {
-                    if (field.completion !== undefined) marked.push(field.key.join('.'))
-                    for (const item of field.items ?? []) {
-                        if (item.completion !== undefined) marked.push(`${field.key.join('.')}.${item.key.join('.')}`)
-                    }
-                }
-            }
-        }
-        expect(marked).toEqual(['rowsPath'])
+        expect(rowsPath.control).toBe('rowsPath')
+        expect(rowsPath.label).toBe('取行路径')
+        // 手输缝退役随换装：非空校验与占位文案是文本输入面概念，点选器不消费
+        expect(rowsPath.nonEmpty).toBeUndefined()
+        expect(rowsPath.placeholder).toBeUndefined()
+        // 补全标记随换装撤除（FieldDef.completion 已整体退役，编译器即防回流护栏）
+        expect('completion' in rowsPath).toBe(false)
     })
 })
 

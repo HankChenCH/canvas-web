@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest'
 
 import { parseExpressionSchema, type ExpressionSchemaNode } from '@hankchen/canvas-editor'
 
-import { rowsPathPickerSource } from '../../src/shared/rowsPathCompletionSource'
+import { rowsPathPickerSource, rowsPathValueDrifts } from '../../src/shared/rowsPathCompletionSource'
 
 function schemaOf(raw: unknown): ExpressionSchemaNode {
     const parsed = parseExpressionSchema(raw)
@@ -70,5 +70,30 @@ describe('rowsPathPickerSource：契约映射', () => {
         expect(source('drift.')!.candidates).toEqual([])
         expect(source('rows.')!.candidates).toEqual([])
         expect(source('a..b')!.candidates).toEqual([])
+    })
+})
+
+describe('rowsPathValueDrifts：已提交值漂移判定（工单 03，spec D2）', () => {
+    it('合法数组终点 = 不漂移；起点 null（门态）恒不漂移', () => {
+        const start = schemaOf(RAW_SCHEMA)
+        expect(rowsPathValueDrifts(start, 'rows')).toBe(false)
+        expect(rowsPathValueDrifts(start, 'order.items')).toBe(false)
+        expect(rowsPathValueDrifts(null, '随便什么都行')).toBe(false)
+    })
+
+    it('枚举不出（段缺失/数组内下钻/畸形）= 漂移', () => {
+        const start = schemaOf(RAW_SCHEMA)
+        expect(rowsPathValueDrifts(start, 'order.missing')).toBe(true)
+        expect(rowsPathValueDrifts(start, 'order.items.id')).toBe(true) // 数组内下钻不可达
+        expect(rowsPathValueDrifts(start, 'no.such.path')).toBe(true)
+        expect(rowsPathValueDrifts(start, 'a..b')).toBe(true)
+    })
+
+    it('终点非数组（标量/对象落点、空值）= 漂移', () => {
+        const start = schemaOf(RAW_SCHEMA)
+        expect(rowsPathValueDrifts(start, 'orderNo')).toBe(true) // 标量落点
+        expect(rowsPathValueDrifts(start, 'order')).toBe(true) // 对象落点
+        expect(rowsPathValueDrifts(start, '')).toBe(true) // 空值（手输时代遗留形态）
+        expect(rowsPathValueDrifts(start, 'order.')).toBe(true) // 尾点残形
     })
 })

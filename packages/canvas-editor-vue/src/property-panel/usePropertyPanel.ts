@@ -38,7 +38,7 @@ import {
     expressionFieldContext,
 } from '../shared/expressionContext'
 import { selectionFieldMergeKey } from '../shared/mergeKey'
-import { rowsPathCompletionSource } from '../shared/rowsPathCompletionSource'
+import { rowsPathPickerSource, rowsPathValueDrifts } from '../shared/rowsPathCompletionSource'
 import type { CompletionSource } from '../shared/completion'
 
 export type { FieldDef, FieldSection } from './fieldSchema'
@@ -66,10 +66,19 @@ export interface PropertyPanelBinding {
      */
     readonly completionSource: ComputedRef<CompletionSource | null>
     /**
-     * rowsPath 标记字段的补全候选源（rows-path-completion 工单 03）：起点三分流
-     * + 枚举器组装，「行数组」文案在此置入；未注入/判别降级为 null（零弹层）。
+     * rowsPath 字段的级联点选候选源（rows-path-picker 工单 03）：起点三分流判别
+     * （根层表 = 载荷根 schema；嵌套表 = 外层行 schema 行相对；判别降级 null）+
+     * 工单 01 剪枝枚举件按前缀供给（rowsPathPickerSource 组装，候选面剪枝至
+     * 「通往行数组的路径」）。起点 null = null 源（门态，菜单钮不渲染，spec D1）。
      */
     readonly rowsPathSource: ComputedRef<CompletionSource | null>
+    /**
+     * 已提交 rowsPath 的漂移态（rows-path-picker 工单 03，spec D2）：模板表选中
+     * 态下按起点三分流判已提交值——枚举不出或终点非数组 = true（回显标红，菜单
+     * 照常可开可重选）；未绑声明/字段面外（非模板表目标）恒 false（门态弱提示
+     * 替代标红）。
+     */
+    readonly rowsPathDrifted: ComputedRef<boolean>
     /** 锚点折叠区开合（store ui 分支投影，会话内记忆；工票 03） */
     readonly anchorExpanded: ComputedRef<boolean>
     /**
@@ -181,15 +190,32 @@ export function usePropertyPanel(editor: EditorSession): PropertyPanelBinding {
     })
 
     /**
-     * rowsPath 标记字段的补全候选源（rows-path-completion 工单 03，D3/D6）：工单 01
-     * 起点三分流判别（根层表 = 载荷根 schema；嵌套表 = 沿选中路径 template 段行相对
-     * 递归到外层行 schema）+ 公共源组装 rowsPathCompletionSource（工单 04 收口——
-     * 「行数组」文案置入的共享合流点）。schema 未注入 = null 源；判别降级（外层
-     * rowsPath 无 items 声明/漂移/途经非表）= null 源，静默不弹（D7），手输不受阻。
+     * rowsPath 起点三分流判别（rows-path-picker 工单 03）：点选候选源与漂移判定
+     * 的共享起点（同一响应式依赖切片，一次求值两处消费）。
      */
-    const rowsPathSource = computed<CompletionSource | null>(() =>
-        rowsPathCompletionSource(resolveRowsPathStartSchema(doc.value, selection.value, dataSourceSchema.value)),
+    const rowsPathStartSchema = computed(() =>
+        resolveRowsPathStartSchema(doc.value, selection.value, dataSourceSchema.value),
     )
+
+    /**
+     * rowsPath 字段的级联点选候选源（rows-path-picker 工单 03，D1/D3）：工单 01
+     * 剪枝枚举件按前缀供给（候选面剪枝至「通往行数组的路径」，数组终点带 type
+     * 'array' 语义标记，「行数组」徽标文案归组件呈现层映射）。schema 未注入 =
+     * null 源；判别降级（外层 rowsPath 无 items 声明/漂移/途经非表）= null 源
+     * （门态：菜单钮不渲染，只读回显 + 弱提示归字段层）。
+     */
+    const rowsPathSource = computed<CompletionSource | null>(() => rowsPathPickerSource(rowsPathStartSchema.value))
+
+    /**
+     * 已提交 rowsPath 的漂移态（spec D2）：判定作用于已提交值（无输入期概念），
+     * 仅模板表目标求值（字段面外恒 false）；未绑声明 = 门态不判漂移（D1，弱提示
+     * 替代标红）。
+     */
+    const rowsPathDrifted = computed<boolean>(() => {
+        const current = layer.value
+        if (current === null || current.type !== 'TableLayer' || current.template === null) return false
+        return rowsPathValueDrifts(rowsPathStartSchema.value, current.rowsPath)
+    })
 
     // 与内核 isTemplateSubtreePath 同义（path 含 template 段）；内核符号落地前
     // 域内自持，语义漂移由内核侧测试看护
@@ -279,6 +305,7 @@ export function usePropertyPanel(editor: EditorSession): PropertyPanelBinding {
         isPreviewBox,
         completionSource,
         rowsPathSource,
+        rowsPathDrifted,
         resourceStatuses: computed(() => resourceStatuses.value),
         anchorExpanded: computed(() => anchorExpanded.value),
         contentLocked,

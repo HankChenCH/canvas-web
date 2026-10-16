@@ -40,6 +40,7 @@ export type FieldControl =
     | 'font'
     | 'imageSrc'
     | 'resourceValue'
+    | 'rowsPath'
 
 /**
  * 自适应 prefix 钮描述（pair 子字段用）：key 相对 pair 值对象上的布尔键；
@@ -81,13 +82,6 @@ export interface FieldDef {
      * 禁拼接/函数），不走片段级扫描诊断。图片地址/二维码值两类声明。
      */
     readonly resource?: true
-    /**
-     * 补全标记门（rows-path-completion 工单 03，D6）：'rowsPath' = 裸路径补全
-     * （usePathCompletion，候选源 = 面板 rowsPathSource）——不走 data 门
-     * （rowsPath 是结构语义，表达式补全门不适用）；缺省 = 无标记（data 门字段
-     * 照走 useExpressionCompletion）。
-     */
-    readonly completion?: 'rowsPath'
     /** 输入框占位文案（text 控件透传） */
     readonly placeholder?: string
     /**
@@ -267,22 +261,23 @@ const TEMPLATE_ROW_SECTION: FieldSection = {
 }
 
 /**
- * 表数据节（spec §2.4）：数据行路径——仅模板态显示（visibleWhen 过滤，V1 无
+ * 表数据节（spec §2.4）：取行路径——仅模板态显示（visibleWhen 过滤，V1 无
  * 消费方；初值由创建/转换表单覆盖，面板只管改）。不走 data 管道（P3：rowsPath
- * 是结构语义，提交走 updateSpec 透传，canonicalize 零 patch）；非空校验控件层
- * 拦（P4：空串永不落库——解码 rows_path_missing 硬约束）。
+ * 是结构语义，提交走 updateSpec 透传，canonicalize 零 patch）。
+ *
+ * 作者面 = rowsPath mode 级联点选器（rows-path-picker 工单 03，撤手输框与补全
+ * 标记，spec D1/D2）：候选以数据源声明为门（未绑 = 只读回显 + 弱提示，菜单钮
+ * 不渲染）；数组是唯一可点终点，点选只产合法行数组路径——非空校验（P4）随
+ * 文本输入面一并退役，无手输缝即无空串/非法路径可提交。漂移（已提交值枚举不出）
+ * 呈现归控件层红描边，判定在面板（rowsPathDrifted）。
  */
 const DATA_SECTION: FieldSection = {
     title: '数据',
     fields: [
         {
             key: ['rowsPath'],
-            label: '数据行路径',
-            control: 'text',
-            placeholder: '如 order.items',
-            nonEmpty: true,
-            // 补全标记门（工单 03，D6）：裸路径补全，不走 data 门（P3 结构语义）
-            completion: 'rowsPath',
+            label: '取行路径',
+            control: 'rowsPath',
             visibleWhen: (layer) => layer.type === 'TableLayer' && layer.template !== null,
         },
     ],

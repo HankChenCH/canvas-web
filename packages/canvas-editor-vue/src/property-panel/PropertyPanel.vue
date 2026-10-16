@@ -39,11 +39,12 @@ provide(IMAGE_UPLOAD_KEY, {
 })
 
 /**
- * 按字段分发对应候选源（rows-path-completion 工单 03，D6）：rowsPath 标记字段走
- * 行相对专用源（rowsPathSource），其余字段（data 门）走表达式源——两源互不串场。
+ * 按字段分发对应候选源（rows-path-picker 工单 03）：rowsPath 控件走点选器专用源
+ * （rowsPathSource，起点三分流 + 剪枝枚举件），其余字段（data 门）走表达式源——
+ * 两源互不串场。
  */
 function fieldCompletionSource(field: FieldDef): CompletionSource | null {
-    return field.completion === 'rowsPath' ? panel.rowsPathSource.value : panel.completionSource.value
+    return field.control === 'rowsPath' ? panel.rowsPathSource.value : panel.completionSource.value
 }
 
 interface RenderField {
@@ -68,6 +69,11 @@ interface RenderField {
      * 无记录（宿主未桥接）= 不可知不假报；其他控件不下发。
      */
     resourceStatus?: ResourceStatus
+    /**
+     * rowsPath 控件的漂移态（rows-path-picker 工单 03，spec D2）：面板按已提交值
+     * 判定（rowsPathDrifted），仅 rowsPath 控件下发——红描边呈现，菜单不受影响。
+     */
+    drifted?: boolean
 }
 
 interface RenderSection {
@@ -123,6 +129,7 @@ const visibleSections = computed<readonly RenderSection[]>(() => {
                     field.control === 'imageSrc' && typeof read.value === 'string' && read.value !== ''
                         ? statuses[read.value]
                         : undefined,
+                drifted: field.control === 'rowsPath' ? panel.rowsPathDrifted.value : undefined,
             })
         }
         if (fields.length > 0) result.push({ title: section.title, fields })
@@ -221,6 +228,7 @@ function toggleAnchorExpanded(): void {
                         :completion="fieldCompletionSource(item.field)"
                         :displays="pairDisplays"
                         :resource-status="item.resourceStatus"
+                        :drifted="item.drifted"
                         @input="panel.commit(item.field, $event, false)"
                         @change="panel.commit(item.field, $event, true)"
                         @toggle-mode="panel.toggleDataMode(item.field)"

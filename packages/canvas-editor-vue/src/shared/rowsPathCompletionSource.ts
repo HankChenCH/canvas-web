@@ -64,3 +64,19 @@ export function rowsPathPickerSource(startSchema: ExpressionSchemaNode | null): 
         }
     }
 }
+
+/**
+ * 已提交 rowsPath 的漂移判定（rows-path-picker 工单 03，spec D2）：属性面板把
+ * 「schema 变更后已选路径枚举不出」呈现为回显标红（菜单照常可开可重选），判定
+ * 收口此纯函数（Node 可测）。语义按 spec 钉定面复用补全枚举器——
+ * `enumerateRowsPathCandidates === null`（途经漂移/数组内下钻/畸形）或终点非数组
+ * （标量/对象落点、空值、尾点残形——枚举候选里寻不到该路径的数组终点条目）。
+ * 作用于已提交值，无输入期概念；起点 null（未绑声明/判别降级）= 门态不判漂移
+ * （弱提示替代标红，D1）。
+ */
+export function rowsPathValueDrifts(startSchema: ExpressionSchemaNode | null, value: string): boolean {
+    if (startSchema === null) return false
+    const result = enumerateRowsPathCandidates(startSchema, value)
+    if (result === null) return true
+    return !result.candidates.some((candidate) => candidate.path === value && candidate.type === 'array')
+}

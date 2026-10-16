@@ -26,19 +26,18 @@
  * 通道分流（有菜单指向点选、无菜单指向绑定）；声明未注入时给绑定门弱提示行
  * （菜单缺席的原因说明，resourceDiagnosticHint / RESOURCE_BINDING_HINT 单源）。
  *
- * 裸路径补全（rows-path-completion 工单 03，D6）：接线门扩为「data 门或 completion
- * 标记门」——rowsPath 字段（completion: 'rowsPath' 标记）按标记走 usePathCompletion
- * （候选源 = 面板 rowsPathSource 行相对源），数据字段仍走 useExpressionCompletion
- * 零改动。两门互斥（data 与 completion 不共存于同一字段），两 composable 均实例化、
- * 非本门 enabled 恒假事件入口全短路；浮层按门渲染对应呈现态。提交管线不动：接受
- * = 合成 input/change 走既有 updateSpec 分支（P3 结构语义透传不变）。
+ * 裸路径补全（rows-path-completion 工单 03，D6）：接线门随 rowsPath 换装退出本
+ * 组件（rows-path-picker 工单 03）——rowsPath 字段改点选器控件后，面板内已无
+ * 标记消费方；裸路径补全面只剩建表表单的独立接线（shared 直引 usePathCompletion，
+ * 不经本组件，退役归手输缝清扫工单）。数据字段表达式浮层（useExpressionCompletion）
+ * 零改动。
  *
  * 行解剖（面板布局优化，三种形态共用同一份控件分发）：
  * - pair：全宽块级（列标签 X/Y/宽/高 自描述，行级标签不复述）；
  * - 数据字段（field.data）：上下两行——第一行 = 标签（定宽列）+ 取值方式分段
  *   选择器（右端对齐），第二行 = 输入控件跨两列撑满面板宽（textarea 不再被
  *   标签/分段挤压）；网格 gap-y 提供行距；
- * - 其余：固定标签列（60px，容纳最长标签「数据行路径」5 字）+ 控件列的网格
+ * - 其余：固定标签列（60px，容纳最长标签 4 字）+ 控件列的网格
  *   行——标签列定宽消除逐行标签宽差导致的输入左缘参差（视差），定宽控件
  *   （布尔开关）落在控件列左缘，与填充类控件同一条起始线。
  */
@@ -52,7 +51,6 @@ import ValueTypeSegmented from './fields/ValueTypeSegmented.vue'
 import ExpressionCompletionPopup from '../shared/ExpressionCompletionPopup.vue'
 import { useExpressionCompletion } from '../shared/useExpressionCompletion'
 import { expressionDiagnosticHint, resourceDiagnosticHint, RESOURCE_BINDING_HINT } from '../shared/useExpressionDiagnostics'
-import { usePathCompletion } from '../shared/usePathCompletion'
 import type { CompletionSource } from '../shared/completion'
 
 const props = defineProps<{
@@ -84,6 +82,12 @@ const props = defineProps<{
      * （缩略图角标，与画布失败标识同源）；undefined = 无记录/不适用。
      */
     resourceStatus?: ResourceStatus
+    /**
+     * rowsPath 控件的漂移态（rows-path-picker 工单 03，spec D2）：面板按已提交
+     * 值判定（rowsPathDrifted）——true 时控件落 cn-field--invalid（红描边经
+     * fallthrough 到点选器展示框），菜单不受影响照常可开可重选。其他控件不下发。
+     */
+    drifted?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -101,7 +105,7 @@ const isExpression = computed(() => props.dataMode === 'expression')
  * 行根布局类（见文件头「行解剖」）：pair = 全宽块级；其余 = 固定标签列网格。
  * 数据字段的上下两行由同一网格承载：标签 r1c1、分段选择器 r1c2（右端）、
  * 控件 col-span-2 落 r2（gap-y-1.5 提供行距）——单行网格下 gap-y 惰性。
- * 60px 标签列容纳最长标签「数据行路径」（5 字 × 11px），超出 truncate。
+ * 60px 标签列容纳最长标签（4 字 × 11px，如「取行路径」「行高倍数」），超出 truncate。
  */
 const rowClass = computed(() =>
     props.field.control === 'pair'
@@ -116,16 +120,19 @@ const controlClass = computed(() => (props.field.data === true ? 'col-span-2' : 
  * 补全接线门（resource-expression-single-ref 工单 05 收敛后）：表达式浮层只剩
  * 文本层（textarea 数据字段）。资源内容字段已换装——QR 走 resourceValue 控件、
  * imageSrc 表达式态走选择器（候选源经 props.completion 下发进控件），纯菜单
- * 点选不设手输缝（ADR 0020），浮层/手输面不复存在；rowsPath 标记门（工单 03，
- * D6）不变。
+ * 点选不设手输缝（ADR 0020），浮层/手输面不复存在；rowsPath 字段亦随点选器
+ * 换装（rows-path-picker 工单 03）退出标记门，裸路径补全面只剩建表表单的
+ * 独立接线（shared 直引，不经本组件）。
  * 其余字段零接线。
  */
 const wiresExpressionCompletion = computed(() => props.field.data === true && props.field.control === 'textarea')
-const wiresPathCompletion = computed(() => props.field.completion === 'rowsPath')
-const wiresCompletion = computed(() => wiresExpressionCompletion.value || wiresPathCompletion.value)
 
-/** 资源内容字段（field.resource：resourceValue/imageSrc）：候选源下发进控件的选择器 */
-const wiresPathPicker = computed(() => props.field.resource === true)
+/** rowsPath 控件判别（rows-path-picker 工单 03）：候选源路由 / 门态弱提示 / 漂移红边三处同源 */
+const isRowsPath = computed(() => props.field.control === 'rowsPath')
+
+/** 资源内容字段（field.resource：resourceValue/imageSrc）与 rowsPath 字段（rows-path-picker
+ *  工单 03 换装）：候选源下发进控件的选择器 */
+const wiresPathPicker = computed(() => props.field.resource === true || isRowsPath.value)
 
 /** 控件根元素（组件实例 $el；textarea/input 双形态，其余控件给 null 不绑） */
 const controlRef = ref<ComponentPublicInstance | null>(null)
@@ -162,14 +169,23 @@ const expressionErrorHint = computed(() => {
 })
 
 /**
- * 绑定门引导（resource-expression-single-ref 呈现面）：资源字段表达式态未注入
- * 声明 → 选择器无菜单（引用以声明为门）——弱提示行说明缺席原因；违例在场时
- * 错误提示行已含同款指引，互斥不重复。
+ * 绑定门引导（resource-expression-single-ref 呈现面；rowsPath 面同缝，rows-path-picker
+ * 工单 03 D1）：未注入声明 → 选择器无菜单（引用以声明为门）——弱提示行说明缺席
+ * 原因；违例在场时错误提示行已含同款指引，互斥不重复（rowsPath 无诊断面，无
+ * 静态/表达式两态，候选源缺席即门态）。
  */
-const bindingGateHint = computed(() =>
-    props.field.resource === true && isExpression.value && props.completion == null && expressionErrors.value.length === 0
-        ? RESOURCE_BINDING_HINT
-        : '',
+const bindingGateHint = computed(() => {
+    const gated = props.field.resource === true ? isExpression.value : isRowsPath.value
+    return gated && props.completion == null && expressionErrors.value.length === 0 ? RESOURCE_BINDING_HINT : ''
+})
+
+/**
+ * 控件红描边（rows-path-picker 工单 03，spec D2 漂移呈现）：数据字段表达式态走
+ * 诊断（expressionErrors），rowsPath 控件走面板漂移判定（drifted）——cn-field--invalid
+ * 经 fallthrough 落点选器只读展示框，标红不锁菜单。
+ */
+const controlInvalid = computed(
+    () => expressionErrors.value.length > 0 || (isRowsPath.value && props.drifted === true),
 )
 
 /** 点击定位的可用面：textarea 控件根是可 selection 的输入元素；resourceValue/imageSrc
@@ -185,7 +201,7 @@ function locateFirstError(): void {
     el.setSelectionRange(first.at.start, first.at.end)
 }
 const completionTarget = computed<HTMLTextAreaElement | HTMLInputElement | null>(() => {
-    if (!wiresCompletion.value) return null
+    if (!wiresExpressionCompletion.value) return null
     const el: unknown = controlRef.value?.$el
     return el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement ? el : null
 })
@@ -202,20 +218,6 @@ const { popup, accept } = useExpressionCompletion({
     // （字面渲染/编进二维码）不依赖 schema 在场；静态态 {{ 是字面不配对
     pairing: () => wiresExpressionCompletion.value && isExpression.value,
     resolve: (expr) => props.completion?.(expr) ?? null,
-    popupEl: popupElement,
-})
-
-/**
- * 标记字段的裸路径补全（工单 03）：按标记选 composable——rowsPath 字段走
- * usePathCompletion（与表达式控件同门分轨，触发语义无 {{}} 逻辑）；enabled 门
- * = 标记在场 + 声明注入（表达式门的 isExpression 态门在路径面不存在，裸路径
- * 无静态/表达式两态）。两 composable 均实例化（composable 不可条件调用），
- * 互斥声明保证任一字段至多一门 enabled，事件入口对另一门全部短路。
- */
-const { popup: pathPopup, accept: acceptPath } = usePathCompletion({
-    target: completionTarget,
-    enabled: () => wiresPathCompletion.value && props.completion != null,
-    resolve: (input) => props.completion?.(input) ?? null,
     popupEl: popupElement,
 })
 
@@ -267,7 +269,7 @@ function relaySubCommit(field: FieldDef, value: unknown, final: boolean): void {
                 controlClass,
                 {
                     'cn-field--expression': isExpression,
-                    'cn-field--invalid': expressionErrors.length > 0,
+                    'cn-field--invalid': controlInvalid,
                 },
             ]"
             :field="field"
@@ -306,20 +308,13 @@ function relaySubCommit(field: FieldDef, value: unknown, final: boolean): void {
             class="cn-prop-field__hint col-span-2 block text-[11px] leading-4 text-cn-muted"
         >{{ bindingGateHint }}</span>
     </component>
-    <!-- 补全浮层（工单 04/05/03）：portal 到 body，仅接线字段渲染——按门选呈现
-         态（表达式门 = useExpressionCompletion，标记门 = usePathCompletion，互斥
-         声明下单字段至多渲染一个）；面板不给本组件下发 attrs，多根无 fallthrough
-         断点 -->
+    <!-- 补全浮层（工单 04/05）：portal 到 body，仅表达式门字段渲染（资源/rowsPath
+         字段已换装点选器，裸路径补全面只剩建表表单独立接线）；面板不给本组件下发
+         attrs，多根无 fallthrough 断点 -->
     <ExpressionCompletionPopup
         v-if="wiresExpressionCompletion"
         ref="popupRef"
         :state="popup"
         @select="accept"
-    />
-    <ExpressionCompletionPopup
-        v-else-if="wiresPathCompletion"
-        ref="popupRef"
-        :state="pathPopup"
-        @select="acceptPath"
     />
 </template>

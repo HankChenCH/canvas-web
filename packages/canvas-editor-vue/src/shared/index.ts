@@ -58,7 +58,7 @@ export {
 export { useExpressionCompletion, type ExpressionCompletionState } from './useExpressionCompletion'
 export { expressionDiagnosticHint, useExpressionDiagnostics } from './useExpressionDiagnostics'
 export { usePathCompletion } from './usePathCompletion'
-export { rowsPathCompletionSource, rowsPathPickerSource } from './rowsPathCompletionSource'
+export { rowsPathCompletionSource, rowsPathPickerSource, rowsPathValueDrifts } from './rowsPathCompletionSource'
 export { attachResourceTemplate, stripResourceTemplate } from './resourceTemplate'
 export { pathPickerEntries, type PathPickerEntry, type PathPickerMode } from './pathPickerModel'
 export {
