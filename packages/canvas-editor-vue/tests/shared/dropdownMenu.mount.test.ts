@@ -813,3 +813,199 @@ describe('DropdownMenu：keepsOpen 与两段式条目共存（工单 02 兼容�
         wrapper.unmount()
     })
 })
+
+describe('DropdownMenu：submenu 键盘与焦点全序（工单 02）', () => {
+    /** 首子置灰 fixture：→ 开二级焦点必须跳过它落首个启用子项 */
+    const SUBMENU_SKIP_FIRST: DropdownMenuEntry[] = [
+        {
+            kind: 'submenu',
+            label: '图片层',
+            run: () => void runs.push('image'),
+            children: [
+                { label: '置灰档', disabled: true, run: () => void runs.push('skipped') },
+                { label: '1:1', run: () => void runs.push('image-1-1') },
+                { label: '4:3', run: () => void runs.push('image-4-3') },
+            ],
+        },
+    ]
+
+    /** 禁用两段式行 fixture：主体与 ▸ 一起置灰 */
+    const SUBMENU_DISABLED_ROW: DropdownMenuEntry[] = [
+        {
+            kind: 'submenu',
+            label: '文本层',
+            disabled: true,
+            title: '无可用品类',
+            run: () => void runs.push('text'),
+            children: [{ label: '标题', run: () => void runs.push('text-title') }],
+        },
+        { label: '二维码层', run: () => void runs.push('qr') },
+    ]
+
+    const mountNavSubmenu = (items: DropdownMenuEntry[] = SUBMENU_ITEMS) =>
+        mount(DropdownMenu, { props: { label: '新增', items }, attachTo: document.body })
+
+    /** 菜单内按键驱动：真实派发（bubbles 到菜单根处理器）+ 等 Vue flush */
+    const fireKey = async (el: HTMLElement, key: string): Promise<KeyboardEvent> => {
+        const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+        el.dispatchEvent(event)
+        await flushPromises()
+        return event
+    }
+
+    const arrowAt = (wrapper: ReturnType<typeof mountNavSubmenu>, index: number): HTMLElement => {
+        const el = arrowEls(wrapper)[index]
+        expect(el).toBeDefined()
+        return el as HTMLElement
+    }
+
+    const subItemAt = (wrapper: ReturnType<typeof mountNavSubmenu>, index: number): HTMLElement => {
+        const el = subItemEls(wrapper)[index]
+        expect(el).toBeDefined()
+        return el as HTMLElement
+    }
+
+    it('主体 Enter = 直建：run + 收整个菜单 + 回焦触发钮', async () => {
+        const wrapper = mountNavSubmenu()
+        await openSubmenuByClick(wrapper)
+        const main = itemEls(wrapper)[0] as HTMLElement
+        main.focus()
+        await fireKey(main, 'Enter')
+        expect(runs).toEqual(['text'])
+        expect(menuEl(wrapper)).toBeUndefined()
+        expect(document.activeElement).toBe(triggerEl(wrapper))
+        wrapper.unmount()
+    })
+
+    it('主体 → 开二级：焦点入首个启用子项（置灰首子跳过）、aria-expanded 翻 true；普通项 → no-op', async () => {
+        const wrapper = mountNavSubmenu(SUBMENU_SKIP_FIRST)
+        await openSubmenuByClick(wrapper)
+        // 开菜单焦点已落主体（唯一 [data-dropdown-item]），→ 开二级入首个启用子项
+        const event = await fireKey(itemEls(wrapper)[0] as HTMLElement, 'ArrowRight')
+        expect(event.defaultPrevented).toBe(true)
+        expect(flyoutEl(wrapper)).toBeDefined()
+        expect(arrowAt(wrapper, 0).getAttribute('aria-expanded')).toBe('true')
+        expect(document.activeElement).toBe(subItemAt(wrapper, 1))
+
+        // 普通项（无两段式行）上 →：no-op 不误开
+        const plain = mountNavSubmenu([{ label: '二维码层', run: () => void runs.push('qr') }])
+        await openSubmenuByClick(plain)
+        const plainEvent = await fireKey(itemEls(plain)[0] as HTMLElement, 'ArrowRight')
+        expect(plainEvent.defaultPrevented).toBe(false)
+        expect(flyoutEl(plain)).toBeUndefined()
+        plain.unmount()
+        wrapper.unmount()
+    })
+
+    it('二级内 ↑↓ 循环跳置灰（首子置灰：0 不可达、1↔2 循环）、Home/End 首尾', async () => {
+        const wrapper = mountNavSubmenu(SUBMENU_SKIP_FIRST)
+        await openSubmenuByClick(wrapper)
+        await fireKey(itemEls(wrapper)[0] as HTMLElement, 'ArrowRight')
+        expect(document.activeElement).toBe(subItemAt(wrapper, 1))
+
+        await fireKey(subItemAt(wrapper, 1), 'ArrowDown')
+        expect(document.activeElement).toBe(subItemAt(wrapper, 2))
+        await fireKey(subItemAt(wrapper, 2), 'ArrowDown')
+        expect(document.activeElement).toBe(subItemAt(wrapper, 1))
+        await fireKey(subItemAt(wrapper, 1), 'ArrowUp')
+        expect(document.activeElement).toBe(subItemAt(wrapper, 2))
+        await fireKey(subItemAt(wrapper, 2), 'Home')
+        expect(document.activeElement).toBe(subItemAt(wrapper, 1))
+        await fireKey(subItemAt(wrapper, 1), 'End')
+        expect(document.activeElement).toBe(subItemAt(wrapper, 2))
+        wrapper.unmount()
+    })
+
+    it('二级内 ← 收二级回 ▸：菜单留场、aria-expanded 翻 false、焦点落 ▸ 钮', async () => {
+        const wrapper = mountNavSubmenu()
+        await openSubmenuByClick(wrapper)
+        await fireKey(itemEls(wrapper)[0] as HTMLElement, 'ArrowRight')
+
+        await fireKey(subItemAt(wrapper, 0), 'ArrowLeft')
+        expect(flyoutEl(wrapper)).toBeUndefined()
+        expect(menuEl(wrapper)).toBeDefined()
+        expect(arrowAt(wrapper, 0).getAttribute('aria-expanded')).toBe('false')
+        expect(document.activeElement).toBe(arrowAt(wrapper, 0))
+        wrapper.unmount()
+    })
+
+    it('Esc 两段收：先收二级（焦点回 ▸、菜单留场）再收菜单（回焦触发钮）', async () => {
+        const wrapper = mountNavSubmenu()
+        await openSubmenuByClick(wrapper)
+        await fireKey(itemEls(wrapper)[0] as HTMLElement, 'ArrowRight')
+
+        await fireKey(subItemAt(wrapper, 0), 'Escape')
+        expect(flyoutEl(wrapper)).toBeUndefined()
+        expect(menuEl(wrapper)).toBeDefined()
+        expect(document.activeElement).toBe(arrowAt(wrapper, 0))
+
+        // 第二段：焦点在 ▸ 上再 Esc → 收整个菜单回触发钮
+        await fireKey(arrowAt(wrapper, 0), 'Escape')
+        expect(menuEl(wrapper)).toBeUndefined()
+        expect(document.activeElement).toBe(triggerEl(wrapper))
+        wrapper.unmount()
+    })
+
+    it('焦点在主菜单（二级在场）Esc 同样先收二级；window 路径（焦点不在菜单内）一次收整个', async () => {
+        const wrapper = mountNavSubmenu()
+        await openSubmenuByClick(wrapper)
+        await hover(arrowAt(wrapper, 0))
+        expect(flyoutEl(wrapper)).toBeDefined()
+
+        // 焦点在主菜单主体上（指针开的二级不动焦点）：Esc 先收二级
+        const main = itemEls(wrapper)[1] as HTMLElement
+        main.focus()
+        await fireKey(main, 'Escape')
+        expect(flyoutEl(wrapper)).toBeUndefined()
+        expect(menuEl(wrapper)).toBeDefined()
+
+        // 指针再开二级后焦点在触发钮（菜单 DOM 外）：window Esc 一次收整个
+        await hover(arrowAt(wrapper, 0))
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+        await nextTick()
+        expect(menuEl(wrapper)).toBeUndefined()
+        wrapper.unmount()
+    })
+
+    it('二级内 Enter/Space 激活子项：run + 收整个菜单 + 回焦触发钮；preventDefault 防双跑', async () => {
+        const wrapper = mountNavSubmenu()
+        await openSubmenuByClick(wrapper)
+        await fireKey(itemEls(wrapper)[0] as HTMLElement, 'ArrowRight')
+
+        const event = await fireKey(subItemAt(wrapper, 2), 'Enter')
+        expect(event.defaultPrevented).toBe(true)
+        expect(runs).toEqual(['text-body'])
+        expect(menuEl(wrapper)).toBeUndefined()
+        expect(document.activeElement).toBe(triggerEl(wrapper))
+        wrapper.unmount()
+    })
+
+    it('二级内 Tab 收整个菜单回触发钮（沿现状，不 preventDefault）', async () => {
+        const wrapper = mountNavSubmenu()
+        await openSubmenuByClick(wrapper)
+        await fireKey(itemEls(wrapper)[0] as HTMLElement, 'ArrowRight')
+
+        const event = await fireKey(subItemAt(wrapper, 0), 'Tab')
+        expect(event.defaultPrevented).toBe(false)
+        expect(menuEl(wrapper)).toBeUndefined()
+        expect(document.activeElement).toBe(triggerEl(wrapper))
+        wrapper.unmount()
+    })
+
+    it('disabled 两段式行：主体/▸ 一起置灰、导航跳过整行、→ 不开', async () => {
+        const wrapper = mountNavSubmenu(SUBMENU_DISABLED_ROW)
+        await openSubmenuByClick(wrapper)
+        // 主体置灰 → 开时焦点跳过整行落启用项（二维码层）
+        expect(itemEls(wrapper)[0]?.hasAttribute('disabled')).toBe(true)
+        expect(arrowAt(wrapper, 0).hasAttribute('disabled')).toBe(true)
+        expect(document.activeElement).toBe(itemEls(wrapper)[1])
+
+        // ↑ 原地（唯一启用项）；→ 不开二级（二维码层非两段式行）
+        await fireKey(itemEls(wrapper)[1] as HTMLElement, 'ArrowUp')
+        expect(document.activeElement).toBe(itemEls(wrapper)[1])
+        const event = await fireKey(itemEls(wrapper)[1] as HTMLElement, 'ArrowRight')
+        expect(event.defaultPrevented).toBe(false)
+        expect(flyoutEl(wrapper)).toBeUndefined()
+        wrapper.unmount()
+    })
+})

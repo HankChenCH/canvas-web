@@ -70,6 +70,7 @@ import {
     nextEnabledItemIndex,
     nextOpenSubmenu,
     placeSubmenuInViewport,
+    submenuKeyAction,
     useDropdownMenu,
     type DropdownMenuEntry,
     type DropdownMenuItem,
@@ -214,28 +215,74 @@ function activateItem(target: HTMLElement): void {
     if (entry !== undefined && !entry.disabled) run(entry)
 }
 
-/** 菜单根按键路由（@keydown.stop：菜单内按键模态化，不到 window）。Enter/Space
- *  显式激活并 preventDefault——抑制原生钮激活（Space keyup click / Enter keydown
- *  click）防双跑；方向键先让路可编辑目标（body 插槽表单输入框——原生光标移动
- *  不劫持；菜单项本体是 button 会被 isEditableEventTarget 命中，按
- *  data-dropdown-item 排除） */
+/**
+ * 菜单根按键路由（@keydown.stop：菜单内按键模态化，不到 window；二级浮层是
+ * 菜单体 DOM 后代，同经本路由）。
+ *
+ * 二级浮层内（canvas-web-preset-submenu 工单 02）按键全序归 submenuKeyAction
+ * 纯函数判定（有单测）：↑↓/Home/End 循环推进跳置灰、←/Esc 收二级（菜单留场、
+ * 焦点回 ▸，两段收的第一段）、Enter/Space 显式激活子项（带 preset 直建，pre-
+ * ventDefault 抑制原生钮激活防双跑）、Tab 收整个菜单（沿现状，不 prevent-
+ * Default）；none 模态吞掉。
+ *
+ * 主菜单：Esc 两段收（二级在场先收二级再收菜单——window 路径即焦点不在菜单内
+ * 仍一次收整个，指针用户兜底语义）；Tab 让路可编辑目标（body 插槽表单内的输入
+ * 框/按钮——原生移焦走表单序：input→创建→取消，菜单不收；面板＋表单既有 Tab
+ * 流，issues/05 review 补），其余 Tab 收起回焦触发钮（幸免菜单 v-if 卸载时焦
+ * 点坠 body；不 preventDefault——浏览器原生 Tab 随即自触发钮继续移焦，触发钮
+ * 非终态）；Enter/Space 显式激活并 preventDefault（防双跑）；↑↓/Home/End 先让
+ * 路可编辑目标再推进（跳置灰）；→ 在两段式行内（主体或 ▸）开本行二级（焦点入
+ * 首个启用子项），普通项 no-op；其余按键吞掉（焦点态菜单的模态键盘语义）。
+ */
 function onMenuKeydown(event: KeyboardEvent): void {
     const key = event.key
-    if (key === 'Escape' || key === 'Tab') {
+    const target = event.target
+
+    // 二级浮层子项上的按键：全序归 submenuKeyAction（纯函数有单测）
+    if (target instanceof HTMLElement && target.matches('[data-dropdown-submenu-item]')) {
+        const action = submenuKeyAction(key)
+        if (action.type === 'move') {
+            event.preventDefault()
+            moveSubmenuFocus(action.key)
+            return
+        }
+        if (action.type === 'close') {
+            event.preventDefault()
+            closeSubmenuToArrow()
+            return
+        }
+        if (action.type === 'activate') {
+            event.preventDefault()
+            activateSubmenuItem(target)
+            return
+        }
+        if (action.type === 'close-menu') {
+            closeMenu()
+            focusTrigger()
+            return
+        }
+        return
+    }
+
+    // Esc 两段收：二级在场先收二级（焦点回 ▸），否则收菜单回触发钮
+    if (key === 'Escape') {
+        if (openSubmenu.value !== null) {
+            closeSubmenuToArrow()
+            return
+        }
+        closeMenu()
+        focusTrigger()
+        return
+    }
+    if (key === 'Tab') {
         // Tab 让路可编辑目标（body 表单内的输入框/按钮——原生移焦走表单序：
         // input→创建→取消，菜单不收；面板＋表单既有 Tab 流，issues/05 review 补）
-        if (key === 'Tab') {
-            const tabTarget = event.target
-            if (tabTarget instanceof HTMLElement && !tabTarget.matches('[data-dropdown-item]') && isEditableEventTarget(tabTarget)) return
-        }
-        // 收起并先把焦点送回触发钮（幸免菜单 v-if 卸载时焦点坠 body）。Tab 不
-        // preventDefault——浏览器原生 Tab 随即自触发钮继续移焦，触发钮非终态
+        if (target instanceof HTMLElement && !target.matches('[data-dropdown-item]') && isEditableEventTarget(target)) return
         closeMenu()
         focusTrigger()
         return
     }
     if (key === 'Enter' || key === ' ') {
-        const target = event.target
         if (target instanceof HTMLElement && target.matches('[data-dropdown-item]')) {
             event.preventDefault()
             activateItem(target)
@@ -243,12 +290,79 @@ function onMenuKeydown(event: KeyboardEvent): void {
         return
     }
     if (key === 'ArrowDown' || key === 'ArrowUp' || key === 'Home' || key === 'End') {
-        const target = event.target
         if (target instanceof HTMLElement && !target.matches('[data-dropdown-item]') && isEditableEventTarget(target)) return
         event.preventDefault()
         moveMenuFocus(key)
+        return
+    }
+    // → 开二级（工单 02）：焦点在两段式行内（主体/▸ 同宿主）时唤出本行二级并
+    // 焦点入首个启用子项；disabled 行不开（openSubmenuKeyboard 内守卫）；普通
+    // 项/菜单根 no-op 不拦截
+    if (key === 'ArrowRight') {
+        const host = target instanceof HTMLElement ? target.closest<HTMLElement>('[data-dropdown-submenu-host]') : null
+        if (host !== null) {
+            const entry = submenuEntries()[submenuHostEls().indexOf(host)]
+            if (entry !== undefined) {
+                event.preventDefault()
+                void openSubmenuKeyboard(entry, host)
+            }
+        }
     }
     // 其余按键吞掉（.stop 已阻断到 window）：焦点态菜单的模态键盘语义
+}
+
+// ---- submenu 键盘与焦点编排（canvas-web-preset-submenu 工单 02）----
+
+/**
+ * 主体/▸ 上 → 开二级（键盘路径）：开（单开换开）+ 落位 + 焦点入首个启用子项
+ * （全置灰兜底落浮层根，主菜单 focusIntoMenu 同式）；disabled 行不开；等待期
+ * 间已收起/换开的竞态兜底不落焦。
+ */
+async function openSubmenuKeyboard(entry: DropdownSubmenuEntry, host: HTMLElement): Promise<void> {
+    if (entry.disabled === true) return
+    openSubmenu.value = nextOpenSubmenu(openSubmenu.value, { type: 'open', target: entry })
+    await positionSubmenu(host.querySelector<HTMLElement>('[data-dropdown-submenu-arrow]'))
+    if (openSubmenu.value !== entry || !open.value) return
+    const flyout = submenuFlyoutEl()
+    if (flyout === null) return
+    const first = flyout.querySelector<HTMLElement>('[data-dropdown-submenu-item]:not([disabled])')
+    ;(first ?? flyout).focus()
+}
+
+/** 收二级并回焦 ▸（键盘收路径——←/Esc）：焦点所在两段行定位宿主，回焦同宿主
+ *  ▸ 钮（APG「关子菜单回父项」惯例）；焦点不在行内只收不迁焦 */
+function closeSubmenuToArrow(): void {
+    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const arrow =
+        active?.closest<HTMLElement>('[data-dropdown-submenu-host]')?.querySelector<HTMLElement>('[data-dropdown-submenu-arrow]') ?? null
+    openSubmenu.value = null
+    arrow?.focus()
+}
+
+/** 二级内导航（↑↓/Home/End）：落点计算复用 nextEnabledItemIndex（纯函数有单
+ *  测），全置灰兜底回焦浮层根——主菜单 moveMenuFocus 同式 */
+function moveSubmenuFocus(key: MenuFocusKey): void {
+    const flyout = submenuFlyoutEl()
+    if (flyout === null) return
+    const els = Array.from(flyout.querySelectorAll<HTMLElement>('[data-dropdown-submenu-item]'))
+    const enabled = els.map((el) => !el.hasAttribute('disabled'))
+    const current = document.activeElement instanceof HTMLElement ? els.indexOf(document.activeElement) : -1
+    const next = nextEnabledItemIndex(enabled, current, key)
+    if (next === -1) {
+        flyout.focus()
+        return
+    }
+    els[next]?.focus()
+}
+
+/** 二级子项激活（Enter/Space 显式激活防双跑）：run（内含收整个菜单 + 回焦触
+ *  发钮，带 preset 直建归宿主装配）；置灰项不可聚焦，防御性再判 */
+function activateSubmenuItem(target: HTMLElement): void {
+    const entry = openSubmenu.value
+    if (entry === null) return
+    const els = Array.from(submenuFlyoutEl()?.querySelectorAll<HTMLElement>('[data-dropdown-submenu-item]') ?? [])
+    const child = entry.children.filter((item): item is DropdownMenuItem => item !== 'separator')[els.indexOf(target)]
+    if (child !== undefined && !child.disabled) run(child)
 }
 
 /** 触发钮按键路由（内建钮与 #trigger 自绘钮共用）：↓ 开菜单（键盘开菜单入口），
