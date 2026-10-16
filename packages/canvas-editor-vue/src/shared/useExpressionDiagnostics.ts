@@ -26,7 +26,8 @@ import {
 } from '@hankchen/canvas-editor'
 
 /** kind → 中文短语（对齐权威端消息措辞；缺左括号从「括号不平衡」单列便于提示；
- *  resource_* = 资源单值门子类（ADR 0020，措辞教学「单字段路径」引用形态） */
+ *  resource_* = 资源单值门子类（ADR 0020）——呈现面已改走 resourceDiagnosticHint
+ *  动作指引（见下），此处保留全 kind 映射仅供扫描面汇总与完备性） */
 const DIAGNOSTIC_MESSAGES: Record<ExpressionFragmentErrorKind, string> = {
     empty_fragment: '空的表达式片段',
     invalid_path: '非法路径',
@@ -49,6 +50,23 @@ export function expressionDiagnosticHint(diagnostics: readonly ExpressionFragmen
     const reason = DIAGNOSTIC_MESSAGES[first.kind]
     const total = diagnostics.length
     return total > 1 ? `${total} 处表达式语法错误：${reason}` : `表达式语法错误：${reason}`
+}
+
+/**
+ * 资源字段绑定门引导（resource-expression-single-ref 呈现面）：资源字段表达式态
+ * 未注入数据源声明 → 选择器无菜单（引用以声明为门）——弱提示行说明缺席原因。
+ */
+export const RESOURCE_BINDING_HINT = '绑定数据源后可选择字段'
+
+/**
+ * 资源单值门的提示文案（ADR 0020 呈现面）：门是内容引用约束，不是语法错——
+ * 不走「表达式语法错误」框架，按修复通道在场与否给动作指引（菜单点选是资源面
+ * 唯一写入口）；违例 kind（拼接/函数/字面残留）只进诊断面，呈现统一按通道分流。
+ */
+export function resourceDiagnosticHint(hasSource: boolean): string {
+    return hasSource
+        ? '资源内容需为单个字段引用，点击右侧按钮选择数据字段'
+        : '当前内容不是字段引用，绑定数据源后可选择字段'
 }
 
 export function useExpressionDiagnostics(options: {

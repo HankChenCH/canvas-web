@@ -21,6 +21,10 @@
  * schema 注入：表达式态即配对（防未闭合静默错），静态态 `{{` 是字面不配对。
  * 资源内容字段不再走浮层（ADR 0020：resourceValue 控件/imageSrc 表达式态 = 级联
  * 路径选择器，候选源经 props.completion 下发进控件，纯菜单点选不设手输缝）。
+ * 资源门呈现面（死端态整改）：空串 = 切换自身制造的「未选择」态不判违例（红框
+ * 保留给有内容但拆不出单引用的存量违例）；错误提示不走「语法错误」框架，按修复
+ * 通道分流（有菜单指向点选、无菜单指向绑定）；声明未注入时给绑定门弱提示行
+ * （菜单缺席的原因说明，resourceDiagnosticHint / RESOURCE_BINDING_HINT 单源）。
  *
  * 裸路径补全（rows-path-completion 工单 03，D6）：接线门扩为「data 门或 completion
  * 标记门」——rowsPath 字段（completion: 'rowsPath' 标记）按标记走 usePathCompletion
@@ -47,7 +51,7 @@ import type { FieldDef, FieldDisplay } from './fieldSchema'
 import ValueTypeSegmented from './fields/ValueTypeSegmented.vue'
 import ExpressionCompletionPopup from '../shared/ExpressionCompletionPopup.vue'
 import { useExpressionCompletion } from '../shared/useExpressionCompletion'
-import { expressionDiagnosticHint } from '../shared/useExpressionDiagnostics'
+import { expressionDiagnosticHint, resourceDiagnosticHint, RESOURCE_BINDING_HINT } from '../shared/useExpressionDiagnostics'
 import { usePathCompletion } from '../shared/usePathCompletion'
 import type { CompletionSource } from '../shared/completion'
 
@@ -137,10 +141,36 @@ const controlRef = ref<ComponentPublicInstance | null>(null)
  */
 const expressionErrors = computed<readonly ExpressionFragmentDiagnostic[]>(() => {
     if (!(props.field.data === true && isExpression.value && typeof props.value === 'string')) return []
-    if (props.field.resource === true) return resourcePathDiagnostics(props.value)
+    if (props.field.resource === true) {
+        // 空串 = 切表达式动作自身制造的「未选择」态（占位文案已表达），不判违例：
+        // 红框保留给「有内容但拆不出单引用」（存量 URL/拼接/函数）；填充期拦截
+        // 语义归内核门与权威端，呈现面放行空态不放行内容违例
+        return props.value === '' ? [] : resourcePathDiagnostics(props.value)
+    }
     return wiresExpressionCompletion.value ? expressionDiagnostics(props.value) : []
 })
-const expressionErrorHint = computed(() => expressionDiagnosticHint(expressionErrors.value))
+
+/**
+ * 错误提示（工单 02 诊断行）：文本字段走既有「语法错误」框架；资源字段不走——
+ * 门是内容引用约束不是语法错，按修复通道在场与否给动作指引（kind 只进诊断面，
+ * 呈现统一分流），无菜单（未注入声明）时指向绑定。
+ */
+const expressionErrorHint = computed(() => {
+    if (expressionErrors.value.length === 0) return ''
+    if (props.field.resource === true) return resourceDiagnosticHint(props.completion != null)
+    return expressionDiagnosticHint(expressionErrors.value)
+})
+
+/**
+ * 绑定门引导（resource-expression-single-ref 呈现面）：资源字段表达式态未注入
+ * 声明 → 选择器无菜单（引用以声明为门）——弱提示行说明缺席原因；违例在场时
+ * 错误提示行已含同款指引，互斥不重复。
+ */
+const bindingGateHint = computed(() =>
+    props.field.resource === true && isExpression.value && props.completion == null && expressionErrors.value.length === 0
+        ? RESOURCE_BINDING_HINT
+        : '',
+)
 
 /** 点击定位的可用面：textarea 控件根是可 selection 的输入元素；resourceValue/imageSrc
  *  表达式态根是 div（选择器，选区无从落），提示行退化为纯展示（不渲染可点击暗示） */
@@ -269,6 +299,12 @@ function relaySubCommit(field: FieldDef, value: unknown, final: boolean): void {
             :title="diagnosticLocatable ? '点击选中出错片段' : undefined"
             @click="locateFirstError"
         >{{ expressionErrorHint }}</span>
+        <!-- 绑定门引导（resource-expression-single-ref 呈现面）：声明未注入时选择器
+             无菜单——弱提示说明缺席原因与去向（与错误提示行互斥，见 bindingGateHint） -->
+        <span
+            v-if="bindingGateHint"
+            class="cn-prop-field__hint col-span-2 block text-[11px] leading-4 text-cn-muted"
+        >{{ bindingGateHint }}</span>
     </component>
     <!-- 补全浮层（工单 04/05/03）：portal 到 body，仅接线字段渲染——按门选呈现
          态（表达式门 = useExpressionCompletion，标记门 = usePathCompletion，互斥

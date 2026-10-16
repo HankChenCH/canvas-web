@@ -27,6 +27,7 @@ export {
 export {
     EditorStore,
     type CreateGesture,
+    type DataSourceSchemaRejection,
     type DocRecipe,
     type DragGesture,
     type EditorChange,

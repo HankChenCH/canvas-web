@@ -20,7 +20,8 @@
  * - 资源状态段：宿主注入文案 prop（资源就绪/物化中/失败 N 项），沿用
  *   pendingCount 注入模式，缺省隐藏；
  * - 保存态段：宿主注入 saveState prop（● 未保存 / ○ 已保存），未接线隐藏；
- * - schema 声明态段：组件直读 ui 分支（已注入顶层 N 键 / 无候选），恒显；
+ * - schema 声明态段：组件直读 ui 分支（已注入顶层 N 键 / 被拒带明细 / 未注入，
+ *   死端态整改 2b 三态分明），恒显；
  * - 瞬时反馈段：宿主注入动作结果/错误文案 prop + 包内瞬时反馈单例
  *   （useTransientFeedback，kbd-nav 工单 05——canvas 域拖放被忽略的降级提示等
  *   包内来源），宿主文案优先、包内瞬时补位，缺省隐藏。
@@ -40,7 +41,7 @@ import DropdownMenu from '../shared/DropdownMenu.vue'
 import { formatLayerPath } from './layerPathLabel'
 import { formatLayerGeometry } from './layerGeometryLabel'
 import type { DropdownMenuEntry } from '../shared/useDropdownMenu'
-import { useDataSourceSchema } from '../shared/useDataSourceSchema'
+import { useDataSourceSchema, useDataSourceSchemaRejection } from '../shared/useDataSourceSchema'
 import { useDoc } from './useDoc'
 import { detectShortcutPlatform, shortcutActionLabel } from '../shared/shortcutsHelp'
 import { useSelection } from '../shared/useSelection'
@@ -70,6 +71,7 @@ const viewport = useViewport(props.editor)
 const selection = useSelection(props.editor)
 const doc = useDoc(props.editor)
 const dataSourceSchema = useDataSourceSchema(props.editor)
+const dataSourceSchemaRejection = useDataSourceSchemaRejection(props.editor)
 
 const zoomPercent = computed(() => Math.round(viewport.value.zoom * 100))
 const selectionLabel = computed(() => {
@@ -88,10 +90,16 @@ const geometryLabel = computed(() => {
     return formatLayerGeometry(layer.position, box)
 })
 
-/** schema 声明态段：组件直读 ui 分支（经切片桥响应式，声明随会话，openDocument 不重置） */
+/**
+ * schema 声明态段：组件直读 ui 分支（经切片桥响应式，声明随会话，openDocument
+ * 不重置）。三态分明（死端态整改 2b）：已注入（顶层键数）/ 被拒（教学明细）/
+ * 未注入——被拒与未注入此前混显「无候选」，宿主无从察觉声明本身有问题。
+ */
 const schemaLabel = computed(() => {
     const schema = dataSourceSchema.value
-    return schema === null ? 'schema 无候选' : `schema 已注入顶层 ${schema.properties?.size ?? 0} 键`
+    if (schema !== null) return `schema 已注入顶层 ${schema.properties?.size ?? 0} 键`
+    const rejection = dataSourceSchemaRejection.value
+    return rejection === null ? 'schema 未注入' : `schema 声明被拒：${rejection.detail}`
 })
 
 // ---- 缩放控件（kbd-nav 工单 04）：只读 % 段升级弹层菜单；工单 05 迁 shared 底座 ----

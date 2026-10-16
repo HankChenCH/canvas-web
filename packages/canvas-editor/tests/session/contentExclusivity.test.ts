@@ -127,9 +127,10 @@ describe('toggleDataMode：非会话期 = 正常模式切换（面板既有语�
         editor.toggleDataMode(['layers', 1])
         const image = editor.store.doc!.layers[0]!
         const qr = editor.store.doc!.layers[1]!
-        // 初值 = 值字段原文：Image src null → 空串、Qr value → 现值
+        // 资源面切换初值（死端态整改条目 4）：静态违例字面不镜像，落「未选择」空态
+        // ——Image src null → 空串、Qr 文案值（违例）→ 空串
         expect(image.type === 'ImageLayer' && image.expression).toBe('')
-        expect(qr.type === 'QrCodeLayer' && qr.expression).toBe('canvas-web')
+        expect(qr.type === 'QrCodeLayer' && qr.expression).toBe('')
 
         const historyAfterContent = editor.store.history.length
         editor.toggleDataMode(['layers', 2]) // 表格无数据字段
@@ -153,6 +154,35 @@ describe('toggleDataMode：非会话期 = 正常模式切换（面板既有语�
         const other = editor.store.doc!.layers[1]!
         expect(other.type === 'TextLayer' && other.expression).toBe('乙')
         expect(editor.store.history).toHaveLength(1)
+    })
+
+    it('资源面切换初值（死端态整改条目 4）：违例字面落空态，合法引用字面镜像（往返无损）', () => {
+        const editor = makeEditor({
+            width: 400,
+            height: 300,
+            layers: [
+                imageLayer({ priority: 30, src: 'https://cdn.example.com/photo.jpg' }),
+                qrLayer({ priority: 20, value: '{{orderNo}}' }),
+                imageLayer({ priority: 10, src: '{{cover}}' }),
+            ],
+        })
+
+        editor.toggleDataMode(['layers', 0])
+        editor.toggleDataMode(['layers', 1])
+        editor.toggleDataMode(['layers', 2])
+
+        const image = editor.store.doc!.layers[0]!
+        const qr = editor.store.doc!.layers[1]!
+        const roundtrip = editor.store.doc!.layers[2]!
+        // URL 字面不是合法单引用 → 切换落「未选择」空态（src 随镜像同空，撤销一步可回）
+        expect(image.type === 'ImageLayer' && image.expression).toBe('')
+        expect(image.type === 'ImageLayer' && image.src).toBe('')
+        // QR 值已是合法单引用 → 镜像保留（静态 ⇆ 表达式往返无损）
+        expect(qr.type === 'QrCodeLayer' && qr.expression).toBe('{{orderNo}}')
+        expect(qr.type === 'QrCodeLayer' && qr.value).toBe('{{orderNo}}')
+        // Image 的模板形态字面同款往返
+        expect(roundtrip.type === 'ImageLayer' && roundtrip.expression).toBe('{{cover}}')
+        expect(editor.store.history).toHaveLength(3)
     })
 })
 

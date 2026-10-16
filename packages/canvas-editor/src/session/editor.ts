@@ -85,8 +85,9 @@ import {
     selectionParentPath,
     type LayerPath,
 } from '../shared/layerPath'
-import { normalizeExpressionSchemaSource } from '../shared/expressionSchema'
+import { normalizeExpressionSchemaSource, parseExpressionSchema } from '../shared/expressionSchema'
 import { scanExpressionFragments } from '../shared/expressionScan'
+import { resourcePathDiagnostics } from '../shared/resourcePath'
 import {
     ALIGN_CORNER_MARGIN_PX,
     alignToCanvasTarget,
@@ -1752,8 +1753,11 @@ export class EditorSession {
 
     /**
      * 数据字段取值方式切换（静态 ⇆ 表达式，工单 02 自面板收编内核）：表达式现态
-     * → 字面接管（updateData，值保持现镜像）；静态现态 → 打标（updateDataExpression，
-     * 初值 = 值字段原文）。各为独立一步历史（无 mergeKey）。三内容层分派各取值
+     * → 字面接管（updateData，值保持现镜像）；静态现态 → 打标，初值分内容面——
+     * 文本层镜像原文（字面可含合法插值混排），资源层（Image/Qr）只镜像**已合法
+     * 的单引用字面**（静态 ⇆ 表达式往返无损），违例字面（URL/拼接文案）落
+     * 「未选择」空态不镜像——切换自身不得制造必违例初值（死端态整改条目 4；旧
+     * 值可经撤销一步找回）。各为独立一步历史（无 mergeKey）。三内容层分派各取值
      * 字段，表/行/格/悬空路径空转。
      *
      * 活标志防御路由（ADR 0019）：路径即编辑中的层时只翻会话活标志（零文档变更
@@ -1775,15 +1779,20 @@ export class EditorSession {
                 return
             case 'ImageLayer':
                 if (layer.expression !== null) this.updateData(path, layer.src ?? '')
-                else this.updateDataExpression(path, layer.src ?? '')
+                else this.updateDataExpression(path, this.resourceToggleInitial(layer.src ?? ''))
                 return
             case 'QrCodeLayer':
                 if (layer.expression !== null) this.updateData(path, layer.value)
-                else this.updateDataExpression(path, layer.value)
+                else this.updateDataExpression(path, this.resourceToggleInitial(layer.value))
                 return
             default:
                 return
         }
+    }
+
+    /** 资源面切换初值：字面已是合法单引用（含空串为「未选择」）才镜像，违例落空态 */
+    private resourceToggleInitial(literal: string): string {
+        return resourcePathDiagnostics(literal).length === 0 ? literal : ''
     }
 
     /**
@@ -1833,9 +1842,22 @@ export class EditorSession {
      * 换文档不重置，重注入/清除走同一入口。签名与「注入即整体替换」语义不变（D6）。
      */
     setDataSourceSchema(raw: unknown): void {
-        this.store.setDataSourceSchema(
-            raw === null || raw === undefined ? null : normalizeExpressionSchemaSource(raw),
-        )
+        if (raw === null || raw === undefined) {
+            this.store.setDataSourceSchema(null)
+            return
+        }
+        const schema = normalizeExpressionSchemaSource(raw)
+        if (schema === null) {
+            // 拒绝详情进 ui（声明被拒呈现面，2b）：normalize 已 console.warn（单点
+            // 收口不变），parse 纯函数复取原因不重复告警
+            const parsed = parseExpressionSchema(raw)
+            this.store.setDataSourceSchema(
+                null,
+                parsed.ok ? null : { reason: parsed.reason, detail: parsed.detail },
+            )
+            return
+        }
+        this.store.setDataSourceSchema(schema)
     }
 
     // ---- 上传（工单 13）：本机资源 → 可物化引用，实现经 uploadHandler 注入 ----

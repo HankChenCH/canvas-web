@@ -133,7 +133,8 @@ describe('资源字段：资源单值门诊断（工单 03 门 + 工单 05 选�
     /** QR 内容字段表达式态 = 级联路径选择器（resourceValue 控件，工单 05）：违例
      *  形态（旧拼接/函数/尾缀字面）是文档存量，非选择器可产出——经内核写入口
      *  构造；诊断红边落选择器根盒（fallthrough），提示行纯展示（div 根无从落
-     *  选区）。无 schema 注入 → 选择器无菜单钮（引用以声明为门，只读回显）。 */
+     *  选区）。提示文案按修复通道分流（菜单在场与否），不走「语法错误」框架；
+     *  无 schema 注入 → 选择器无菜单钮（引用以声明为门，只读回显）。 */
     async function mountQr(template: string): Promise<VueWrapper> {
         const editor = makeEditor([qrLayer({ value: template, expression: template })])
         const wrapper = mountPanel(editor)
@@ -142,11 +143,11 @@ describe('资源字段：资源单值门诊断（工单 03 门 + 工单 05 选�
         return wrapper
     }
 
-    it('片段外字面（尾缀）→ 单值门标错（资源教学文案）+ 选择器原文只读回显', async () => {
+    it('片段外字面（尾缀）→ 单值门标错（动作指引文案）+ 选择器原文只读回显', async () => {
         const wrapper = await mountQr('{{orderNo}}-qr')
 
         expect(invalidField(wrapper).exists()).toBe(true)
-        expect(errorHint(wrapper).text()).toBe('表达式语法错误：资源内容必须是单个字段路径，不支持拼接文字')
+        expect(errorHint(wrapper).text()).toBe('当前内容不是字段引用，绑定数据源后可选择字段')
         expect(wrapper.find('.cn-pathpicker__value').text()).toBe('{{orderNo}}-qr')
         // 提示行纯展示（div 根无从落选区，不渲染可点击暗示）
         expect(errorHint(wrapper).classes()).not.toContain('cursor-pointer')
@@ -154,24 +155,28 @@ describe('资源字段：资源单值门诊断（工单 03 门 + 工单 05 选�
         expect(wrapper.find('.cn-pathpicker__toggle').exists()).toBe(false)
     })
 
-    it('函数调用 → 资源面禁函数（独立 kind 文案）', async () => {
+    it('函数调用 → 同一动作指引（kind 只进诊断面，呈现按修复通道分流）', async () => {
         const wrapper = await mountQr('{{number(orderNo, 2)}}')
 
-        expect(errorHint(wrapper).text()).toBe('表达式语法错误：资源内容不支持函数调用')
+        expect(invalidField(wrapper).exists()).toBe(true)
+        expect(errorHint(wrapper).text()).toBe('当前内容不是字段引用，绑定数据源后可选择字段')
     })
 
     it('多片段拼接（文本面合法形态）在资源面被拦——门是整串判定', async () => {
         const wrapper = await mountQr('{{orderNo}}{{orderNo}}')
 
-        expect(errorHint(wrapper).text()).toBe('表达式语法错误：资源内容必须是单个字段路径，不支持拼接文字')
+        expect(errorHint(wrapper).text()).toBe('当前内容不是字段引用，绑定数据源后可选择字段')
     })
 
-    it('合法单值裸路径零提示零红边 + 选择器拆壳回显裸路径', async () => {
+    it('合法单值裸路径零提示零红边 + 选择器拆壳回显裸路径；未绑声明给绑定门弱提示', async () => {
         const wrapper = await mountQr('{{orderNo}}')
 
         expect(errorHint(wrapper).exists()).toBe(false)
         expect(invalidField(wrapper).exists()).toBe(false)
         expect(wrapper.find('.cn-pathpicker__value').text()).toBe('orderNo')
+        // 表达式态 + 未注入声明：菜单缺席的原因说明（弱提示行，非错误行）
+        expect(wrapper.find('.cn-prop-field__hint--error').exists()).toBe(false)
+        expect(wrapper.text()).toContain('绑定数据源后可选择字段')
     })
 
     it('文本层多片段插值照旧零标错（文本字段走既有诊断不动）', async () => {

@@ -19,7 +19,7 @@ import type { Point, Rect, Viewport } from '../spatial/camera'
 import type { Guide, SnapAxis } from '../spatial/snap'
 import type { ResizeHandle } from '../spatial/resize'
 import { pathsEqual, type LayerPath } from '../shared/layerPath'
-import type { ExpressionSchemaNode } from '../shared/expressionSchema'
+import type { ExpressionSchemaNode, ExpressionSchemaRejectReason } from '../shared/expressionSchema'
 import type { ResourceStatusMap } from '../shared/resourceStatus'
 import { defaultNextTextStyle, type NextTextStyle } from '../editing/layerPanel'
 
@@ -148,6 +148,13 @@ export interface FindSession {
 /** 查找会话缺省态（初始与 openDocument 重置同源） */
 const initialFindSession = (): FindSession => ({ open: false, query: '', replacement: '', cursor: 0 })
 
+/** 数据源声明拒绝详情（声明被拒呈现面，死端态整改 2b）：reason 为声明期拒绝码、
+ *  detail 为教学性明细（直取 parseExpressionSchema 拒绝面） */
+export interface DataSourceSchemaRejection {
+    reason: ExpressionSchemaRejectReason
+    detail: string
+}
+
 export interface EditorUi {
     viewport: Viewport
     /** 当前选中图层路径（数组路径，patch path 前缀）；null = 无选择 */
@@ -217,6 +224,14 @@ export interface EditorUi {
      * 文档不重置（声明随会话，重注入/清除走同一入口）。
      */
     dataSourceSchema: ExpressionSchemaNode | null
+    /**
+     * 数据源声明拒绝详情（声明被拒呈现面，死端态整改 2b）：仅被拒注入在场——
+     * reason/detail 直取 parseExpressionSchema 拒绝面（reserved_root_key /
+     * invalid_schema / open_map_unsupported），宿主读数与绑定面据此区分「未注入」
+     * 与「注入被拒」。只住会话态随 dataSourceSchema 同步置换：合法注入与清除
+     * 归 null；不进 graph、不落 localStorage、不进 wire。
+     */
+    dataSourceSchemaRejection: DataSourceSchemaRejection | null
     /**
      * 参考线（ruler-guides-snap 工单 01，ADR 0012）：使用者从标尺拖出的会话级
      * 对位轴（水平/垂直、场景坐标）。零契约面——不进历史、不写 graph、保存零
@@ -353,6 +368,7 @@ export class EditorStore {
         anchorExpanded: false,
         nextTextStyle: defaultNextTextStyle(),
         dataSourceSchema: null,
+        dataSourceSchemaRejection: null,
         guides: [],
         rulersVisible: true,
         snapAxes: [],
@@ -577,12 +593,16 @@ export class EditorStore {
 
     /**
      * 数据源 schema 声明替换（归一产物或降级 null，校验收口在注入缝不在这里）：
-     * 同引用短路（重复注入同一归一产物不惊动订阅方）；仅 ui 通知，不参与重绘
+     * 声明与拒绝详情成对置换（rejection 仅被拒注入在场，2b 呈现面），同引用且
+     * 同拒绝态短路（重复注入同一归一产物不惊动订阅方）；仅 ui 通知，不参与重绘
      * 脏标（onStoreChange 对该分支短路）。
      */
-    setDataSourceSchema(schema: ExpressionSchemaNode | null): void {
-        if (this.uiValue.dataSourceSchema === schema) return
-        this.uiValue = { ...this.uiValue, dataSourceSchema: schema }
+    setDataSourceSchema(
+        schema: ExpressionSchemaNode | null,
+        rejection: DataSourceSchemaRejection | null = null,
+    ): void {
+        if (this.uiValue.dataSourceSchema === schema && this.uiValue.dataSourceSchemaRejection === rejection) return
+        this.uiValue = { ...this.uiValue, dataSourceSchema: schema, dataSourceSchemaRejection: rejection }
         this.notify({ scope: 'ui', branch: 'dataSourceSchema' })
     }
 

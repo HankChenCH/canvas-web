@@ -66,7 +66,7 @@ export {
 } from './popupPosition'
 export { useHistory, type HistoryAvailability } from './useHistory'
 export { useSelection } from './useSelection'
-export { useDataSourceSchema } from './useDataSourceSchema'
+export { useDataSourceSchema, useDataSourceSchemaRejection } from './useDataSourceSchema'
 export { useShortcuts } from './useShortcuts'
 export { useShortcutsHelp, type ShortcutsHelp } from './useShortcutsHelp'
 export { useTransientFeedback, type TransientFeedback } from './useTransientFeedback'

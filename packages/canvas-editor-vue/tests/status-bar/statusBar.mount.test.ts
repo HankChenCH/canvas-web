@@ -203,10 +203,10 @@ describe('StatusBar：保存态段（宿主注入）', () => {
 })
 
 describe('StatusBar：schema 声明态段（组件直读 ui 分支）', () => {
-    it('未注入显示无候选，注入后显示顶层键数，清除后回落', async () => {
+    it('未注入显示未注入，注入后显示顶层键数，清除后回落', async () => {
         const editor = makeEditor()
         const wrapper = mountBar(editor)
-        expect(wrapper.find('[data-schema]').text()).toBe('schema 无候选')
+        expect(wrapper.find('[data-schema]').text()).toBe('schema 未注入')
 
         editor.setDataSourceSchema({
             type: 'object',
@@ -221,7 +221,30 @@ describe('StatusBar：schema 声明态段（组件直读 ui 分支）', () => {
 
         editor.setDataSourceSchema(null)
         await wrapper.vm.$nextTick()
-        expect(wrapper.find('[data-schema]').text()).toBe('schema 无候选')
+        expect(wrapper.find('[data-schema]').text()).toBe('schema 未注入')
+        wrapper.unmount()
+    })
+
+    it('声明被拒显示拒绝明细（与未注入分明），再注入合法声明恢复键数读数', async () => {
+        const editor = makeEditor()
+        const wrapper = mountBar(editor)
+
+        // 开放映射（ADR 0020 前合法契约）注入被拒：读数带教学明细，不再是笼统「无候选」
+        editor.setDataSourceSchema({
+            type: 'object',
+            properties: { name: { type: 'string' } },
+            additionalProperties: true,
+        })
+        await wrapper.vm.$nextTick()
+        expect(wrapper.find('[data-schema]').text()).toContain('schema 声明被拒')
+        expect(wrapper.find('[data-schema]').text()).toContain('additionalProperties')
+
+        editor.setDataSourceSchema({
+            type: 'object',
+            properties: { orderNo: { type: 'string' } },
+        })
+        await wrapper.vm.$nextTick()
+        expect(wrapper.find('[data-schema]').text()).toBe('schema 已注入顶层 1 键')
         wrapper.unmount()
     })
 })

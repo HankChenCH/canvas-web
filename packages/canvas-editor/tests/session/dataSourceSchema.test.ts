@@ -62,6 +62,7 @@ describe('EditorStore ui 分支：dataSourceSchema（content-completion 工单 0
     it('初始为 null（未注入声明 = 无候选降级态）', () => {
         const store = new EditorStore()
         expect(store.ui.dataSourceSchema).toBeNull()
+        expect(store.ui.dataSourceSchemaRejection).toBeNull()
     })
 
     it('setDataSourceSchema 替换声明并以 {scope: ui, branch: dataSourceSchema} 通知', () => {
@@ -72,6 +73,7 @@ describe('EditorStore ui 分支：dataSourceSchema（content-completion 工单 0
 
         store.setDataSourceSchema(node)
         expect(store.ui.dataSourceSchema).toBe(node)
+        expect(store.ui.dataSourceSchemaRejection).toBeNull()
         expect(changes).toEqual([{ scope: 'ui', branch: 'dataSourceSchema' }])
     })
 
@@ -122,6 +124,31 @@ describe('EditorSession.setDataSourceSchema 注入缝（D2 宿主随会话注入
         expect(session.store.ui.dataSourceSchema).toBeNull()
         expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('reserved_root_key'))
         expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('row'))
+    })
+
+    it('拒绝详情进 ui（声明被拒呈现面）：reason + detail 随同一次注入记录', () => {
+        const session = new EditorSession({ scheduleFrame: manualScheduler() })
+        session.setDataSourceSchema({ type: 'object', properties: { name: {} }, additionalProperties: true })
+
+        expect(session.store.ui.dataSourceSchema).toBeNull()
+        expect(session.store.ui.dataSourceSchemaRejection).toEqual({
+            reason: 'open_map_unsupported',
+            detail: expect.stringContaining('additionalProperties'),
+        })
+    })
+
+    it('合法注入与清除都清空拒绝详情（rejection 只在被拒注入在场）', () => {
+        const session = new EditorSession({ scheduleFrame: manualScheduler() })
+        session.setDataSourceSchema({ properties: { row: { type: 'object' } } })
+        expect(session.store.ui.dataSourceSchemaRejection).not.toBeNull()
+
+        session.setDataSourceSchema(sampleSchema)
+        expect(session.store.ui.dataSourceSchema).not.toBeNull()
+        expect(session.store.ui.dataSourceSchemaRejection).toBeNull()
+
+        session.setDataSourceSchema(null)
+        expect(session.store.ui.dataSourceSchema).toBeNull()
+        expect(session.store.ui.dataSourceSchemaRejection).toBeNull()
     })
 
     it('形态非法声明（缺 properties 层级）降级为 null + console 警告', () => {
