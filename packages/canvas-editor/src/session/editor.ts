@@ -116,7 +116,6 @@ import {
     insertRootLayerInDraft,
     moveRootLayerInDraft,
     moveTableRowInDraft,
-    pickNextLayerRatio,
     pickNextTextStylePatch,
     RATIO_PRESETS,
     TEXT_PRESETS,
@@ -1374,7 +1373,9 @@ export class EditorSession {
     /**
      * 只读偏好（保存 prefs 的读取口）：与 store.ui 同源，给宿主一个不用下钻
      * store 的口。读 = getEditorPrefs，写 = applyEditorPrefs，对称成对；帧切片
-     * 走 restoreEditorState，两不相混。
+     * 走 restoreEditorState，两不相混。建层比例（nextLayerRatio）已退役不在此
+     * 带出（canvas-web-preset-submenu 工单 01，ADR 0021——预设随武装载荷一次性
+     * 携带，prefs 停写）。
      */
     getEditorPrefs(): EditorPrefsState {
         const ui = this.store.ui
@@ -1382,7 +1383,6 @@ export class EditorSession {
             rulersVisible: ui.rulersVisible,
             anchorExpanded: ui.anchorExpanded,
             nextTextStyle: ui.nextTextStyle,
-            nextLayerRatio: ui.nextLayerRatio,
         }
     }
 
@@ -1390,15 +1390,14 @@ export class EditorSession {
      * 应用偏好（会话建立时一次性，跨会话恢复 prefs 的写入口）：整体替换
      * rulersVisible/anchorExpanded，不进历史；值等写入经 store 短路零通知。
      * 新层样式（text-defaults 工单 01）走宽容读逐字段合并（pickNextTextStylePatch
-     * 共享谓词——与捕获同门，缺字/类型不符保留现值）；建层比例（image-ratio-preset
-     * 工单 01）走宽容读枚举收口（pickNextLayerRatio——非六档枚举值/旧快照缺字段
-     * 回落 'free'）。
+     * 共享谓词——与捕获同门，缺字/类型不符保留现值）。旧快照的 nextLayerRatio
+     * 遗留键宽容忽略（canvas-web-preset-submenu 工单 01：槽退役停读，载荷上多余
+     * 的键无害；schemaVersion 加法演进）。
      */
     applyEditorPrefs(prefs: EditorPrefsState): void {
         this.store.setRulersVisible(prefs.rulersVisible)
         this.store.setAnchorExpanded(prefs.anchorExpanded)
         this.store.setNextTextStyle(pickNextTextStylePatch(prefs.nextTextStyle))
-        this.store.setNextLayerRatio(pickNextLayerRatio(prefs.nextLayerRatio as unknown))
     }
 
     // ---- 对齐画布（layer-align-snap 工单 01）：图层盒整体对齐画布几何 ----

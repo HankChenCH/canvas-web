@@ -21,7 +21,7 @@ import type { ResizeHandle } from '../spatial/resize'
 import { pathsEqual, type LayerPath } from '../shared/layerPath'
 import type { ExpressionSchemaNode } from '../shared/expressionSchema'
 import type { ResourceStatusMap } from '../shared/resourceStatus'
-import { defaultNextLayerRatio, defaultNextTextStyle, type NextTextStyle, type RatioPresetId } from '../editing/layerPanel'
+import { defaultNextTextStyle, type NextTextStyle } from '../editing/layerPanel'
 
 enablePatches()
 // 关闭 immer 自动冻结：文档树以「不可变 + 结构共享」语义流转（引用相等即未变），
@@ -204,18 +204,10 @@ export interface EditorUi {
      * 族字段的权威写（updateSpec 捕获）更新槽，建层（endCreate/addRootLayer）
      * 以槽值覆盖工厂缺省。与锚点折叠同款的面板偏好——openDocument 换文档不重
      * 置，永不进历史；随工程数据 prefs 桶跨会话持久（宿主通道，内核零 localStorage）。
+     * 文本预设档不写槽（canvas-web-preset-submenu 工单 01，ADR 0021：预设随武装
+     * 载荷一次性携带，槽只保留属性面板信号一种语义）。
      */
     nextTextStyle: NextTextStyle
-    /**
-     * 建层比例槽（image-ratio-preset 工单 01，CONTEXT「建层比例」词条）：记忆
-     * 「下一个新建图片层用什么宽高比」的编辑器级偏好——六档、缺省自由，仅
-     * ImageLayer 消费（QR 恒方是层型硬钳，其余层型无此槽）。比例预设的应用 =
-     * 写槽再武装画拉（armLayerCreate），普通图片层项/快捷键 I 不带 preset、武装
-     * 后按槽值钳制——槽是唯一偏好源。与锚点折叠同款的面板偏好——openDocument
-     * 换文档不重置，永不进历史；随工程数据 prefs 桶跨会话持久（宿主通道，内核
-     * 零 localStorage）。
-     */
-    nextLayerRatio: RatioPresetId
     /**
      * 数据源 schema 声明（content-completion 工单 03/08，D2 宿主随会话注入）：
      * 编译产物形状树或降级 null（根级结构性拒绝，注入期经
@@ -360,7 +352,6 @@ export class EditorStore {
         renaming: null,
         anchorExpanded: false,
         nextTextStyle: defaultNextTextStyle(),
-        nextLayerRatio: defaultNextLayerRatio(),
         dataSourceSchema: null,
         guides: [],
         rulersVisible: true,
@@ -398,7 +389,7 @@ export class EditorStore {
 
     /** 打开/替换文档：ui 选择/编辑/重命名会话与双向历史一并重置（新文档不继承旧路径/旧事务）；
      *  参考线/锁定集合/查找会话/建层武装与画拉会话随当次会话清空（对位轴/文档内容防护/
-     *  查询词/待命层型不跨文档），标尺显隐/锚点折叠/新层样式/建层比例作为偏好保留 */
+     *  查询词/待命层型不跨文档），标尺显隐/锚点折叠/新层样式作为偏好保留 */
     openDocument(canvas: Canvas): void {
         this.docValue = canvas
         this.undoSteps = []
@@ -573,24 +564,15 @@ export class EditorStore {
     }
 
     /**
-     * 新层样式槽逐字段合并（text-defaults 工单 01：捕获/预设/prefs 恢复的统一
-     * 写入口）：patch 并入现值，五字段值等短路（重复写同值零通知），不进历史。
+     * 新层样式槽逐字段合并（text-defaults 工单 01：捕获/prefs 恢复的统一写入口；
+     * canvas-web-preset-submenu 工单 01 起预设不再写槽）：patch 并入现值，五字段
+     * 值等短路（重复写同值零通知），不进历史。
      */
     setNextTextStyle(patch: Partial<NextTextStyle>): void {
         const next = { ...this.uiValue.nextTextStyle, ...patch }
         if (nextTextStyleEqual(this.uiValue.nextTextStyle, next)) return
         this.uiValue = { ...this.uiValue, nextTextStyle: next }
         this.notify({ scope: 'ui', branch: 'nextTextStyle' })
-    }
-
-    /**
-     * 建层比例槽写入（image-ratio-preset 工单 01：比例预设应用 / prefs 恢复的
-     * 统一写入口）：值等短路（重复写同档零通知），仅 ui 通知、不进历史。
-     */
-    setNextLayerRatio(id: RatioPresetId): void {
-        if (this.uiValue.nextLayerRatio === id) return
-        this.uiValue = { ...this.uiValue, nextLayerRatio: id }
-        this.notify({ scope: 'ui', branch: 'nextLayerRatio' })
     }
 
     /**

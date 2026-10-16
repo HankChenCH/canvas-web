@@ -12,10 +12,10 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import type { Canvas, ImageLayer, Layer, TextLayer } from '@hankchen/canvas'
+import { decodeGraph, encodeGraph, type Canvas, type ImageLayer, type Layer, type TextLayer } from '@hankchen/canvas'
 
 import { EditorSession, type FrameScheduler } from '../../src/session/editor'
-import { textLayer } from '../support/fixtures'
+import { imageLayer, textLayer } from '../support/fixtures'
 
 const nullScheduler: FrameScheduler = () => () => {}
 
@@ -375,5 +375,68 @@ describe('普通武装语义（无载荷）：文本按新层样式槽、图片�
         session.createTo(42, 43)
         session.endCreate()
         expect(session.store.doc!.layers[2]!.shape).toMatchObject({ width: 200, height: 150 })
+    })
+})
+
+describe('prefs 往返：nextLayerRatio 退役（停写停读），旧快照宽容忽略，nextTextStyle 照走', () => {
+    it('getEditorPrefs 不再带出 nextLayerRatio（prefs 桶 = 标尺/锚点/新层样式三键）', () => {
+        const session = makeSession()
+        expect(Object.keys(session.getEditorPrefs()).sort()).toEqual([
+            'anchorExpanded',
+            'nextTextStyle',
+            'rulersVisible',
+        ])
+    })
+
+    it('旧快照含 nextLayerRatio 遗留键：宽容忽略不抛错，档位不复活（消费走载荷、无槽可读）', () => {
+        const session = makeSession()
+        expect(() =>
+            session.applyEditorPrefs({
+                rulersVisible: false,
+                anchorExpanded: true,
+                nextTextStyle: session.store.ui.nextTextStyle,
+                nextLayerRatio: '1:1', // 旧快照遗留键（schemaVersion 加法演进，恢复侧宽容忽略）
+                junk: 1,
+            } as never),
+        ).not.toThrow()
+        expect(session.store.ui.rulersVisible).toBe(false)
+        expect(session.store.ui.anchorExpanded).toBe(true)
+        // 遗留档位不复活：普通武装画拉恒自由（非 1:1 钳）
+        session.armLayerCreate('ImageLayer')
+        session.beginLayerCreate(0, 0)
+        session.createTo(200, 10)
+        expect(session.store.ui.create!.rect).toEqual({ x: 0, y: 0, width: 200, height: 10 })
+    })
+
+    it('nextTextStyle 照走：getEditorPrefs 带出、applyEditorPrefs 宽容读逐字段合并（跨会话承诺不变）', () => {
+        const session = makeSession([textLayer()])
+        session.updateSpec(['layers', 0], ['font'], 'Noto Sans SC')
+        session.updateSpec(['layers', 0], ['fontSize'], 40)
+        const prefs = session.getEditorPrefs()
+        expect(prefs.nextTextStyle).toMatchObject({ font: 'Noto Sans SC', fontSize: 40 })
+
+        const other = makeSession()
+        other.applyEditorPrefs(prefs)
+        expect(other.store.ui.nextTextStyle).toMatchObject({ font: 'Noto Sans SC', fontSize: 40 })
+    })
+})
+
+describe('graph 往返零 diff（预设载荷不触 wire 面）', () => {
+    it('预设钳建层 + Shift 等比缩放后的 encode→decode→encode 恒等；载荷不在文档 patch 里', () => {
+        const session = makeSession([imageLayer()])
+        session.armLayerCreate('ImageLayer', '16:9')
+        session.beginLayerCreate(100, 100)
+        session.createTo(300, 110) // 16:9 档钳 → 200×113
+        session.endCreate()
+        session.beginResize(['layers', 1], 'se', 300, 113)
+        session.resizeTo(360, 130, true)
+        session.endResize()
+        expect(
+            session.store.history.some((step) => step.patches.some((p) => p.path.includes('preset'))),
+        ).toBe(false)
+
+        const first = encodeGraph(session.store.doc!)
+        const second = encodeGraph(decodeGraph(JSON.parse(JSON.stringify(first))))
+        expect(second).toEqual(first)
     })
 })

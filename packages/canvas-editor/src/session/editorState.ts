@@ -10,9 +10,14 @@
  */
 import type { Guide, GuideOrientation } from '../spatial/snap'
 import type { LayerPath } from '../shared/layerPath'
-import type { NextTextStyle, RatioPresetId } from '../editing/layerPanel'
+import type { NextTextStyle } from '../editing/layerPanel'
 
-/** 快照格式版本：随格式演化单调递增；v1 = 1（宽容读贯彻，restore 不分支此值） */
+/**
+ * 快照格式版本：随格式演化单调递增；v1 = 1（宽容读贯彻，restore 不分支此值）。
+ * prefs 桶的 nextLayerRatio 键已随 canvas-web-preset-submenu 工单 01（ADR 0021）
+ * 退役：停写停读、版本不升——旧快照的该键由调用方按宽容读惯例整体忽略（键在
+ * 载荷里多余但无害），加法演进同门前例（text-defaults 工单 01）。
+ */
 export const EDITOR_STATE_SCHEMA_VERSION = 1
 
 /** 帧作用域切片：当前打开画布的编辑器状态（工程数据快照的 frames[帧名] 值） */
@@ -36,12 +41,9 @@ export interface EditorPrefsState {
      * 由 applyEditorPrefs 宽容读兜底为现值（会话内即工厂缺省）。
      */
     nextTextStyle: NextTextStyle
-    /**
-     * 建层比例槽（image-ratio-preset 工单 01，CONTEXT「建层比例」词条）：随 prefs
-     * 桶跨会话持久（per-模板记忆，「自由」即显式重置档）。schemaVersion 不升——
-     * 加法演进，旧快照缺字段或脏值由 applyEditorPrefs 宽容读回落 'free'。
-     */
-    nextLayerRatio: RatioPresetId
+    // 建层比例槽 nextLayerRatio 已退役（canvas-web-preset-submenu 工单 01，ADR
+    // 0021）：槽是预设残留器（无属性面板信号源，不对称是探明的代码事实），预设
+    // 改随武装载荷一次性携带——本停写停读，旧快照该键宽容忽略。
 }
 
 /** 快照 guide 的恢复形：id 已剥（无持久语义），只余 addGuide 入参两字段 */
