@@ -164,6 +164,17 @@ export interface EditorUi {
      * 不进 wire（红线 3 延伸），beginLayerCreate 捕获进建层会话；openDocument 重置。
      */
     armedCreateRowsPath: string
+    /**
+     * 武装 token 的预设载荷（canvas-web-preset-submenu 工单 01，ADR 0021）：预设
+     * 随武装一次性携带、不再写任何偏好槽——armedCreate === 'TextLayer' 且本载荷
+     * 命中 TEXT_PRESETS = 文本预设风味（endCreate 按档位字号直接生效，不经新层
+     * 样式槽）；armedCreate === 'ImageLayer' 且本载荷命中 RATIO_PRESETS = 比例
+     * 预设风味（createTo 钳橡皮筋、endCreate 死区缺省盒）。空串 = 普通武装
+     * （文本按新层样式槽、图片恒自由），与 armedCreateRowsPath 同款空值语义。
+     * ui 瞬态载荷——不进 graph、不进 wire、不进 prefs（红线 3 延伸），
+     * beginLayerCreate 捕获进建层会话；openDocument 重置。
+     */
+    armedCreatePreset: string
     /** 进行中的画拉建层橡皮筋会话（拖拽期纯视觉，文档零变更）；null = 无 */
     create: CreateGesture | null
     /** 进行中的文本编辑会话；null = 非编辑态 */
@@ -335,6 +346,7 @@ export class EditorStore {
         resize: null,
         armedCreate: null,
         armedCreateRowsPath: '',
+        armedCreatePreset: '',
         create: null,
         editing: null,
         renaming: null,
@@ -391,6 +403,7 @@ export class EditorStore {
             resize: null,
             armedCreate: null,
             armedCreateRowsPath: '',
+            armedCreatePreset: '',
             create: null,
             editing: null,
             renaming: null,
@@ -506,12 +519,24 @@ export class EditorStore {
     /**
      * 建层武装置/解除（null，drag-create 工单 01）；标量值等短路（重复武装同型
      * 不通知）。rowsPath（template-table-drag-create 工单 01）：模板表风味载荷
-     * 与层型一体写——同层型同载荷才短路（重复武装同型换载荷要更新），解除
-     * （null）一律清载荷。
+     * 与层型一体写；preset（canvas-web-preset-submenu 工单 01）：预设载荷与层型
+     * 一体写——同层型同载荷才短路（重复武装同型换载荷要更新），解除（null）
+     * 一律清载荷（rowsPath 与 preset 双清）。
      */
-    setArmedCreate(type: LayerType | null, rowsPath = ''): void {
-        if (this.uiValue.armedCreate === type && this.uiValue.armedCreateRowsPath === rowsPath) return
-        this.uiValue = { ...this.uiValue, armedCreate: type, armedCreateRowsPath: type === null ? '' : rowsPath }
+    setArmedCreate(type: LayerType | null, rowsPath = '', preset = ''): void {
+        if (
+            this.uiValue.armedCreate === type
+            && this.uiValue.armedCreateRowsPath === rowsPath
+            && this.uiValue.armedCreatePreset === preset
+        ) {
+            return
+        }
+        this.uiValue = {
+            ...this.uiValue,
+            armedCreate: type,
+            armedCreateRowsPath: type === null ? '' : rowsPath,
+            armedCreatePreset: type === null ? '' : preset,
+        }
         this.notify({ scope: 'ui', branch: 'armedCreate' })
     }
 
