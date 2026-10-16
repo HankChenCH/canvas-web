@@ -182,8 +182,14 @@ export interface NextTextStyle {
 /** 文本预设档位（CONTEXT「文本预设」词条）：heading 40 / subheading 28 / body 16 */
 export type TextPresetId = 'heading' | 'subheading' | 'body'
 
+/** 文本预设档位条目（评审整改 F2 查档返回面，RatioPreset 同形）：具名 id + 档位字号 */
+export interface TextPreset {
+    readonly id: TextPresetId
+    readonly fontSize: number
+}
+
 /** 文本预设常量（spec 决策 4）：v1 只定字号——字体缺口由新层样式槽补 */
-export const TEXT_PRESETS: readonly { id: TextPresetId; fontSize: number }[] = [
+export const TEXT_PRESETS: readonly TextPreset[] = [
     { id: 'heading', fontSize: 40 },
     { id: 'subheading', fontSize: 28 },
     { id: 'body', fontSize: 16 },
@@ -205,7 +211,9 @@ export function defaultNextTextStyle(): NextTextStyle {
 
 /**
  * 建层比例档位（spec 决策 1/2）：'free' = 自由钳（工厂行为兜底），其余五个具名
- * 有理数比。v1 固定清单、无自定义输入。
+ * 有理数比。v1 固定清单、无自定义输入。清单随建层比例槽退役保持不动
+ * （canvas-web-preset-submenu 工单 01，ADR 0021）：free 仍是「自由」枚举值与
+ * Shift 语义引用，具名档由武装预设载荷（armedCreatePreset）一次性携带消费。
  */
 export type RatioPresetId = 'free' | '1:1' | '4:3' | '3:4' | '16:9' | '9:16'
 
@@ -225,11 +233,6 @@ export const RATIO_PRESETS: readonly RatioPreset[] = [
     { id: '9:16', ratio: { w: 9, h: 16 } },
 ]
 
-/** 建层比例槽初值：自由（工厂画拉行为兜底） */
-export function defaultNextLayerRatio(): RatioPresetId {
-    return 'free'
-}
-
 /** 档位 → 钳制用有理数比：'free' → null（不钳），具名档 → {w, h} 副本 */
 export function ratioValue(id: RatioPresetId): { w: number; h: number } | null {
     const entry = RATIO_PRESETS.find((candidate) => candidate.id === id)
@@ -237,13 +240,27 @@ export function ratioValue(id: RatioPresetId): { w: number; h: number } | null {
 }
 
 /**
- * 建层比例槽的宽容读（prefs 恢复唯一入口）：六档枚举值原样收，其余（旧快照
- * 缺字段/存储端脏值）回落 'free'。载荷来自宿主 JSON 快照，类型层的形状信任
- * 不了，运行时验；未知 prefs 键由调用方整体忽略（不进本函数视野）。
+ * 层型预设档位查档（canvas-web-preset-submenu 评审整改 F2）：武装/画拉会话载荷的
+ * 档位 id 按层型分流到对应清单单点查找——TextLayer 查 TEXT_PRESETS、ImageLayer 查
+ * RATIO_PRESETS，其余层型（无预设语义）与交叉类型（文本层带比例档/图片层带文本
+ * 档）在对方清单查无此档，返回 undefined（「未知 id = 不落载荷、武装照常」评审
+ * 口径的查表面）。session 建层管线的档位查找（armLayerCreate / endCreate）经此
+ * 消费，档比复制语义复用 ratioValue；presetId 收 string——store 载荷是 string
+ * 形态（ui 分支不翻译型），查档天然宽容（未知 id 查无）。重载让层型字面量收窄
+ * 返回面：TextLayer 只得文本档、ImageLayer 只得比例档。
  */
-export function pickNextLayerRatio(raw: unknown): RatioPresetId {
-    return RATIO_PRESETS.some((candidate) => candidate.id === raw) ? (raw as RatioPresetId) : 'free'
+export function findPresetEntry(type: LayerType, presetId: string): TextPreset | RatioPreset | undefined
+export function findPresetEntry(type: 'TextLayer', presetId: string): TextPreset | undefined
+export function findPresetEntry(type: 'ImageLayer', presetId: string): RatioPreset | undefined
+export function findPresetEntry(type: LayerType, presetId: string): TextPreset | RatioPreset | undefined {
+    if (type === 'TextLayer') return TEXT_PRESETS.find((candidate) => candidate.id === presetId)
+    if (type === 'ImageLayer') return RATIO_PRESETS.find((candidate) => candidate.id === presetId)
+    return undefined
 }
+
+// 建层比例槽的两个配套函数已随槽退役（canvas-web-preset-submenu 工单 01，ADR
+// 0021）：defaultNextLayerRatio（槽初值）与 pickNextLayerRatio（prefs 宽容读）
+// ——预设改随武装载荷一次性携带，停写停读，旧快照键由调用方宽容忽略。
 
 /**
  * 死区点击缺省盒的比例派生（spec 决策 3）：长边 200 定短边——短边 = round(长边

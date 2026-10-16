@@ -12,7 +12,7 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { decodeGraph, type Canvas, type Layer, type LayerBox, type TableLayer } from '@hankchen/canvas'
+import { decodeGraph, type Canvas, type ImageLayer, type Layer, type LayerBox, type TableLayer } from '@hankchen/canvas'
 
 import { EditorSession, type FrameScheduler } from '../../src/session/editor'
 import { cellLayer, imageLayer, qrLayer, rowLayer, shapeWire, tableLayer, textLayer, wireNode } from '../support/fixtures'
@@ -354,5 +354,103 @@ describe('resizeTo：嵌套路径写回（position 反解须减父级原点）',
         const row = (session.store.doc!.layers[0] as TableLayer).rows[1]!
         expect(row.position).toEqual({ anchor: 'top-left', x: 0, y: 0 })
         expect(session.layerBoxAt(path)).toMatchObject({ x: 100, y: 140, width: 100, height: 90 })
+    })
+})
+
+// resizeTo Shift 等比一组自 nextLayerRatio.test.ts 迁入（canvas-web-preset-submenu
+// 工单 01）：建层比例槽退役后此处仍是槽无关的既有行为面——参照**当前盒**实际
+// 宽高比，与武装预设载荷（钳橡皮筋的生效档）分立互不干扰。
+describe('resizeTo Shift 等比（仅图片层）', () => {
+    it('e 柄：宽驱动、高按当前盒比例派生（100×50 拖 30 → 130×65）', () => {
+        const session = makeSession([imageLayer()])
+        session.beginResize(['layers', 0], 'e', 0, 0)
+        session.resizeTo(30, 999, true)
+        const layer = session.store.doc!.layers[0] as ImageLayer
+        expect(layer.shape).toMatchObject({ width: 130, height: 65 })
+        expect(session.layerBoxAt(['layers', 0])).toMatchObject({ x: 0, y: 0, width: 130, height: 65 })
+    })
+
+    it('s 柄：高驱动、宽派生（100×50 拖 20 → 140×70）', () => {
+        const session = makeSession([imageLayer()])
+        session.beginResize(['layers', 0], 's', 0, 0)
+        session.resizeTo(999, 20, true)
+        expect(session.store.doc!.layers[0]!.shape).toMatchObject({ width: 140, height: 70 })
+    })
+
+    it('角柄驱动轴 = 位移较大轴：2:1 盒 dx=40 dy=10 宽驱动、dx=10 dy=40 高驱动', () => {
+        const session = makeSession([imageLayer({ shape: { width: 200, height: 100 } })])
+        session.beginResize(['layers', 0], 'se', 0, 0)
+        session.resizeTo(40, 10, true) // 宽驱动：宽 240、高 round(240×100/200)=120
+        expect(session.store.doc!.layers[0]!.shape).toMatchObject({ width: 240, height: 120 })
+        session.endResize()
+
+        const other = makeSession([imageLayer({ shape: { width: 200, height: 100 } })])
+        other.beginResize(['layers', 0], 'se', 0, 0)
+        other.resizeTo(10, 40, true) // 高驱动：高 140、宽 round(140×2)=280
+        expect(other.store.doc!.layers[0]!.shape).toMatchObject({ width: 280, height: 140 })
+    })
+
+    it('w/n 柄对缘固定：尺寸派生同门、x/y 随新尺寸回推', () => {
+        const session = makeSession([imageLayer({ position: { anchor: 'top-left', x: 100, y: 40 } })])
+        session.beginResize(['layers', 0], 'w', 100, 40)
+        session.resizeTo(140, 40, true) // 左缘 100→140、右缘 200 固定 → 宽 60、高 30
+        expect(session.layerBoxAt(['layers', 0])).toMatchObject({ x: 140, y: 40, width: 60, height: 30 })
+    })
+
+    it('参照当前盒实际比例：改过的 2:1 盒 Shift 缩放保持 2:1（非工厂 4:3）', () => {
+        const session = makeSession([imageLayer({ shape: { width: 200, height: 100 } })])
+        session.beginResize(['layers', 0], 'e', 0, 0)
+        session.resizeTo(60, 0, true) // 宽 260 → 高 130
+        expect(session.store.doc!.layers[0]!.shape).toMatchObject({ width: 260, height: 130 })
+    })
+
+    it('零维盒 Shift 空转：回落自由缩放（未拖轴零接触）', () => {
+        const session = makeSession([imageLayer({ shape: { width: 0, height: 0 } })])
+        session.beginResize(['layers', 0], 'e', 0, 0)
+        session.resizeTo(130, 999, true)
+        expect(session.store.doc!.layers[0]!.shape).toMatchObject({ width: 130, height: 0 })
+    })
+
+    it('非图片层 Shift 空转：TextLayer 自由缩放现状（宽 130 高 80 不派生）', () => {
+        const session = makeSession([textLayer({ shape: { width: 100, height: 80 } })])
+        session.beginResize(['layers', 0], 'e', 0, 0)
+        session.resizeTo(30, 0, true)
+        expect(session.store.doc!.layers[0]!.shape).toMatchObject({ width: 130, height: 80 })
+    })
+
+    it('不按 Shift 的图片层缩放照旧自由（shift 缺省 false）', () => {
+        const session = makeSession([imageLayer({ shape: { width: 100, height: 50 } })])
+        session.beginResize(['layers', 0], 'e', 0, 0)
+        session.resizeTo(30, 999)
+        expect(session.store.doc!.layers[0]!.shape).toMatchObject({ width: 130, height: 50 })
+    })
+
+    it('最小钳位随动：驱动轴钳到 1 后派生轴按钳后驱动维跟随', () => {
+        const session = makeSession([imageLayer({ shape: { width: 100, height: 100 } })])
+        session.beginResize(['layers', 0], 'se', 0, 0)
+        session.resizeTo(-300, -1000, true) // 高驱动 raw < 0 → 钳 1，宽 = 1
+        expect(session.store.doc!.layers[0]!.shape).toMatchObject({ width: 1, height: 1 })
+    })
+
+    it('吸附只在驱动轴移动缘：垂直缘命中平移不破比例；派生底缘贴轴不吸', () => {
+        // 源层右缘 435（垂直轴）：e 柄拖动缘 440 吸到 435 → dx 修正 −5 → 宽 135、高 68（round(67.5) half-up）
+        const snapped = makeSession([
+            textLayer({ priority: 20, position: { anchor: 'top-left', x: 335, y: 0 } }),
+            imageLayer({ priority: 30, position: { anchor: 'top-left', x: 300, y: 300 } }),
+        ])
+        snapped.beginResize(['layers', 1], 'e', 400, 325)
+        snapped.resizeTo(440, 360, true)
+        expect(snapped.store.doc!.layers[1]!.shape).toMatchObject({ width: 135, height: 68 })
+        expect(snapped.listSnapAxes()).toEqual([{ orientation: 'vertical', position: 435, source: 'layer' }])
+
+        // 源层底缘 370 = 派生底缘落点：派生轴不独立吸附 → 高恰 70、无水平命中轴
+        const derived = makeSession([
+            textLayer({ priority: 20, shape: { width: 100, height: 100 }, position: { anchor: 'top-left', x: 0, y: 270 } }),
+            imageLayer({ priority: 30, position: { anchor: 'top-left', x: 300, y: 300 } }),
+        ])
+        derived.beginResize(['layers', 1], 'e', 400, 325)
+        derived.resizeTo(440, 360, true)
+        expect(derived.store.doc!.layers[1]!.shape).toMatchObject({ width: 140, height: 70 })
+        expect(derived.listSnapAxes()).toEqual([])
     })
 })

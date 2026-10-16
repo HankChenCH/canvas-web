@@ -4,7 +4,8 @@
  *   权威写捕获进槽；openDocument 换文档不清空；不进历史；
  * - 消费：endCreate（画拉）与 addRootLayer（面板新增）以槽值覆盖工厂缺省；
  *   createTemplateTable / 表格结构不消费（模板语义保持确定性缺省）；
- * - 预设 = 写槽的快捷方式：armLayerCreate('TextLayer', preset) 先写槽再武装；
+ * - 文本预设随武装载荷一次性携带、不写槽（canvas-web-preset-submenu 工单 01，
+ *   ADR 0021）——普通武装文本按槽，预设档字号在 endCreate 直接生效不经槽；
  * - prefs 读写对：getEditorPrefs 带出、applyEditorPrefs 宽容读逐字段合并
  *   （缺字/类型不符保留现值、未知键忽略）。
  */
@@ -185,35 +186,35 @@ describe('消费：建层入口以槽值覆盖工厂缺省', () => {
     })
 })
 
-describe('文本预设（写槽的快捷方式）', () => {
-    it("armLayerCreate('TextLayer', 'heading')：先写槽再武装", () => {
+describe('文本预设（预设随武装载荷，不写槽——canvas-web-preset-submenu 工单 01）', () => {
+    it("armLayerCreate('TextLayer', 'heading')：档位入载荷、槽原样", () => {
         const session = makeSession([textLayer()])
         session.armLayerCreate('TextLayer', 'heading')
-        expect(session.store.ui.nextTextStyle.fontSize).toBe(40)
+        expect(session.store.ui.nextTextStyle.fontSize).toBe(24) // 槽不被预设覆盖
+        expect(session.store.ui.armedCreatePreset).toBe('heading')
         expect(session.store.ui.armedCreate).toBe('TextLayer')
-        expect(session.beginLayerCreate(50, 50)).toBe(true)
-        session.endCreate()
-        expect(textAt(session, 1).fontSize).toBe(40)
     })
 
-    it('三档字号：heading 40 / subheading 28 / body 16', () => {
+    it('三档载荷：heading / subheading / body（档位字号消费见 armedCreatePreset.test）', () => {
         const session = makeSession()
         session.armLayerCreate('TextLayer', 'subheading')
-        expect(session.store.ui.nextTextStyle.fontSize).toBe(28)
+        expect(session.store.ui.armedCreatePreset).toBe('subheading')
         session.cancelArmLayerCreate()
         session.armLayerCreate('TextLayer', 'body')
-        expect(session.store.ui.nextTextStyle.fontSize).toBe(16)
+        expect(session.store.ui.armedCreatePreset).toBe('body')
     })
 
-    it('非文本层武装忽略 preset；未知 preset 只跳写槽、武装照常', () => {
+    it('非文本层武装忽略 preset；未知 preset 不落载荷、武装照常', () => {
         const session = makeSession()
         session.armLayerCreate('ImageLayer', 'heading')
         expect(session.store.ui.nextTextStyle.fontSize).toBe(24)
+        expect(session.store.ui.armedCreatePreset).toBe('')
         expect(session.store.ui.armedCreate).toBe('ImageLayer')
         session.cancelArmLayerCreate()
         session.armLayerCreate('TextLayer', 'nope' as never)
         expect(session.store.ui.nextTextStyle.fontSize).toBe(24)
         expect(session.store.ui.armedCreate).toBe('TextLayer')
+        expect(session.store.ui.armedCreatePreset).toBe('')
     })
 
     it('无 preset 的武装不动槽（快捷键入口同门：捕获值原样保留）', () => {
@@ -247,7 +248,6 @@ describe('prefs 读写对（宽容读逐字段合并）', () => {
         session.applyEditorPrefs({
             rulersVisible: true,
             anchorExpanded: false,
-            nextLayerRatio: 'free',
             nextTextStyle: { font: 'A', fontSize: 30, autowrap: true } as never, // 缺 fontColor/lineHeight
         })
         expect(session.store.ui.nextTextStyle).toMatchObject({ font: 'A', fontSize: 30, autowrap: true })
@@ -257,7 +257,6 @@ describe('prefs 读写对（宽容读逐字段合并）', () => {
         session.applyEditorPrefs({
             rulersVisible: true,
             anchorExpanded: false,
-            nextLayerRatio: 'free',
             nextTextStyle: { font: 42, fontSize: 'big', autowrap: 'yes', lineHeight: -1, fontColor: 'C', junk: 1 } as never,
         })
         expect(session.store.ui.nextTextStyle.fontColor).toBe('C') // 合法字段进
@@ -266,7 +265,7 @@ describe('prefs 读写对（宽容读逐字段合并）', () => {
         expect(session.store.ui.nextTextStyle.autowrap).toBe(true)
         expect(session.store.ui.nextTextStyle.lineHeight).toBe(before.lineHeight) // 非法值忽略
 
-        session.applyEditorPrefs({ rulersVisible: true, anchorExpanded: false, nextLayerRatio: 'free', nextTextStyle: null as never })
+        session.applyEditorPrefs({ rulersVisible: true, anchorExpanded: false, nextTextStyle: null as never })
         expect(session.store.ui.nextTextStyle.font).toBe('A') // 非对象整体忽略
     })
 

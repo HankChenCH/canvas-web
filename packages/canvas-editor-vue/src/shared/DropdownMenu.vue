@@ -48,17 +48,39 @@
  * 工具栏钮观感（App.vue .toolbar button），菜单壳沿状态栏缩放菜单/右键菜单
  * （暗色抬升面 + accent 悬停）；自带主题不依赖宿主接线，也不渗漏。data-dropdown-*
  * 钩子供目验定位（issues/03）。
+ *
+ * submenu 两段式条目（canvas-web-preset-submenu 工单 02，spec 决策 3）：一级行
+ * 渲染为左右两段命中区——主体（label + 可选 shortcut 灰字后缀）点击/Enter =
+ * run + 收整个菜单（直建语义，「点一级直达」），右缘 ▸ 钮（aria-haspopup/
+ * aria-expanded）悬停/点击唤出 children 二级浮层（预设项）。交互门控：主体
+ * 悬停不开二级（保直达干净）、▸ 悬停/点击开（点击同行翻转）、异行悬停换开
+ * （单开不变量，nextOpenSubmenu 纯函数）、移出菜单收二级。浮层 fixed 定位
+ * （首帧锚「行右缘 + 间隙 / 顶对齐行顶」，渲染后按实际尺寸钳位——右缘放不下
+ * 翻左，placeSubmenuInViewport 纯函数有单测），叠主菜单之上（z-index 41）；
+ * ▸→浮层的 6px 跨界由浮层 ::before 桥接命中区覆盖——跨界移动物不触发容器
+ * mouseleave 误收。键盘与焦点全序见 onMenuKeydown 注释块（→ 开二级入首项、
+ * ←/Esc 先收二级再收菜单、二级内 ↑↓ 循环跳置灰、Tab 沿现状）。
  */
-import { nextTick, ref, watch, type ComponentPublicInstance } from 'vue'
+import { nextTick, shallowRef, ref, watch, type ComponentPublicInstance } from 'vue'
 
 import { isEditableEventTarget } from './editableTarget'
 import {
+    SUBMENU_GAP_PX,
+    focusTargetOnMenuClose,
+    focusTargetOnOpen,
+    focusTargetOnSubmenuClose,
+    isSubmenuEntry,
     nextEnabledItemIndex,
+    nextOpenSubmenu,
+    placeSubmenuInViewport,
+    submenuKeyAction,
     useDropdownMenu,
     type DropdownMenuEntry,
     type DropdownMenuItem,
     type DropdownMenuSlotProps,
+    type DropdownSubmenuEntry,
     type MenuFocusKey,
+    type SubmenuPlacement,
 } from './useDropdownMenu'
 
 const props = withDefaults(
@@ -95,9 +117,23 @@ const triggerEl = ref<HTMLElement | null>(null)
 const menuEl = ref<HTMLElement | null>(null)
 const { open, toggle, closeMenu } = useDropdownMenu({ container })
 
-/** 菜单收起（开→收即发，收起三路 + 分发覆盖）随收清理钩子 */
+/** 在场二级（单开不变量，以条目引用为键）：null = 全关；▸ 悬停/点击、→/←、
+ *  Esc/移出菜单都经 nextOpenSubmenu 纯函数翻转（有单测）。shallowRef（工单 03
+ *  接线修复）：条目是身份键且从不深改，deep ref 落值时 toReactive 会存成代理，
+ *  与嵌套消费面（LayerPanel）模板迭代的原始条目 !== 恒错位——二级浮层永不开
+ *  （根挂载恰好迭代到代理才侥幸通过，工单 02 单测未暴露） */
+const openSubmenu = shallowRef<DropdownSubmenuEntry | null>(null)
+
+/** 二级浮层视口坐标（fixed 内联 style；首帧锚 + 渲染后钳位，主菜单同款两段式） */
+const submenuPosition = ref<SubmenuPlacement>({ left: 0, top: 0, side: 'right' })
+
+/** 菜单收起（开→收即发，收起三路 + 分发覆盖）随收清理钩子；二级随菜单收起
+ *  一并复位（点外收/触发钮点收路径不走二级收口，这里兜底） */
 watch(open, (isOpen) => {
-    if (!isOpen) emit('closed')
+    if (!isOpen) {
+        openSubmenu.value = null
+        emit('closed')
+    }
 })
 
 /** 弹层视口坐标（fixed 内联 style，开态首帧即落位）：down = top 锚（触发钮下缘
@@ -106,9 +142,10 @@ watch(open, (isOpen) => {
 const menuPosition = ref<{ left: number; edge: 'top' | 'bottom'; offset: number }>({ left: 0, edge: 'top', offset: 0 })
 
 /** 收起回焦触发钮：点外收（composable window 监听路径）不回焦——焦点归用户
- *  点击落点；其余组件内发起的收起（激活/Esc/Tab/触发钮点收）都回焦 */
+ *  点击落点；其余组件内发起的收起（激活/Esc/Tab/触发钮点收）都回焦。落点判定
+ *  在 focusTargetOnMenuClose 纯函数（评审整改 F5） */
 function focusTrigger(): void {
-    triggerEl.value?.focus()
+    focusTargetOnMenuClose(triggerEl.value)?.focus()
 }
 
 /** 触发钮元素记录（函数 ref）：内建钮与 #trigger 自绘钮同缝——自绘钮消费方
@@ -118,19 +155,39 @@ function setTriggerRef(el: Element | ComponentPublicInstance | null): void {
 }
 
 /** 开时焦点入菜单：首个启用项，全置灰兜底落菜单根（tabindex=-1 可编程聚焦）；
- *  等待期间已被收起的竞态兜底不落焦 */
+ *  落点判定在 focusTargetOnOpen 纯函数（评审整改 F5）；等待期间已被收起的竞态
+ *  兜底不落焦 */
 async function focusIntoMenu(): Promise<void> {
     await nextTick()
     if (!open.value) return
     const menu = menuEl.value
     if (menu === null) return
-    const first = menu.querySelector<HTMLElement>('[data-dropdown-item]:not([disabled])')
-    ;(first ?? menu).focus()
+    focusTargetOnOpen(menuItemEls(), menu).focus()
 }
 
 /** 非 separator 条目（DOM 项序与过滤序一致，激活分发与导航同源） */
-function itemEntries(): DropdownMenuItem[] {
-    return props.items.filter((entry): entry is DropdownMenuItem => entry !== 'separator')
+function itemEntries(): Array<DropdownMenuItem | DropdownSubmenuEntry> {
+    return props.items.filter((entry): entry is DropdownMenuItem | DropdownSubmenuEntry => entry !== 'separator')
+}
+
+/** submenu 形态条目（与 [data-dropdown-submenu-host] DOM 序一一对齐） */
+function submenuEntries(): DropdownSubmenuEntry[] {
+    return itemEntries().filter(isSubmenuEntry)
+}
+
+/** 两段式行宿主元素（DOM 序，键盘 → 开二级的条目定位用） */
+function submenuHostEls(): HTMLElement[] {
+    return Array.from(menuEl.value?.querySelectorAll<HTMLElement>('[data-dropdown-submenu-host]') ?? [])
+}
+
+/** 当前在场二级浮层（单开不变量 → 至多一个，按钩子直查免 ref 簿记） */
+function submenuFlyoutEl(): HTMLElement | null {
+    return menuEl.value?.querySelector<HTMLElement>('[data-dropdown-submenu]') ?? null
+}
+
+/** 二级子项元素（浮层 DOM 序，键盘导航落点与开入落点共用同一查询） */
+function submenuItemEls(): HTMLElement[] {
+    return Array.from(submenuFlyoutEl()?.querySelectorAll<HTMLElement>('[data-dropdown-submenu-item]') ?? [])
 }
 
 /** 菜单项元素（DOM 序，导航落点与激活分发共用同一查询） */
@@ -139,10 +196,11 @@ function menuItemEls(): HTMLElement[] {
 }
 
 /** 分发（ContextMenu 动作即关同款）+ 回焦触发钮；keepsOpen 项例外——执行后
- *  菜单留场（面板＋模板表表单交换特例，issues/05），留场焦点随项卸载落菜单体 */
-function run(item: DropdownMenuItem): void {
+ *  菜单留场（面板＋模板表表单交换特例，issues/05），留场焦点随项卸载落菜单体；
+ *  两段式主体无条件收（spec 门控：主体点击 = run + 收菜单，无 keepsOpen 形态） */
+function run(item: DropdownMenuItem | DropdownSubmenuEntry): void {
     item.run()
-    if (item.keepsOpen === true) return
+    if (!isSubmenuEntry(item) && item.keepsOpen === true) return
     closeMenu()
     focusTrigger()
 }
@@ -169,28 +227,74 @@ function activateItem(target: HTMLElement): void {
     if (entry !== undefined && !entry.disabled) run(entry)
 }
 
-/** 菜单根按键路由（@keydown.stop：菜单内按键模态化，不到 window）。Enter/Space
- *  显式激活并 preventDefault——抑制原生钮激活（Space keyup click / Enter keydown
- *  click）防双跑；方向键先让路可编辑目标（body 插槽表单输入框——原生光标移动
- *  不劫持；菜单项本体是 button 会被 isEditableEventTarget 命中，按
- *  data-dropdown-item 排除） */
+/**
+ * 菜单根按键路由（@keydown.stop：菜单内按键模态化，不到 window；二级浮层是
+ * 菜单体 DOM 后代，同经本路由）。
+ *
+ * 二级浮层内（canvas-web-preset-submenu 工单 02）按键全序归 submenuKeyAction
+ * 纯函数判定（有单测）：↑↓/Home/End 循环推进跳置灰、←/Esc 收二级（菜单留场、
+ * 焦点回 ▸，两段收的第一段）、Enter/Space 显式激活子项（带 preset 直建，pre-
+ * ventDefault 抑制原生钮激活防双跑）、Tab 收整个菜单（沿现状，不 prevent-
+ * Default）；none 模态吞掉。
+ *
+ * 主菜单：Esc 两段收（二级在场先收二级再收菜单——window 路径即焦点不在菜单内
+ * 仍一次收整个，指针用户兜底语义）；Tab 让路可编辑目标（body 插槽表单内的输入
+ * 框/按钮——原生移焦走表单序：input→创建→取消，菜单不收；面板＋表单既有 Tab
+ * 流，issues/05 review 补），其余 Tab 收起回焦触发钮（幸免菜单 v-if 卸载时焦
+ * 点坠 body；不 preventDefault——浏览器原生 Tab 随即自触发钮继续移焦，触发钮
+ * 非终态）；Enter/Space 显式激活并 preventDefault（防双跑）；↑↓/Home/End 先让
+ * 路可编辑目标再推进（跳置灰）；→ 在两段式行内（主体或 ▸）开本行二级（焦点入
+ * 首个启用子项），普通项 no-op；其余按键吞掉（焦点态菜单的模态键盘语义）。
+ */
 function onMenuKeydown(event: KeyboardEvent): void {
     const key = event.key
-    if (key === 'Escape' || key === 'Tab') {
+    const target = event.target
+
+    // 二级浮层子项上的按键：全序归 submenuKeyAction（纯函数有单测）
+    if (target instanceof HTMLElement && target.matches('[data-dropdown-submenu-item]')) {
+        const action = submenuKeyAction(key)
+        if (action.type === 'move') {
+            event.preventDefault()
+            moveSubmenuFocus(action.key)
+            return
+        }
+        if (action.type === 'close') {
+            event.preventDefault()
+            closeSubmenuToArrow()
+            return
+        }
+        if (action.type === 'activate') {
+            event.preventDefault()
+            activateSubmenuItem(target)
+            return
+        }
+        if (action.type === 'close-menu') {
+            closeMenu()
+            focusTrigger()
+            return
+        }
+        return
+    }
+
+    // Esc 两段收：二级在场先收二级（焦点回 ▸），否则收菜单回触发钮
+    if (key === 'Escape') {
+        if (openSubmenu.value !== null) {
+            closeSubmenuToArrow()
+            return
+        }
+        closeMenu()
+        focusTrigger()
+        return
+    }
+    if (key === 'Tab') {
         // Tab 让路可编辑目标（body 表单内的输入框/按钮——原生移焦走表单序：
         // input→创建→取消，菜单不收；面板＋表单既有 Tab 流，issues/05 review 补）
-        if (key === 'Tab') {
-            const tabTarget = event.target
-            if (tabTarget instanceof HTMLElement && !tabTarget.matches('[data-dropdown-item]') && isEditableEventTarget(tabTarget)) return
-        }
-        // 收起并先把焦点送回触发钮（幸免菜单 v-if 卸载时焦点坠 body）。Tab 不
-        // preventDefault——浏览器原生 Tab 随即自触发钮继续移焦，触发钮非终态
+        if (target instanceof HTMLElement && !target.matches('[data-dropdown-item]') && isEditableEventTarget(target)) return
         closeMenu()
         focusTrigger()
         return
     }
     if (key === 'Enter' || key === ' ') {
-        const target = event.target
         if (target instanceof HTMLElement && target.matches('[data-dropdown-item]')) {
             event.preventDefault()
             activateItem(target)
@@ -198,12 +302,79 @@ function onMenuKeydown(event: KeyboardEvent): void {
         return
     }
     if (key === 'ArrowDown' || key === 'ArrowUp' || key === 'Home' || key === 'End') {
-        const target = event.target
         if (target instanceof HTMLElement && !target.matches('[data-dropdown-item]') && isEditableEventTarget(target)) return
         event.preventDefault()
         moveMenuFocus(key)
+        return
+    }
+    // → 开二级（工单 02）：焦点在两段式行内（主体/▸ 同宿主）时唤出本行二级并
+    // 焦点入首个启用子项；disabled 行不开（openSubmenuKeyboard 内守卫）；普通
+    // 项/菜单根 no-op 不拦截
+    if (key === 'ArrowRight') {
+        const host = target instanceof HTMLElement ? target.closest<HTMLElement>('[data-dropdown-submenu-host]') : null
+        if (host !== null) {
+            const entry = submenuEntries()[submenuHostEls().indexOf(host)]
+            if (entry !== undefined) {
+                event.preventDefault()
+                void openSubmenuKeyboard(entry, host)
+            }
+        }
     }
     // 其余按键吞掉（.stop 已阻断到 window）：焦点态菜单的模态键盘语义
+}
+
+// ---- submenu 键盘与焦点编排（canvas-web-preset-submenu 工单 02）----
+
+/**
+ * 主体/▸ 上 → 开二级（键盘路径）：开（单开换开）+ 落位 + 焦点入首个启用子项
+ * （全置灰兜底落浮层根，主菜单 focusIntoMenu 同式）；disabled 行不开；等待期
+ * 间已收起/换开的竞态兜底不落焦。
+ */
+async function openSubmenuKeyboard(entry: DropdownSubmenuEntry, host: HTMLElement): Promise<void> {
+    if (entry.disabled === true) return
+    openSubmenu.value = nextOpenSubmenu(openSubmenu.value, { type: 'open', target: entry })
+    await positionSubmenu(host.querySelector<HTMLElement>('[data-dropdown-submenu-arrow]'))
+    if (openSubmenu.value !== entry || !open.value) return
+    const flyout = submenuFlyoutEl()
+    if (flyout === null) return
+    // 开入落点 = 首个启用子项、全置灰兜底浮层根（focusTargetOnOpen 纯函数，评审整改 F5）
+    focusTargetOnOpen(submenuItemEls(), flyout).focus()
+}
+
+/** 收二级并回焦 ▸（键盘收路径——←/Esc）：落点判定在 focusTargetOnSubmenuClose
+ *  纯函数（评审整改 F5）——焦点所在两段行定位宿主，回焦同宿主 ▸ 钮（APG「关子
+ *  菜单回父项」惯例）；焦点不在行内只收不迁焦 */
+function closeSubmenuToArrow(): void {
+    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const arrow = focusTargetOnSubmenuClose(active)
+    openSubmenu.value = null
+    arrow?.focus()
+}
+
+/** 二级内导航（↑↓/Home/End）：落点计算复用 nextEnabledItemIndex（纯函数有单
+ *  测），全置灰兜底回焦浮层根——主菜单 moveMenuFocus 同式 */
+function moveSubmenuFocus(key: MenuFocusKey): void {
+    const flyout = submenuFlyoutEl()
+    if (flyout === null) return
+    const els = submenuItemEls()
+    const enabled = els.map((el) => !el.hasAttribute('disabled'))
+    const current = document.activeElement instanceof HTMLElement ? els.indexOf(document.activeElement) : -1
+    const next = nextEnabledItemIndex(enabled, current, key)
+    if (next === -1) {
+        flyout.focus()
+        return
+    }
+    els[next]?.focus()
+}
+
+/** 二级子项激活（Enter/Space 显式激活防双跑）：run（内含收整个菜单 + 回焦触
+ *  发钮，带 preset 直建归宿主装配）；置灰项不可聚焦，防御性再判 */
+function activateSubmenuItem(target: HTMLElement): void {
+    const entry = openSubmenu.value
+    if (entry === null) return
+    const els = Array.from(submenuFlyoutEl()?.querySelectorAll<HTMLElement>('[data-dropdown-submenu-item]') ?? [])
+    const child = entry.children.filter((item): item is DropdownMenuItem => item !== 'separator')[els.indexOf(target)]
+    if (child !== undefined && !child.disabled) run(child)
 }
 
 /** 触发钮按键路由（内建钮与 #trigger 自绘钮共用）：↓ 开菜单（键盘开菜单入口），
@@ -247,10 +418,63 @@ async function onToggle(): Promise<void> {
     }
     void focusIntoMenu()
 }
+
+// ---- submenu 两段式条目（canvas-web-preset-submenu 工单 02）----
+
+/** 事件当前目标（▸ 钮元素，二级定位锚）；非 HTMLElement 防御性落 null */
+function eventTargetEl(event: MouseEvent): HTMLElement | null {
+    return event.currentTarget instanceof HTMLElement ? event.currentTarget : null
+}
+
+/**
+ * 二级浮层落位（两段式，主菜单弹层同款）：首帧锚「▸ 行右缘 + 间隙 / 顶对齐行
+ * 顶」（免测浮层高），渲染后按实际尺寸钳位——右缘放不下翻左（placeSubmenu-
+ * InViewport 纯函数有单测）；等待期间已换开/收起的竞态兜底不补钳位（浮层尺寸
+ * 量不到保留首帧锚点）。
+ */
+async function positionSubmenu(anchor: HTMLElement | null): Promise<void> {
+    const entry = openSubmenu.value
+    if (entry === null || anchor === null) return
+    const rect = anchor.getBoundingClientRect()
+    submenuPosition.value = { left: rect.right + SUBMENU_GAP_PX, top: rect.top, side: 'right' }
+    await nextTick()
+    if (openSubmenu.value !== entry) return
+    const flyout = submenuFlyoutEl()
+    const frect = flyout?.getBoundingClientRect()
+    if (flyout === null || frect === undefined || frect.width === 0) return
+    submenuPosition.value = placeSubmenuInViewport({
+        anchor: { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right },
+        flyoutWidth: frect.width,
+        flyoutHeight: frect.height,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+    })
+}
+
+/** ▸ 悬停开二级（门控：主体悬停不开、disabled 行不开；指针路径不动焦点——
+ *  焦点编排归键盘路径）。落位在开合态落定后进行（nextOpenSubmenu 单开换开） */
+function onSubmenuArrowEnter(event: MouseEvent, entry: DropdownSubmenuEntry): void {
+    if (entry.disabled === true) return
+    openSubmenu.value = nextOpenSubmenu(openSubmenu.value, { type: 'open', target: entry })
+    void positionSubmenu(eventTargetEl(event))
+}
+
+/** ▸ 点击翻转（已开收、未开开；悬停已开的场景点击 = 收） */
+function onSubmenuArrowClick(event: MouseEvent, entry: DropdownSubmenuEntry): void {
+    if (entry.disabled === true) return
+    openSubmenu.value = nextOpenSubmenu(openSubmenu.value, { type: 'toggle', target: entry })
+    void positionSubmenu(eventTargetEl(event))
+}
+
+/** 移出菜单收二级（spec 门控收路径）：容器含触发钮/菜单体/二级浮层，移出即收；
+ *  ▸→浮层的跨界移动由浮层 ::before 桥接命中区覆盖，不触发本处误收 */
+function onContainerLeave(): void {
+    openSubmenu.value = null
+}
 </script>
 
 <template>
-    <div ref="container" class="cn-dropdown">
+    <div ref="container" class="cn-dropdown" @mouseleave="onContainerLeave">
         <!-- 触发钮：缺省内建 ghost 钮；#trigger 受控插槽自绘（状态栏 % 读数段 /
              面板＋方钮，issues/05）——a11y 两属性由消费方写在自绘钮上 -->
         <slot
@@ -299,6 +523,80 @@ async function onToggle(): Promise<void> {
                     data-dropdown-separator
                     aria-hidden="true"
                 ></div>
+                <!-- 两段式一级行（canvas-web-preset-submenu 工单 02）：主体（直建
+                     命中区，与普通项同 data-dropdown-item 导航序）+ 右缘 ▸ 钮
+                     （aria-haspopup/aria-expanded，悬停/点击唤出二级） -->
+                <div
+                    v-else-if="isSubmenuEntry(entry)"
+                    class="cn-dropdown__submenu-host"
+                    data-dropdown-submenu-host
+                >
+                    <button
+                        type="button"
+                        role="menuitem"
+                        class="cn-dropdown__item cn-dropdown__submenu-main"
+                        data-dropdown-item
+                        tabindex="-1"
+                        :disabled="entry.disabled"
+                        :title="entry.title"
+                        v-bind="entry.dataAttrs"
+                        @click="run(entry)"
+                    >
+                        <span class="cn-dropdown__item-label">{{ entry.label }}</span>
+                        <span v-if="entry.shortcut" class="cn-dropdown__shortcut">{{ entry.shortcut }}</span>
+                    </button>
+                    <button
+                        type="button"
+                        class="cn-dropdown__submenu-arrow"
+                        data-dropdown-submenu-arrow
+                        tabindex="-1"
+                        :disabled="entry.disabled"
+                        :title="entry.title"
+                        aria-haspopup="menu"
+                        :aria-expanded="openSubmenu === entry"
+                        @click="onSubmenuArrowClick($event, entry)"
+                        @mouseenter="onSubmenuArrowEnter($event, entry)"
+                    >
+                        <span aria-hidden="true">▸</span>
+                    </button>
+                    <!-- 预设二级浮层：fixed 视口坐标（首帧锚行右缘，渲染后钳位翻
+                         左，见 positionSubmenu）；子项与主菜单项同款命中区样式 -->
+                    <div
+                        v-if="openSubmenu === entry"
+                        class="cn-dropdown__submenu"
+                        :class="{ 'cn-dropdown__submenu--left': submenuPosition.side === 'left' }"
+                        role="menu"
+                        :aria-label="entry.label"
+                        data-dropdown-submenu
+                        tabindex="-1"
+                        :style="{ left: `${submenuPosition.left}px`, top: `${submenuPosition.top}px` }"
+                    >
+                        <template v-for="(child, childIndex) in entry.children" :key="childIndex">
+                            <div
+                                v-if="child === 'separator'"
+                                class="cn-dropdown__separator"
+                                role="separator"
+                                data-dropdown-submenu-separator
+                                aria-hidden="true"
+                            ></div>
+                            <button
+                                v-else
+                                type="button"
+                                role="menuitem"
+                                class="cn-dropdown__item"
+                                data-dropdown-submenu-item
+                                tabindex="-1"
+                                :disabled="child.disabled"
+                                :title="child.title"
+                                v-bind="child.dataAttrs"
+                                @click="run(child)"
+                            >
+                                <span class="cn-dropdown__item-label">{{ child.label }}</span>
+                                <span v-if="child.shortcut" class="cn-dropdown__shortcut">{{ child.shortcut }}</span>
+                            </button>
+                        </template>
+                    </div>
+                </div>
                 <button
                     v-else
                     type="button"
@@ -432,5 +730,75 @@ async function onToggle(): Promise<void> {
     height: 1px;
     margin: 3px 6px;
     background: var(--cn-line);
+}
+
+/* 两段式一级行（工单 02）：主体命中区占满 + 右缘 ▸ 钮；主体沿用菜单项样式 */
+.cn-dropdown__submenu-host {
+    display: flex;
+    align-items: stretch;
+}
+
+.cn-dropdown__submenu-main {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* ▸ 钮：右缘唤出二级的可点击段（悬停开二级的主体悬停门控不影响本段） */
+.cn-dropdown__submenu-arrow {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--cn-muted);
+    font-size: 10px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.cn-dropdown__submenu-arrow:hover:not(:disabled) {
+    background: var(--cn-accent-soft);
+    color: var(--cn-accent);
+}
+
+.cn-dropdown__submenu-arrow:disabled {
+    color: var(--cn-muted);
+    cursor: not-allowed;
+}
+
+/* 二级浮层：fixed + 内联视口坐标（placeSubmenuInViewport 落位，右缘放不下翻
+   左挂 --left 类换桥接侧）；壳观感与主菜单同族，叠主菜单之上 */
+.cn-dropdown__submenu {
+    position: fixed;
+    z-index: 41;
+    min-width: 132px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 4px;
+    background: var(--cn-bg-elevated);
+    border: 1px solid var(--cn-line);
+    border-radius: 10px;
+    box-shadow: 0 12px 32px rgba(2, 6, 23, 0.55);
+}
+
+/* 跨界桥：▸→浮层的 6px 间隙补上命中区——跨界移动物仍落在浮层（容器 DOM 后代）
+   上，不触发容器 mouseleave 误收；翻左侧时桥换右缘 */
+.cn-dropdown__submenu::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -6px;
+    width: 6px;
+}
+
+.cn-dropdown__submenu--left::before {
+    left: auto;
+    right: -6px;
 }
 </style>
