@@ -88,6 +88,14 @@ export interface CreateGesture {
      * （G 快捷键 V1 空表语义原样）。
      */
     templateRowsPath?: string
+    /**
+     * 建层预设载荷（canvas-web-preset-submenu 工单 01，ADR 0021）：beginLayerCreate
+     * 时从 ui.armedCreatePreset 捕获（templateRowsPath 同门，会话内定死）——文本层
+     * 载荷命中 TEXT_PRESETS = 档位字号直接生效（不经新层样式槽）；图片层载荷命中
+     * RATIO_PRESETS = 比例钳橡皮筋与死区缺省盒（Shift 瞬时反转源 = 本生效档）。
+     * undefined = 普通武装（文本按槽、图片恒自由）。
+     */
+    preset?: string
     /** 起点场景坐标（两点正规化与死区判定基准） */
     startScene: Point
     /** 当前指针场景坐标 */
