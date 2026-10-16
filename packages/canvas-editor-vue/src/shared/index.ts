@@ -11,11 +11,15 @@
  * 编辑两域共用）及裸路径补全控件 usePathCompletion（rows-path-completion 工单
  * 02：复用同门 Popup/Anchor/applyCompletion，触发语义分轨——裸路径输入即弹）、
  * rowsPath 候选源组装 rowsPathCompletionSource（工单 03/04：「行数组」文案置入
- * 的公共合流点）与 schema 声明切片桥 useDataSourceSchema（工单 04 自 status-bar
+ * 的公共合流点）与点选器候选源组装 rowsPathPickerSource（rows-path-picker 工单
+ * 02：剪枝枚举件适配，供选择器 mode='rowsPath' 消费）与 schema 声明切片桥
+ * useDataSourceSchema（工单 04 自 status-bar
  * 收口——状态栏读数段与建表表单两域共用）与字体清单注入缝 fontPicker（
  * edit-overlay-toolbar 工单 04 自属性面板域迁入——面板字体控件与编辑浮层工具条
  * 字体段两域共用）与字段权威写 mergeKey 约定 mergeKey（面板与工具条双入口同键
- * 合并的格式单点）与资源表达式级联路径选择器 ExpressionPathPicker + `{{}}` 拆装
+ * 合并的格式单点）与资源表达式级联路径选择器 ExpressionPathPicker + 候选模型
+ * pathPickerModel（rows-path-picker 工单 02 起带终点形态分叉 mode：resource
+ * 叶子终点缺省 / rowsPath 数组终点，可激活/可下钻判定矩阵归模型）+ `{{}}` 拆装
  * 纯函数 resourceTemplate + 弹层视口定位纯函数 popupPosition（resource-expression-
  * single-ref 工单 05/06：资源内容字段的作者面 = 纯菜单点选，垂直翻转/钳制定位
  * 两浮层与选择器菜单共用）。
@@ -54,9 +58,9 @@ export {
 export { useExpressionCompletion, type ExpressionCompletionState } from './useExpressionCompletion'
 export { expressionDiagnosticHint, useExpressionDiagnostics } from './useExpressionDiagnostics'
 export { usePathCompletion } from './usePathCompletion'
-export { rowsPathCompletionSource } from './rowsPathCompletionSource'
+export { rowsPathCompletionSource, rowsPathPickerSource } from './rowsPathCompletionSource'
 export { attachResourceTemplate, stripResourceTemplate } from './resourceTemplate'
-export { pathPickerEntries, type PathPickerEntry } from './pathPickerModel'
+export { pathPickerEntries, type PathPickerEntry, type PathPickerMode } from './pathPickerModel'
 export {
     placePopupInViewport,
     POPUP_GAP,

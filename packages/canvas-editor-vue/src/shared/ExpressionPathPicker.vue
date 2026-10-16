@@ -7,7 +7,13 @@
  * - 契约：v-model 直接绑**裸点路径**（`{{}}` 拆装归字段控件壳，见
  *   resourceTemplate.ts）；`source` 即面板同款 CompletionSource（逐层
  *   `source(已积累路径)` 取候选，`.` 尾点下钻同款调用）；候选按 kind === 'path'
- *   过滤（pathPickerModel——函数桶不进资源面）。
+ *   过滤（pathPickerModel——函数桶不进选择器面）。
+ * - 终点形态分叉（rows-path-picker 工单 02，spec D3/D6）：mode 缺省 'resource'
+ *   = 叶子终点（资源面现状零改动——探层推断下钻/提交）；'rowsPath' = 数组终点
+ *   （仅数组可激活提交、对象只可下钻，判定矩阵归 pathPickerModel；数组徽标
+ *   「行数组」；空层提示「声明中未发现行数组，请检查数据源绑定」）。级联壳/
+ *   键盘导航/浮层定位两 mode 全共享；激活提交契约不变（update:modelValue +
+ *   change 同发，value = 所选 path，包壳/写管线归接线工单）。
  * - 呈现：只读展示框（modelValue 原文回显，存量违例原样透传展示——拆装壳把
  *   拆不动的原文直接传入）+ 级联菜单钮。菜单为单面板逐层下钻（层级栈 + 返回
  *   行），object 节点点选下钻（可下钻判定 = 尾点取层非空，pathPickerModel），
@@ -28,8 +34,9 @@
 import { computed, nextTick, onScopeDispose, ref, watch } from 'vue'
 
 import type { CompletionSource } from './completion'
-import { pathPickerEntries, type PathPickerEntry } from './pathPickerModel'
+import { pathPickerEntries, type PathPickerEntry, type PathPickerMode } from './pathPickerModel'
 import { placePopupInViewport } from './popupPosition'
+import { ROWS_PATH_ARRAY_BADGE } from './rowsPathCompletionSource'
 
 const props = defineProps<{
     /** 裸点路径原文（壳已拆 `{{}}`；存量违例拆不动时壳原样透传，只读回显） */
@@ -42,6 +49,12 @@ const props = defineProps<{
     ariaLabel?: string
     /** 空值占位文案 */
     placeholder?: string
+    /**
+     * 终点形态（rows-path-picker 工单 02，spec D3）：'resource' = 叶子终点
+     * （缺省，资源面既有调用零改动）；'rowsPath' = 数组终点（仅数组可选、
+     * 对象只下钻、空态提示行）。判定矩阵归 pathPickerModel，壳全共享。
+     */
+    mode?: PathPickerMode
 }>()
 
 const emit = defineEmits<{ 'update:modelValue': [path: string]; change: [path: string] }>()
@@ -71,8 +84,22 @@ const backLabel = computed(() => {
     return parent === undefined ? '' : parent.label === '' ? '根级字段' : parent.label
 })
 
+/** 空层提示文案（spec D6）：rowsPath 面 = 无可达行数组的显式引导；resource 面 = 既有弱提示 */
+const emptyText = computed(() =>
+    props.mode === 'rowsPath' ? '声明中未发现行数组，请检查数据源绑定' : '无可选字段',
+)
+
+/** 徽标文案：rowsPath 面数组终点标「行数组」（spec D3，展示词汇单点共享）；其余 type 原文透传 */
+function badgeText(type: string): string {
+    return props.mode === 'rowsPath' && type === 'array' ? ROWS_PATH_ARRAY_BADGE : type
+}
+
 function buildLevel(prefix: string, label: string): PickerLevel {
-    return { prefix, label, entries: props.source === null ? [] : pathPickerEntries(props.source, prefix) }
+    return {
+        prefix,
+        label,
+        entries: props.source === null ? [] : pathPickerEntries(props.source, prefix, props.mode),
+    }
 }
 
 function openMenu(): void {
@@ -119,12 +146,13 @@ function levelUp(): void {
     void nextTick(reposition)
 }
 
-/** 点选分派：可下钻 = 进入下一层；叶子 = 提交（update:modelValue + change 同发） */
+/** 点选分派：可下钻 = 进入下一层；可激活终点 = 提交（update:modelValue + change 同发）。两 mode 判定矩阵归 pathPickerModel */
 function activate(entry: PathPickerEntry): void {
     if (entry.drillable) {
         drillDown(entry)
         return
     }
+    if (!entry.activatable) return // rowsPath 死端防御（剪枝语义下对象恒可下钻，不出现）
     emit('update:modelValue', entry.path)
     emit('change', entry.path)
     closeMenu()
@@ -288,11 +316,11 @@ onScopeDispose(detachListeners, true)
                     <span aria-hidden="true">‹</span>
                     <span class="truncate font-mono">{{ backLabel }}</span>
                 </button>
-                <!-- 空层提示（声明为空/行 schema 未解析）：非交互弱提示行 -->
+                <!-- 空层提示（声明为空/无可达行数组/行 schema 未解析）：非交互弱提示行 -->
                 <div
                     v-if="currentLevel.entries.length === 0"
                     class="cn-pathpicker__empty px-2 py-2 text-cn-muted"
-                >无可选字段</div>
+                >{{ emptyText }}</div>
                 <button
                     v-for="(entry, index) in currentLevel.entries"
                     :key="`${entry.path}`"
@@ -309,7 +337,7 @@ onScopeDispose(detachListeners, true)
                     <span
                         v-if="entry.item.type"
                         class="shrink-0 rounded-sm bg-cn-field px-1 py-0.5 text-[9px] leading-none text-cn-muted"
-                    >{{ entry.item.type }}</span>
+                    >{{ badgeText(entry.item.type) }}</span>
                     <span
                         v-if="entry.item.description ?? entry.item.title"
                         class="min-w-0 flex-1 truncate text-[10px] leading-none text-cn-muted"

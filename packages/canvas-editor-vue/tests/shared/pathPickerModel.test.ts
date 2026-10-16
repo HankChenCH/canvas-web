@@ -3,11 +3,15 @@
  * kind === 'path' 过滤（函数桶不进资源面）+ 可下钻判定。桩源覆盖枚举器在
  * 选择器调用形态（空串头部层 / 尾点下钻层）下不产函数桶的缝隙——过滤契约
  * 本身用显式 kind 桩钉住（ADR 0020：资源面按显式分桶判别，不用启发式）。
+ *
+ * 终点形态分叉（rows-path-picker 工单 02）：mode 决定可激活/可下钻判定矩阵
+ * ——resource 探层推断（现状缺省零改动）；rowsPath 按终点形态标记判定（候选
+ * 由源预剪枝，不滤数组条目、不做探层推断）。
  */
 import { describe, expect, it } from 'vitest'
 
 import type { CompletionItem, CompletionSource } from '../../src/shared/completion'
-import { pathPickerEntries } from '../../src/shared/pathPickerModel'
+import { pathPickerEntries, type PathPickerEntry } from '../../src/shared/pathPickerModel'
 
 /** 桩源：手工清单（调用签名 → 候选），带 kind 维度全形态 */
 function stubSource(levels: Record<string, readonly CompletionItem[]>): CompletionSource {
@@ -68,5 +72,51 @@ describe('pathPickerEntries：取层与可下钻判定', () => {
 
     it('候选源 null 态（降级/语法错）= 空层不抛', () => {
         expect(pathPickerEntries(stubSource({}), 'nope.')).toEqual([])
+    })
+})
+
+/** 条目矩阵视图：[path, activatable, drillable] */
+function matrix(entries: readonly PathPickerEntry[]): Array<[string, boolean, boolean]> {
+    return entries.map((entry) => [entry.path, entry.activatable, entry.drillable])
+}
+
+describe('pathPickerEntries：终点形态分叉（rows-path-picker 工单 02，spec D3）', () => {
+    // rowsPath 形态桩源：候选由源预剪枝（通往行数组的路径），数组终点带 type
+    // 'array' 语义标记（rowsPathPickerSource 同款契约），对象中间站无标记。
+    // meta 故意探层为空（'meta.' 无键）——钉「rowsPath 按标记判定、不做探层推断」
+    const forkedSource = stubSource({
+        '': [
+            { path: 'order', segment: 'order', kind: 'path' },
+            { path: 'meta', segment: 'meta', kind: 'path' },
+            { path: 'rows', segment: 'rows', kind: 'path', type: 'array' },
+        ],
+        'order.': [{ path: 'order.items', segment: 'items', kind: 'path', type: 'array' }],
+        // meta./rows. 无键：探层空（前者是剪枝异常形态，后者是数组不展开）
+    })
+
+    it('缺省 mode = resource：现状矩阵（探层推断，数组收敛为叶子）零改动', () => {
+        expect(matrix(pathPickerEntries(forkedSource, ''))).toEqual([
+            ['order', false, true],
+            ['meta', true, false],
+            ['rows', true, false],
+        ])
+    })
+
+    it('resource 显式传参与缺省同款', () => {
+        expect(pathPickerEntries(forkedSource, '', 'resource')).toEqual(pathPickerEntries(forkedSource, ''))
+    })
+
+    it('rowsPath：矩阵按终点形态标记——数组可激活不可下钻（不滤数组条目）、对象只可下钻（探层空也下钻）', () => {
+        expect(matrix(pathPickerEntries(forkedSource, '', 'rowsPath'))).toEqual([
+            ['order', false, true],
+            ['meta', false, true],
+            ['rows', true, false],
+        ])
+    })
+
+    it('rowsPath：下钻层取数同款（尾点形态），子层数组终点可激活', () => {
+        expect(matrix(pathPickerEntries(forkedSource, 'order.', 'rowsPath'))).toEqual([
+            ['order.items', true, false],
+        ])
     })
 })

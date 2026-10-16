@@ -18,6 +18,7 @@ import { parseExpressionSchema, type ExpressionSchemaNode } from '@hankchen/canv
 import ExpressionPathPicker from '../../src/shared/ExpressionPathPicker.vue'
 import type { CompletionSource } from '../../src/shared/completion'
 import { expressionCompletionSource } from '../../src/shared/expressionContext'
+import { rowsPathPickerSource } from '../../src/shared/rowsPathCompletionSource'
 
 const RAW_SCHEMA = {
     type: 'object',
@@ -52,7 +53,13 @@ const wrappers: VueWrapper[] = []
 /** 挂载统一入册（afterEach 卸载再清 body——Teleport 残留树不 Clean 会炸后续 patch）；
  *  source 必传（null = 未绑声明的只读面是显式被测形态） */
 const mountPicker = (
-    props: { source: CompletionSource | null } & Partial<{ modelValue: string; disabled: boolean; placeholder: string; ariaLabel: string }>,
+    props: { source: CompletionSource | null } & Partial<{
+        modelValue: string
+        disabled: boolean
+        placeholder: string
+        ariaLabel: string
+        mode: 'resource' | 'rowsPath'
+    }>,
 ): VueWrapper => {
     const wrapper = mount(ExpressionPathPicker, {
         props: { modelValue: '', ...props },
@@ -214,6 +221,113 @@ describe('收起三路与空层', () => {
         await openMenu(wrapper)
         expect(menuEl()).not.toBeNull()
         expect(document.body.querySelector('.cn-pathpicker__empty')?.textContent).toBe('无可选字段')
+    })
+})
+
+describe('rowsPath mode 终点形态分叉（rows-path-picker 工单 02，spec D3/D6）', () => {
+    // 真实链路源：rowsPathPickerSource（内核剪枝枚举件适配）——orderNo 标量与
+    // meta（无可达数组）被 D5 剪枝不出现；order 为对象中间站（只下钻），rows /
+    // order.items 为数组终点（可激活）
+    const rowsSource = rowsPathPickerSource(
+        schemaOf({
+            type: 'object',
+            properties: {
+                orderNo: { type: 'string' },
+                meta: { type: 'object', properties: { author: { type: 'string' } } },
+                rows: {
+                    type: 'array',
+                    description: '数据行',
+                    items: { type: 'object', properties: { id: { type: 'string' } } },
+                },
+                order: {
+                    type: 'object',
+                    properties: {
+                        items: {
+                            type: 'array',
+                            items: { type: 'object', properties: { id: { type: 'string' } } },
+                        },
+                    },
+                },
+            },
+        }),
+    )!
+
+    it('头部层 = 剪枝候选；数组带「行数组」徽标不可下钻、对象带下钻指示', async () => {
+        const wrapper = mountPicker({ modelValue: '', source: rowsSource, mode: 'rowsPath' })
+        await openMenu(wrapper)
+        expect(optionSegments()).toEqual(['rows', 'order'])
+        const options = optionEls()
+        expect(options[0]!.querySelector('.cn-pathpicker__drill')).toBeNull()
+        expect(options[0]!.textContent).toContain('行数组')
+        expect(options[1]!.querySelector('.cn-pathpicker__drill')).not.toBeNull()
+    })
+
+    it('点对象不可激活只下钻：不发表单事件，进子层', async () => {
+        const wrapper = mountPicker({ modelValue: '', source: rowsSource, mode: 'rowsPath' })
+        await openMenu(wrapper)
+        await optionEls()[1]!.click() // order（对象中间站）
+        await nextTick()
+        expect(optionSegments()).toEqual(['items'])
+        expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+        expect(wrapper.emitted('change')).toBeUndefined()
+    })
+
+    it('点数组终点发值并收起：update:modelValue + change 同发，value = 所选 path', async () => {
+        const wrapper = mountPicker({ modelValue: '', source: rowsSource, mode: 'rowsPath' })
+        await openMenu(wrapper)
+        await optionEls()[0]!.click() // rows（数组终点）
+        await nextTick()
+        expect(wrapper.emitted('update:modelValue')!).toEqual([['rows']])
+        expect(wrapper.emitted('change')!).toEqual([['rows']])
+        expect(menuEl()).toBeNull()
+    })
+
+    it('下钻后点子层数组提交全路径', async () => {
+        const wrapper = mountPicker({ modelValue: '', source: rowsSource, mode: 'rowsPath' })
+        await openMenu(wrapper)
+        await optionEls()[1]!.click() // order 下钻
+        await nextTick()
+        await optionEls()[0]!.click() // order.items（数组终点）
+        await nextTick()
+        expect(wrapper.emitted('update:modelValue')!).toEqual([['order.items']])
+        expect(wrapper.emitted('change')!).toEqual([['order.items']])
+    })
+
+    it('空态（spec D6）：无可达行数组 → 显式提示行，回显框与菜单钮照常', async () => {
+        const emptySource = rowsPathPickerSource(
+            schemaOf({ type: 'object', properties: { orderNo: { type: 'string' } } }),
+        )!
+        const wrapper = mountPicker({ modelValue: '', source: emptySource, mode: 'rowsPath' })
+        expect(wrapper.find('.cn-pathpicker__toggle').exists()).toBe(true)
+        await openMenu(wrapper)
+        expect(menuEl()).not.toBeNull()
+        expect(document.body.querySelector('.cn-pathpicker__empty')?.textContent).toBe(
+            '声明中未发现行数组，请检查数据源绑定',
+        )
+    })
+
+    it('键盘既有行为回归：↓+Enter 下钻对象 → Enter 提交子层数组终点；Esc 收起回焦', async () => {
+        const wrapper = mountPicker({ modelValue: '', source: rowsSource, mode: 'rowsPath' })
+        await openMenu(wrapper)
+        const menu = menuEl()!
+        // 初始高亮 rows（数组终点）：先 ↓ 到 order（对象）→ Enter 下钻（矩阵：对象可下钻）
+        menu.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+        await nextTick()
+        menu.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+        await nextTick()
+        expect(optionSegments()).toEqual(['items'])
+        // 子层唯一条目 items（数组终点）→ Enter 提交
+        menuEl()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+        await nextTick()
+        expect(wrapper.emitted('update:modelValue')!).toEqual([['order.items']])
+        expect(menuEl()).toBeNull()
+
+        // Esc 收起回焦触发钮（壳共享面回归）
+        await openMenu(wrapper)
+        menuEl()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+        await nextTick()
+        expect(menuEl()).toBeNull()
+        expect(document.activeElement).toBe(wrapper.find('.cn-pathpicker__toggle').element)
     })
 })
 
