@@ -9,12 +9,14 @@
  * 面板＋经 #trigger/#body 受控插槽迁移消费——issues/05）与表达式补全五件（数据
  * 契约/锚点测量/浮层控件/上下文判定与候选源适配——属性面板与画布文本
  * 编辑两域共用）及裸路径补全控件 usePathCompletion（rows-path-completion 工单
- * 02：复用同门 Popup/Anchor/applyCompletion，触发语义分轨——裸路径输入即弹）、
+ * 02：复用同门 Popup/Anchor/applyCompletion，触发语义分轨——裸路径输入即弹；
+ * rows-path-picker 工单 04 起两入口换装点选器后零消费方，退役归工单 05）、
  * rowsPath 候选源组装 rowsPathCompletionSource（工单 03/04：「行数组」文案置入
- * 的公共合流点）与点选器候选源组装 rowsPathPickerSource（rows-path-picker 工单
- * 02：剪枝枚举件适配，供选择器 mode='rowsPath' 消费）与 schema 声明切片桥
- * useDataSourceSchema（工单 04 自 status-bar
- * 收口——状态栏读数段与建表表单两域共用）与字体清单注入缝 fontPicker（
+ * 的公共合流点；同上随换装零消费方，退役归工单 05）与点选器候选源组装
+ * rowsPathPickerSource（rows-path-picker 工单 02：剪枝枚举件适配，供选择器
+ * mode='rowsPath' 消费——工单 04 起建表表单与右键轻表单两入口同源）与 schema
+ * 声明切片桥 useDataSourceSchema（工单 04 自 status-bar
+ * 收口——状态栏读数段、建表表单与右键菜单门态多域共用）与字体清单注入缝 fontPicker（
  * edit-overlay-toolbar 工单 04 自属性面板域迁入——面板字体控件与编辑浮层工具条
  * 字体段两域共用）与字段权威写 mergeKey 约定 mergeKey（面板与工具条双入口同键
  * 合并的格式单点）与资源表达式级联路径选择器 ExpressionPathPicker + 候选模型
@@ -70,7 +72,7 @@ export {
 } from './popupPosition'
 export { useHistory, type HistoryAvailability } from './useHistory'
 export { useSelection } from './useSelection'
-export { useDataSourceSchema, useDataSourceSchemaRejection } from './useDataSourceSchema'
+export { DATA_SOURCE_GATE_HINT, useDataSourceSchema, useDataSourceSchemaRejection } from './useDataSourceSchema'
 export { useShortcuts } from './useShortcuts'
 export { useShortcutsHelp, type ShortcutsHelp } from './useShortcutsHelp'
 export { useTransientFeedback, type TransientFeedback } from './useTransientFeedback'

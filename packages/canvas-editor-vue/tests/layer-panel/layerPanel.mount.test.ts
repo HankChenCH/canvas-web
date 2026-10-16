@@ -712,25 +712,76 @@ describe('LayerPanel：显示/隐藏（工单 10）', () => {
 
 // ---- 模板创作（spec §2.1/§2.2/§2.5）：菜单建模板表 + 模板态大纲操作面 ----
 
-describe('LayerPanel：模板表创建菜单（template-table-drag-create 工单 02：确认 = 武装）', () => {
-    it('模板表经菜单表单确认：rowsPath 必填（空串就地拦）→ 武装 + 关菜单 + 瞬时提示', async () => {
+/** 载荷形态 schema（rows-path-picker 工单 04 门态/点选面）：orderNo 标量与无可达
+ *  数组的对象被 D5 剪枝不出候选、order 对象下钻、items 行数组终点 */
+const RAW_SCHEMA = {
+    type: 'object',
+    properties: {
+        orderNo: { type: 'string' },
+        order: {
+            type: 'object',
+            properties: {
+                items: {
+                    type: 'array',
+                    items: { type: 'object', properties: { name: { type: 'string' } } },
+                },
+            },
+        },
+    },
+}
+
+/** 级联浮层经 Teleport 挂 body：选项绕过 wrapper 直接查 document */
+const pickerOptionEls = (): HTMLElement[] =>
+    Array.from(document.body.querySelectorAll<HTMLElement>('.cn-pathpicker__option'))
+const pickerOptionSegments = (): string[] =>
+    pickerOptionEls().map((option) => option.querySelector('.cn-pathpicker__segment')?.textContent ?? '')
+
+describe('LayerPanel：模板表创建菜单（rows-path-picker 工单 04：门态 + 点选确认 = 武装）', () => {
+    it('未绑 schema：模板表项整项置灰 + title「先绑定数据源」（D1 门态，不可发起）', async () => {
         const editor = makeEditor([])
         const wrapper = mount(LayerPanel, { props: { editor } })
 
         await wrapper.find('[data-add-menu]').trigger('click')
-        await wrapper.find('[data-add-layer="template-table"]').trigger('click')
+        const item = wrapper.find('[data-add-layer="template-table"]')
+        expect(item.attributes('disabled')).toBeDefined()
+        expect(item.attributes('title')).toBe('先绑定数据源')
+        wrapper.unmount()
+    })
+
+    it('模板表经菜单表单点选确认：数组终点落 confirm → 武装 + 关菜单 + 瞬时提示（流程面不变）', async () => {
+        const editor = makeEditor([])
+        editor.setDataSourceSchema(RAW_SCHEMA)
+        const wrapper = mount(LayerPanel, { props: { editor } })
+
+        await wrapper.find('[data-add-menu]').trigger('click')
+        const item = wrapper.find('[data-add-layer="template-table"]')
+        expect(item.attributes('disabled')).toBeUndefined()
+        await item.trigger('click')
         expect(wrapper.find('[data-template-rows-path]').exists()).toBe(true)
 
-        // 空串确认 → 就地标错、零武装零建层
-        await wrapper.find('[data-template-rows-path]').setValue('  ')
-        await wrapper.find('[data-template-confirm]').trigger('click')
-        expect(editor.store.doc!.layers).toHaveLength(0)
+        // 未选：确认禁用（D3 必填换门——禁用至选中数组，替代空串拦截）、点击零武装
+        const confirm = wrapper.find('[data-template-confirm]')
+        expect(confirm.attributes('disabled')).toBeDefined()
+        await confirm.trigger('click')
         expect(editor.store.ui.armedCreate).toBeNull()
-        expect(wrapper.find('[data-template-rows-path]').classes().some((c) => c.includes('border-cn-danger'))).toBe(true)
 
-        // 非空确认 → 武装（armedCreate + rowsPath 载荷）+ 关菜单 + 状态栏瞬时提示
+        // 级联点选（恒根起点 + D5 剪枝）：orderNo 标量不出候选，order 对象下钻 →
+        // items 数组终点；点选 pointerdown 不被下拉底座点外收连坐（浮层 portal 在
+        // 菜单容器外，浮层根 @pointerdown.stop 止住——菜单与表单留场）
+        await wrapper.find('.cn-pathpicker__toggle').trigger('click')
+        await flushPromises()
+        expect(pickerOptionSegments()).toEqual(['order'])
+        pickerOptionEls()[0]!.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }))
+        await flushPromises()
+        expect(wrapper.find('[data-template-rows-path]').exists()).toBe(true)
+        await pickerOptionEls()[0]!.click()
+        await flushPromises()
+        await pickerOptionEls()[0]!.click()
+        await flushPromises()
+        expect(wrapper.find('.cn-pathpicker__value').text()).toBe('order.items')
+
+        // 确认 → 武装（armedCreate + rowsPath 载荷）+ 关菜单 + 状态栏瞬时提示
         //（与四图层项武装提示同句）；文档零变化——落库归画拉 endCreate（工单 01 缝）
-        await wrapper.find('[data-template-rows-path]').setValue('order.items')
         await wrapper.find('[data-template-confirm]').trigger('click')
         expect(editor.store.ui.armedCreate).toBe('TableLayer')
         expect(editor.store.ui.armedCreateRowsPath).toBe('order.items')

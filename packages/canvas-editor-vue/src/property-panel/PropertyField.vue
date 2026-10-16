@@ -28,8 +28,8 @@
  *
  * 裸路径补全（rows-path-completion 工单 03，D6）：接线门随 rowsPath 换装退出本
  * 组件（rows-path-picker 工单 03）——rowsPath 字段改点选器控件后，面板内已无
- * 标记消费方；裸路径补全面只剩建表表单的独立接线（shared 直引 usePathCompletion，
- * 不经本组件，退役归手输缝清扫工单）。数据字段表达式浮层（useExpressionCompletion）
+ * 标记消费方；建表表单/右键轻表单亦随工单 04 换装点选器，usePathCompletion 已
+ * 零消费方（退役归手输缝清扫工单 05）。数据字段表达式浮层（useExpressionCompletion）
  * 零改动。
  *
  * 行解剖（面板布局优化，三种形态共用同一份控件分发）：

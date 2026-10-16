@@ -24,9 +24,10 @@
  * #body 受控插槽承载共享 rowsPath 表单（模板表项 keepsOpen 交换出表单体），开合/
  * 点外收/Esc 收/a11y/键盘导航全归底座；aside 是 overflow 滚动容器——底座弹层
  * fixed 定位天然逃出裁切（工具栏同款），旧「右缘对齐 + 遮罩」手搓随之退役。
- * 建表表单 rowsPath 补全（rows-path-completion 工单 04）：接线随共享组件
- * TemplateTableForm 内聚（本组件零补全态）——恒根起点直连、无 schema 静默不弹、
- * 候选态键位归浮层。
+ * 建表表单 rowsPath 点选器（rows-path-picker 工单 04）：换装面随共享组件
+ * TemplateTableForm 内聚（本组件零点选态）——恒根起点剪枝候选、确认禁用至选中
+ * 数组；模板表项以数据源声明为门（D1）：未绑 schema 整项置灰 + title「先绑定
+ * 数据源」，判定读 useDataSourceSchema 桥（store.ui.dataSourceSchema）。
  * 视觉沿用 .cn-props 主题命名空间（与属性面板同一套设计令牌）；行卡片化 +
  * 根层拖拽把手见 panel-theme.css 的 cn-layers 区块（工单 08）。
  *
@@ -54,6 +55,7 @@ import DropdownMenu from '../shared/DropdownMenu.vue'
 import type { DropdownMenuEntry } from '../shared/useDropdownMenu'
 import { ARM_LAYER_CREATE_HINT, detectShortcutPlatform, shortcutActionLabel } from '../shared/shortcutsHelp'
 import { useTransientFeedback } from '../shared/useTransientFeedback'
+import { useDataSourceSchema, DATA_SOURCE_GATE_HINT } from '../shared/useDataSourceSchema'
 import { PANEL_ADD_MENU, armLayerCreatePresetHint } from './addMenu'
 import TemplateTableForm from './TemplateTableForm.vue'
 import { isUpperHalf, useLayerPanel } from './useLayerPanel'
@@ -65,6 +67,10 @@ const lockHint = `解锁图层（${shortcutActionLabel('toggleLayerLock', detect
 const lockedDeleteHint = `图层已锁定（${shortcutActionLabel('toggleLayerLock', detectShortcutPlatform())} 解锁后可删除）`
 
 const panel = useLayerPanel(props.editor)
+
+/** schema 声明切片桥（shared 域）：模板表项门态判定源（rows-path-picker 工单 04，
+ *  D1——未绑 schema 不可发起建表） */
+const dataSourceSchema = useDataSourceSchema(props.editor)
 
 /** 扁平行：大纲树的渲染投影（深度缩进 + 组内序号 + 面板标签） */
 interface FlatRow {
@@ -95,11 +101,15 @@ const addMenuItems = computed<DropdownMenuEntry[]>(() =>
     templateFormOpen.value
         ? []
         : PANEL_ADD_MENU.map((entry): DropdownMenuEntry => {
-              // 模板表项 keepsOpen 交换出表单体（template-table-drag-create 工单 02 特例）
+              // 模板表项 keepsOpen 交换出表单体（template-table-drag-create 工单 02 特例）；
+              // 声明为门（rows-path-picker 工单 04，D1）：未绑 schema 整项置灰不可发起，
+              // title 取门提示单点（右键转换项同源），底座跳过置灰项导航、disabled 不触发 run
               if (entry.kind === 'template-table') {
+                  const gated = dataSourceSchema.value === null
                   return {
                       label: entry.label,
-                      title: entry.title,
+                      title: gated ? DATA_SOURCE_GATE_HINT : entry.title,
+                      disabled: gated,
                       dataAttrs: { 'data-add-layer': 'template-table' },
                       keepsOpen: true,
                       run: () => {

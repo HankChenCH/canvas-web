@@ -19,6 +19,10 @@
  * - 关闭时机：执行任一动作、画布 pointerdown（表面组件转发 close）、Escape
  *   （表面组件转发）。菜单根拦截 pointerdown 冒泡（点菜单项不触发画布点选）与
  *   contextmenu（菜单上右键不换目标重开）。⌥⌘C/V 键位随注册表自带，本组件零键位代码。
+ * - 转为模板表（rows-path-picker 工单 04）：入口以数据源声明为门（D1——未绑
+ *   schema 整项置灰 + title「先绑定数据源」）；轻表单裸输入框换装 rowsPath mode
+ *   级联点选器（恒根起点剪枝候选，确认钮禁用至选中数组），确认 →
+ *   convertTableToTemplate 照旧（D7 管线不动）。
  */
 import { computed, nextTick, ref } from 'vue'
 
@@ -26,6 +30,9 @@ import { isRootLayerPath, rootLayerOf, type EditorSession, type LayerPath } from
 
 import { useSelection } from '../shared/useSelection'
 import { detectShortcutPlatform, shortcutActionLabel } from '../shared/shortcutsHelp'
+import { useDataSourceSchema, DATA_SOURCE_GATE_HINT } from '../shared/useDataSourceSchema'
+import { rowsPathPickerSource } from '../shared/rowsPathCompletionSource'
+import ExpressionPathPicker from '../shared/ExpressionPathPicker.vue'
 
 const props = defineProps<{ editor: EditorSession }>()
 
@@ -103,32 +110,52 @@ const canConvertToTemplate = computed(() => {
     return last !== undefined && last.cells.length > 0
 })
 
+// ---- 转为模板表的门态与轻表单点选源（rows-path-picker 工单 04，spec D1/D3） ----
+
+/**
+ * schema 声明切片桥（shared 域）：转换项门态（D1——未绑 schema 不可发起，
+ * 整项置灰 + 悬停提示「先绑定数据源」）与轻表单候选源同源。
+ */
+const dataSourceSchema = useDataSourceSchema(props.editor)
+
+/** 轻表单候选源：恒根起点直连（转换恒落根层表，不经起点判别件），D5 剪枝候选 */
+const convertPickerSource = computed(() => rowsPathPickerSource(dataSourceSchema.value))
+
 const convertHint = computed(() => {
     const layer = selectedRootLayer.value
     if (!layer || layer.type !== 'TableLayer') return ''
     return `模板取自末行，其余 ${Math.max(layer.rows.length - 1, 0)} 行将移除（可撤销）`
 })
 
-// ---- 转为模板表的轻表单态（spec §2.3 C1：确认与 rowsPath 输入一个交互点） ----
+/**
+ * 转换项 title（spec §2.5「置灰 + title」统一先例）：门态（D1——未绑 schema 不可
+ * 发起）压过可用态说明，其后回落空表/空末行分轨。
+ */
+const toTemplateTitle = computed(() => {
+    if (dataSourceSchema.value === null) return DATA_SOURCE_GATE_HINT
+    if (canConvertToTemplate.value) return convertHint.value
+    const layer = selectedRootLayer.value
+    return layer !== null && layer.type === 'TableLayer' && layer.rows.length === 0
+        ? '空表无可转换行'
+        : '末行为空——先为末行加格'
+})
+
+// ---- 转为模板表的轻表单态（spec §2.3 C1：确认与 rowsPath 点选一个交互点） ----
 
 const convertFormOpen = ref(false)
+/** 点选值（'' = 未选）：确认钮禁用至选中数组（D3 必填语义替代空串拦截） */
 const convertRowsPath = ref('')
-const convertRowsPathInvalid = ref(false)
 
 function openConvertForm(): void {
     convertFormOpen.value = true
     convertRowsPath.value = ''
-    convertRowsPathInvalid.value = false
 }
 
 function confirmConvert(): void {
     const tablePath = selectionTablePath()
-    const rowsPath = convertRowsPath.value.trim()
-    if (!tablePath || rowsPath === '') {
-        convertRowsPathInvalid.value = true
-        return
-    }
-    props.editor.convertTableToTemplate(tablePath, rowsPath)
+    // 死端防御（确认钮 disabled 同语义）：无表路径/未选不转换
+    if (!tablePath || convertRowsPath.value === '') return
+    props.editor.convertTableToTemplate(tablePath, convertRowsPath.value)
     close()
 }
 
@@ -230,22 +257,20 @@ const items = computed<MenuItem[]>(() => [
                   },
               } satisfies MenuItem,
           ]
-        : selectedRootLayer.value?.type === 'TableLayer'
-          ? [
-                {
-                    key: 'to-template',
-                    label: '转为模板表…',
-                    enabled: canConvertToTemplate.value,
-                    title: canConvertToTemplate.value
-                        ? convertHint.value
-                        : (selectedRootLayer.value.rows.length === 0
-                            ? '空表无可转换行'
-                            : '末行为空——先为末行加格'),
-                    keepsOpen: true,
-                    run: () => openConvertForm(),
-                } satisfies MenuItem,
-            ]
-          : []),
+          : selectedRootLayer.value?.type === 'TableLayer'
+            ? [
+                  {
+                      key: 'to-template',
+                      label: '转为模板表…',
+                      // 声明为门（rows-path-picker 工单 04，D1）：未绑 schema 整项
+                      // 置灰不可发起（面板模板表项同缝）；title 分轨见 toTemplateTitle
+                      enabled: dataSourceSchema.value !== null && canConvertToTemplate.value,
+                      title: toTemplateTitle.value,
+                      keepsOpen: true,
+                      run: () => openConvertForm(),
+                  } satisfies MenuItem,
+              ]
+            : []),
     {
         key: 'delete',
         label: '删除',
@@ -285,7 +310,6 @@ function close(): void {
     open.value = false
     convertFormOpen.value = false
     convertRowsPath.value = ''
-    convertRowsPathInvalid.value = false
 }
 
 function run(item: MenuItem): void {
@@ -309,23 +333,26 @@ defineExpose({ openAt, close })
         @pointerdown.stop
         @contextmenu.prevent
     >
-        <!-- 转为模板表的轻表单视图（spec §2.3 C1）：rowsPath 必填 + 确认/取消 -->
+        <!-- 转为模板表的轻表单视图（spec §2.3 C1；rows-path-picker 工单 04 换装：
+             裸输入框 → rowsPath mode 级联点选器，恒根起点剪枝候选，确认钮禁用至
+             选中数组） -->
         <div v-if="convertFormOpen" class="cn-context-menu__form">
             <p class="cn-context-menu__hint">{{ convertHint }}</p>
-            <input
+            <ExpressionPathPicker
                 v-model="convertRowsPath"
                 data-convert-rows-path
-                type="text"
-                placeholder="数据行路径，如 order.items"
-                class="cn-context-menu__input"
-                :class="{ 'cn-context-menu__input--invalid': convertRowsPathInvalid }"
-                @keydown.enter.prevent="confirmConvert"
+                mode="rowsPath"
+                :source="convertPickerSource"
+                aria-label="取行路径"
+                placeholder="未选择行路径"
             />
-            <p v-if="convertRowsPathInvalid" class="cn-context-menu__hint cn-context-menu__hint--error">
-                rowsPath 必填
-            </p>
             <div class="cn-context-menu__form-actions">
-                <button type="button" class="cn-context-menu__item cn-context-menu__item--confirm" @click="confirmConvert">
+                <button
+                    type="button"
+                    class="cn-context-menu__item cn-context-menu__item--confirm"
+                    :disabled="convertRowsPath === ''"
+                    @click="confirmConvert"
+                >
                     确认转换
                 </button>
                 <button type="button" class="cn-context-menu__item" @click="close">取消</button>
@@ -350,13 +377,17 @@ defineExpose({ openAt, close })
 </template>
 
 <style scoped>
-/* 令牌与 panel-theme.css 同值：菜单自带主题（暗色检视面），不依赖宿主接线 */
+/* 令牌与 panel-theme.css 同值：菜单自带主题（暗色检视面），不依赖宿主接线。
+   --cn-field-line 为轻表单点选器展示框描边补位（rows-path-picker 工单 04——
+   点选器 tailwind 色面经宿主主题映射 var(--cn-field-line)，菜单壳原令牌族缺
+   此项）；浮层本体自带 .cn-props 命名空间，不依赖本壳 */
 .cn-context-menu {
     --cn-bg: #0b1220;
     --cn-bg-elevated: #101a2e;
     --cn-fg: #e6edf7;
     --cn-muted: #7c8ca5;
     --cn-line: #1e2a40;
+    --cn-field-line: #2a3a57;
     --cn-field: rgba(148, 163, 184, 0.07);
     --cn-accent: #38bdf8;
     --cn-accent-soft: rgba(56, 189, 248, 0.12);
@@ -402,13 +433,15 @@ defineExpose({ openAt, close })
     color: var(--cn-danger);
 }
 
-/* 转为模板表的轻表单（spec §2.3 C1）：说明行 + 必填输入 + 确认/取消 */
+/* 转为模板表的轻表单（spec §2.3 C1；工单 04 换装点选器）：说明行 + 点选器 +
+   确认/取消。min-width 240px 给级联展示框 + 菜单钮留位（openAt 打开时量测
+   钳位按实际尺寸，不受此值影响） */
 .cn-context-menu__form {
     display: flex;
     flex-direction: column;
     gap: 6px;
     padding: 4px;
-    min-width: 180px;
+    min-width: 240px;
 }
 
 .cn-context-menu__hint {
@@ -417,29 +450,6 @@ defineExpose({ openAt, close })
     color: var(--cn-muted);
     font-size: 11px;
     line-height: 1.5;
-}
-
-.cn-context-menu__hint--error {
-    color: var(--cn-danger);
-}
-
-.cn-context-menu__input {
-    padding: 5px 8px;
-    border: 1px solid var(--cn-line);
-    border-radius: 6px;
-    background: var(--cn-field);
-    color: var(--cn-fg);
-    font-size: 12px;
-    line-height: 1.4;
-    outline: none;
-}
-
-.cn-context-menu__input:focus {
-    border-color: var(--cn-accent);
-}
-
-.cn-context-menu__input--invalid {
-    border-color: var(--cn-danger);
 }
 
 .cn-context-menu__form-actions {
@@ -455,5 +465,10 @@ defineExpose({ openAt, close })
 .cn-context-menu__item--confirm {
     background: var(--cn-accent-soft);
     color: var(--cn-accent);
+}
+
+/* 确认钮禁用至选中数组（D3）：底色回中性，cursor 沿 .cn-context-menu__item:disabled */
+.cn-context-menu__item--confirm:disabled {
+    background: transparent;
 }
 </style>

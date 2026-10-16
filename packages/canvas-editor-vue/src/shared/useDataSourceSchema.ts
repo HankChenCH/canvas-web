@@ -1,4 +1,11 @@
 /**
+ * 数据源声明门提示（rows-path-picker 工单 04，spec D1）：未绑 schema 时建表面
+ * 菜单项的置灰悬停文案——面板「＋」菜单模板表项与右键「转为模板表」项两处门态
+ * 共用的展示词汇单点（「行数组」徽标同门先例，文案不进数据契约）。
+ */
+export const DATA_SOURCE_GATE_HINT = '先绑定数据源'
+
+/**
  * useDataSourceSchema / useDataSourceSchemaRejection：schema 声明切片的响应式桥
  * （shared 域——状态栏读数段与图层面板建表表单两域共用，rows-path-completion
  * 工单 04 自 status-bar 收口至此；与 useViewport 同款模式）。shallowRef 整体替换

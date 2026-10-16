@@ -26,7 +26,11 @@
  *   首帧量不到尺寸延一拍补量（既有浮层同语）。
  * - 收起：Esc（回焦触发钮）/点外（window pointerdown，容器包含判定吃掉「点
  *   触发钮收了又被 click 重开」时序——useDropdownMenu 同门）/Tab（原生序续走）/
- *   提交。开态才挂监听（先例 StatusBar.vue）。
+ *   提交。开态才挂监听（先例 StatusBar.vue）。浮层根 @pointerdown.stop：菜单经
+ *   Teleport 挂 body 后在宿主容器（下拉底座菜单体、面板 aside）之外——点选不
+ *   得触发宿主的 window 点外收连坐收起（ExpressionCompletionPopup 同缝先例，
+ *   rows-path-picker 工单 04 建表表单入下拉 body 消费面所必需）；自身点外收
+ *   判定含浮层本体（onWindowPointerDown 容器面），不受影响。
  * - 根元素自带 .cn-props 命名空间承载（浮层同 ExpressionCompletionPopup：portal
  *   后脱离面板 DOM 子树，靠根类名重建 --cn-* 令牌解析）；视觉沿 panel-theme
  *   令牌，几何以 tailwind utility 留在模板。
@@ -304,6 +308,7 @@ onScopeDispose(detachListeners, true)
                 :aria-label="ariaLabel === undefined ? '字段路径菜单' : `${ariaLabel} 字段路径菜单`"
                 tabindex="-1"
                 @keydown.stop="onMenuKeydown"
+                @pointerdown.stop
             >
                 <!-- 返回行（层级栈深度 > 0）：‹ 目的地（父路径/根级） -->
                 <button

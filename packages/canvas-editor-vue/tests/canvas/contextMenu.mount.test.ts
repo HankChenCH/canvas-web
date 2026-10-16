@@ -11,14 +11,33 @@
  *   平台 helper 直查注册表，文案不另抄键位）
  */
 import { describe, expect, it, beforeAll, afterAll, vi } from 'vitest'
+import { nextTick } from 'vue'
 import { mount } from '@vue/test-utils'
 
-import { EditorSession, type FrameScheduler, type Layer, type TextLayer } from '@hankchen/canvas-editor'
+import { EditorSession, type FrameScheduler, type Layer, type TableLayer, type TextLayer } from '@hankchen/canvas-editor'
 
 import ContextMenu from '../../src/canvas/ContextMenu.vue'
 import { cellLayer, rowLayer, rowTemplateLayer, tableLayer, textLayer } from '../../../canvas-editor/tests/support/fixtures'
 
 const nullScheduler: FrameScheduler = () => () => {}
+
+/** 载荷形态 schema（rows-path-picker 工单 04 门态/轻表单面）：order 对象下钻、
+ *  items 行数组终点、orderNo 标量（剪枝不出候选） */
+const RAW_SCHEMA = {
+    type: 'object',
+    properties: {
+        orderNo: { type: 'string' },
+        order: {
+            type: 'object',
+            properties: {
+                items: {
+                    type: 'array',
+                    items: { type: 'object', properties: { name: { type: 'string' } } },
+                },
+            },
+        },
+    },
+}
 
 function makeEditor(layers: readonly Layer[]): EditorSession {
     const editor = new EditorSession({ scheduleFrame: nullScheduler })
@@ -129,6 +148,7 @@ describe('ContextMenu：可用态裁剪（v1 单选 + 根层语义）', () => {
                 { shape: { width: 200, height: 60 } },
             ),
         ])
+        editor.setDataSourceSchema(RAW_SCHEMA) // 转换项以声明为门（rows-path-picker 工单 04，D1）
         editor.setSelection(['layers', 0, 'rows', 0])
         const wrapper = mountMenu(editor)
         await wrapper.vm.openAt(10, 10)
@@ -147,6 +167,7 @@ describe('ContextMenu：可用态裁剪（v1 单选 + 根层语义）', () => {
                 { shape: { width: 200, height: 60 } },
             ),
         ])
+        editor.setDataSourceSchema(RAW_SCHEMA)
         editor.setSelection(['layers', 0, 'rows', 0, 'cells', 0, 'content'])
         const wrapper = mountMenu(editor)
         await wrapper.vm.openAt(10, 10)
@@ -466,6 +487,94 @@ describe('ContextMenu：样式复制/粘贴（canvas-web-style-paste 工单 02�
         const copy = itemButtons(wrapper).find((b) => b.text() === '复制样式')!
         expect(copy.attributes('disabled')).toBeDefined()
         expect(copy.attributes('title')).toContain('行模板')
+        wrapper.unmount()
+    })
+})
+
+describe('ContextMenu：转为模板表门态与轻表单点选（rows-path-picker 工单 04，spec D1/D3/D7）', () => {
+    const v1Table = () => [
+        tableLayer(
+            [rowLayer([cellLayer(null, { shape: { width: 200, height: 60 } })], { shape: { width: 200, height: 60 } })],
+            { shape: { width: 200, height: 60 } },
+        ),
+    ]
+
+    it('未绑 schema：转为模板表项整项置灰 + title「先绑定数据源」（D1 不可发起）', async () => {
+        const editor = makeEditor(v1Table())
+        editor.setSelection(['layers', 0])
+        const wrapper = mountMenu(editor)
+        await wrapper.vm.openAt(10, 10)
+        const convert = itemButtons(wrapper).find((b) => b.text() === '转为模板表…')!
+        expect(convert.attributes('disabled')).toBeDefined()
+        expect(convert.attributes('title')).toBe('先绑定数据源')
+        wrapper.unmount()
+    })
+
+    it('已绑 schema：门开，可用态回落既有判定（末行有格 + 转换提示 title）', async () => {
+        const editor = makeEditor(v1Table())
+        editor.setDataSourceSchema(RAW_SCHEMA)
+        editor.setSelection(['layers', 0])
+        const wrapper = mountMenu(editor)
+        await wrapper.vm.openAt(10, 10)
+        const convert = itemButtons(wrapper).find((b) => b.text() === '转为模板表…')!
+        expect(convert.attributes('disabled')).toBeUndefined()
+        expect(convert.attributes('title')).toContain('模板取自末行')
+        wrapper.unmount()
+    })
+
+    it('轻表单无手输缝 + 未选确认禁用：点开表单零 input，确认项 disabled 不分发', async () => {
+        const editor = makeEditor(v1Table())
+        editor.setDataSourceSchema(RAW_SCHEMA)
+        editor.setSelection(['layers', 0])
+        const wrapper = mountMenu(editor)
+        await wrapper.vm.openAt(10, 10)
+        await itemButtons(wrapper).find((b) => b.text() === '转为模板表…')!.trigger('click')
+
+        // 轻表单视图：点选器根（data-convert-rows-path）在场、零文本输入缝
+        const picker = wrapper.find('[data-convert-rows-path]')
+        expect(picker.exists()).toBe(true)
+        expect(picker.find('input').exists()).toBe(false)
+        const confirm = wrapper.find('.cn-context-menu__item--confirm')
+        expect(confirm.attributes('disabled')).toBeDefined()
+
+        // 置灰防御：合成 click 直派也不转换（run 前置判定），菜单留场
+        await confirm.trigger('click')
+        expect((editor.store.doc!.layers[0] as { template: unknown }).template).toBeNull()
+        expect(wrapper.find('.cn-context-menu').exists()).toBe(true)
+        wrapper.unmount()
+    })
+
+    it('点选直转（D7 管线不动）：根起点剪枝候选 → 点数组终点 → 确认转换落 rowsPath 并关菜单', async () => {
+        const editor = makeEditor(v1Table())
+        editor.setDataSourceSchema(RAW_SCHEMA)
+        editor.setSelection(['layers', 0])
+        const wrapper = mountMenu(editor)
+        await wrapper.vm.openAt(10, 10)
+        await itemButtons(wrapper).find((b) => b.text() === '转为模板表…')!.trigger('click')
+
+        // 级联（恒根起点 + D5 剪枝）：头层只余通往行数组的路径（orderNo 标量不出）
+        await wrapper.find('.cn-pathpicker__toggle').trigger('click')
+        await nextTick()
+        const optionEls = () => Array.from(document.body.querySelectorAll<HTMLElement>('.cn-pathpicker__option'))
+        const segments = () =>
+            optionEls().map((option) => option.querySelector('.cn-pathpicker__segment')?.textContent ?? '')
+        expect(segments()).toEqual(['order'])
+        await optionEls()[0]!.click()
+        await nextTick()
+        await optionEls()[0]!.click() // order.items（数组终点）
+        await nextTick()
+        expect(wrapper.find('.cn-pathpicker__value').text()).toBe('order.items')
+
+        // 确认转换：convertTableToTemplate 照旧（末行实例化为模板、rowsPath 落库、一步历史）+ 关菜单
+        const confirm = wrapper.find('.cn-context-menu__item--confirm')
+        expect(confirm.attributes('disabled')).toBeUndefined()
+        await confirm.trigger('click')
+        const table = editor.store.doc!.layers[0] as TableLayer
+        expect(table.template).not.toBeNull()
+        expect(table.rowsPath).toBe('order.items')
+        expect(table.rows).toHaveLength(0)
+        expect(editor.store.history).toHaveLength(1)
+        expect(wrapper.find('.cn-context-menu').exists()).toBe(false)
         wrapper.unmount()
     })
 })
