@@ -532,3 +532,284 @@ describe('DropdownMenu：closed 事件（issues/05 面板＋表单态随收重�
         wrapper.unmount()
     })
 })
+
+// ---- submenu 两段式条目底座（canvas-web-preset-submenu 工单 02）----
+// 一级行两段式命中区：主体（直建）+ 右缘 ▸ 钮（预设二级浮层）。工单 03 面板
+// IA 消费本形态——主体 run = armLayerCreate(type)、子项 run = 带 preset 直建。
+
+/** 两段式 fixture（工单 03 面板同型：文本层 3 档含置灰档 + 图片层 2 档 + 普通项） */
+const SUBMENU_ITEMS: DropdownMenuEntry[] = [
+    {
+        kind: 'submenu',
+        label: '文本层',
+        shortcut: 'T',
+        title: '按新层样式直建',
+        dataAttrs: { 'data-add-layer': 'text' },
+        run: () => void runs.push('text'),
+        children: [
+            { label: '标题', shortcut: '40号', run: () => void runs.push('text-title') },
+            { label: '置灰档', title: '模板未配', disabled: true, run: () => void runs.push('text-disabled') },
+            { label: '正文', shortcut: '16号', run: () => void runs.push('text-body') },
+        ],
+    },
+    { label: '二维码层', dataAttrs: { 'data-add-layer': 'qr' }, run: () => void runs.push('qr') },
+    {
+        kind: 'submenu',
+        label: '图片层',
+        run: () => void runs.push('image'),
+        children: [
+            { label: '1:1', shortcut: '正方形', run: () => void runs.push('image-1-1') },
+            { label: '4:3', shortcut: '横向', run: () => void runs.push('image-4-3') },
+        ],
+    },
+]
+
+/** 两段式挂载（attachTo 进文档：悬停/焦点断言只对在档元素生效） */
+const mountSubmenu = (items: DropdownMenuEntry[] = SUBMENU_ITEMS) =>
+    mount(DropdownMenu, { props: { label: '新增', items }, attachTo: document.body })
+
+/** 开菜单并等焦点编排完成（键盘 describe 的 openByClick 同式，submenu 作用域复用） */
+const openSubmenuByClick = async (wrapper: ReturnType<typeof mountSubmenu>): Promise<void> => {
+    await wrapper.find('[data-dropdown-trigger]').trigger('click')
+    await flushPromises()
+}
+
+/** ▸ 钮列表（DOM 序 = 条目序中 submenu 形态的出场序） */
+const arrowEls = (wrapper: ReturnType<typeof mountSubmenu>): HTMLElement[] =>
+    Array.from(menuEl(wrapper)?.querySelectorAll('[data-dropdown-submenu-arrow]') ?? []) as HTMLElement[]
+
+/** 两段式行宿主列表 */
+const hostEls = (wrapper: ReturnType<typeof mountSubmenu>): HTMLElement[] =>
+    Array.from(menuEl(wrapper)?.querySelectorAll('[data-dropdown-submenu-host]') ?? []) as HTMLElement[]
+
+/** 二级浮层（单开不变量 → 至多一个；v-if 未渲染返回 undefined） */
+const flyoutEl = (wrapper: ReturnType<typeof mountSubmenu>): HTMLElement | undefined => {
+    const found = wrapper.find('[data-dropdown-submenu]')
+    return found.exists() ? (found.element as HTMLElement) : undefined
+}
+
+/** 二级子项列表（DOM 序，与 children 非 separator 条目对齐） */
+const subItemEls = (wrapper: ReturnType<typeof mountSubmenu>): HTMLElement[] =>
+    Array.from(flyoutEl(wrapper)?.querySelectorAll('[data-dropdown-submenu-item]') ?? []) as HTMLElement[]
+
+/** 悬停驱动（mouseenter 不冒泡，直接在目标上派发） */
+const hover = async (el: HTMLElement): Promise<void> => {
+    el.dispatchEvent(new MouseEvent('mouseenter'))
+    await flushPromises()
+}
+
+describe('DropdownMenu：submenu 两段式渲染与 a11y（工单 02）', () => {
+    it('两段式一级行：主体（label+shortcut 灰字）+ ▸ 钮（aria-haspopup/aria-expanded/tabindex=-1）；普通条目零两段结构', async () => {
+        const wrapper = mountSubmenu()
+        await openSubmenuByClick(wrapper)
+
+        expect(hostEls(wrapper)).toHaveLength(2)
+        expect(arrowEls(wrapper)).toHaveLength(2)
+        // 主体命中区与普通项同一导航序（[data-dropdown-item] = 两主体 + 二维码）
+        const mains = itemEls(wrapper)
+        expect(mains).toHaveLength(3)
+        expect(mains[0]?.textContent).toContain('文本层')
+        expect(mains[0]?.textContent).toContain('T')
+        expect(mains[1]?.textContent).toContain('二维码层')
+        // ▸ 钮 a11y 两属性（工单拍板）+ 可编程聚焦（收回归 ▸ 的前提）
+        const arrow = arrowEls(wrapper)[0] as HTMLElement
+        expect(arrow.getAttribute('aria-haspopup')).toBe('menu')
+        expect(arrow.getAttribute('aria-expanded')).toBe('false')
+        expect(arrow.getAttribute('tabindex')).toBe('-1')
+        wrapper.unmount()
+    })
+
+    it('▸ 点击开二级：flyout role=menu/aria-label、aria-expanded 翻 true、子项 role=menuitem + 灰字后缀；再点 ▸ 收（toggle）', async () => {
+        const wrapper = mountSubmenu()
+        await openSubmenuByClick(wrapper)
+        expect(flyoutEl(wrapper)).toBeUndefined()
+
+        const arrow = arrowEls(wrapper)[0] as HTMLElement
+        arrow.click()
+        await nextTick()
+        const flyout = flyoutEl(wrapper)
+        expect(flyout).toBeDefined()
+        expect(flyout?.getAttribute('role')).toBe('menu')
+        expect(flyout?.getAttribute('aria-label')).toBe('文本层')
+        expect(arrow.getAttribute('aria-expanded')).toBe('true')
+        // 子项：3 档、role=menuitem、灰字后缀、置灰档带 title
+        const children = subItemEls(wrapper)
+        expect(children).toHaveLength(3)
+        expect(children.every((el) => el.getAttribute('role') === 'menuitem')).toBe(true)
+        expect(children[0]?.textContent).toContain('标题')
+        expect(children[0]?.textContent).toContain('40号')
+        expect(children[1]?.hasAttribute('disabled')).toBe(true)
+        expect(children[1]?.getAttribute('title')).toBe('模板未配')
+
+        // 再点 ▸ 收（toggle 同行翻转）
+        arrow.click()
+        await nextTick()
+        expect(flyoutEl(wrapper)).toBeUndefined()
+        expect(arrow.getAttribute('aria-expanded')).toBe('false')
+        wrapper.unmount()
+    })
+
+    it('主体点击 = run + 收整个菜单（直建语义，不进二级）；dataAttrs 透传主体钮', async () => {
+        const wrapper = mountSubmenu()
+        await openSubmenuByClick(wrapper)
+        expect(wrapper.find('[data-add-layer="text"]').exists()).toBe(true)
+        expect(wrapper.find('[data-add-layer="qr"]').exists()).toBe(true)
+
+        ;(itemEls(wrapper)[0] as HTMLElement).click()
+        await nextTick()
+        expect(runs).toEqual(['text'])
+        expect(menuEl(wrapper)).toBeUndefined()
+        wrapper.unmount()
+    })
+})
+
+describe('DropdownMenu：submenu 悬停门控（工单 02）', () => {
+    it('主体悬停不开二级；▸ 悬停开；异行 ▸ 悬停换开（单开不变量）；移出菜单收二级', async () => {
+        const wrapper = mountSubmenu()
+        await openSubmenuByClick(wrapper)
+
+        // 主体悬停不开（保「点一级直达」干净）
+        await hover(itemEls(wrapper)[0] as HTMLElement)
+        expect(flyoutEl(wrapper)).toBeUndefined()
+
+        // ▸ 悬停开（指针路径不动焦点——焦点编排归键盘路径）
+        const arrowA = arrowEls(wrapper)[0] as HTMLElement
+        await hover(arrowA)
+        expect(flyoutEl(wrapper)).toBeDefined()
+        expect(flyoutEl(wrapper)?.getAttribute('aria-label')).toBe('文本层')
+        expect(arrowA.getAttribute('aria-expanded')).toBe('true')
+
+        // 换开：B 行 ▸ 悬停 → A 收 B 开（单开不变量）
+        const arrowB = arrowEls(wrapper)[1] as HTMLElement
+        await hover(arrowB)
+        expect(flyoutEl(wrapper)?.getAttribute('aria-label')).toBe('图片层')
+        expect(arrowA.getAttribute('aria-expanded')).toBe('false')
+        expect(arrowB.getAttribute('aria-expanded')).toBe('true')
+
+        // 移出菜单收二级（▸→浮层跨界由 ::before 桥接覆盖，容器 mouseleave 即真出界）
+        await wrapper.find('.cn-dropdown').trigger('mouseleave')
+        expect(flyoutEl(wrapper)).toBeUndefined()
+        expect(arrowB.getAttribute('aria-expanded')).toBe('false')
+        wrapper.unmount()
+    })
+
+    it('子项点击 = run + 收整个菜单（预设直建）；置灰子项点击不跑', async () => {
+        const wrapper = mountSubmenu()
+        await openSubmenuByClick(wrapper)
+        await hover(arrowEls(wrapper)[0] as HTMLElement)
+
+        subItemEls(wrapper)[2]?.click()
+        await nextTick()
+        expect(runs).toEqual(['text-body'])
+        expect(menuEl(wrapper)).toBeUndefined()
+        wrapper.unmount()
+    })
+
+    it('closed 事件随二级开合不受扰：菜单收起才发（二级收不发）', async () => {
+        const closed = vi.fn()
+        const wrapper = mount(DropdownMenu, { props: { label: '新增', items: SUBMENU_ITEMS, onClosed: closed } })
+        await wrapper.find('[data-dropdown-trigger]').trigger('click')
+        await flushPromises()
+        await hover(arrowEls(wrapper)[0] as HTMLElement)
+        await wrapper.find('.cn-dropdown').trigger('mouseleave')
+        expect(closed).not.toHaveBeenCalled()
+
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+        await nextTick()
+        expect(closed).toHaveBeenCalledTimes(1)
+        wrapper.unmount()
+    })
+})
+
+describe('DropdownMenu：二级浮层定位钳位翻左（工单 02）', () => {
+    /** 原型级 rect mock：▸ 钮/浮层按 fixture 落位，其余元素零矩形（jsdom 无布局） */
+    const mockRects = (arrowRect: DOMRect, flyoutRect: DOMRect): (() => void) => {
+        const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+            if (this.hasAttribute('data-dropdown-submenu')) return flyoutRect
+            if (this.hasAttribute('data-dropdown-submenu-arrow')) return arrowRect
+            return { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 } as DOMRect
+        })
+        return () => spy.mockRestore()
+    }
+
+    it('右缘放得下：首帧锚行右 + 间隙 6、顶对齐行顶，渲染后不翻左', async () => {
+        const wrapper = mountSubmenu()
+        await openSubmenuByClick(wrapper)
+        const restore = mockRects(
+            { top: 100, bottom: 124, left: 190, right: 200, width: 10, height: 24 } as DOMRect,
+            { top: 100, bottom: 150, left: 206, right: 356, width: 150, height: 50 } as DOMRect,
+        )
+        ;(arrowEls(wrapper)[0] as HTMLElement).click()
+        await flushPromises()
+        await nextTick()
+        const flyout = flyoutEl(wrapper)
+        expect(flyout?.style.left).toBe('206px')
+        expect(flyout?.style.top).toBe('100px')
+        expect(flyout?.classList.contains('cn-dropdown__submenu--left')).toBe(false)
+        restore()
+        wrapper.unmount()
+    })
+
+    it('右缘放不下翻左侧（--left 类挂桥接钩子）：右缘 = 行左缘 − 间隙、顶缘仍钳位', async () => {
+        const wrapper = mountSubmenu()
+        await openSubmenuByClick(wrapper)
+        const restore = mockRects(
+            { top: 100, bottom: 124, left: 950, right: 1020, width: 70, height: 24 } as DOMRect,
+            { top: 0, bottom: 0, left: 0, right: 0, width: 150, height: 700 } as DOMRect,
+        )
+        ;(arrowEls(wrapper)[0] as HTMLElement).click()
+        await flushPromises()
+        await nextTick()
+        const flyout = flyoutEl(wrapper)
+        // 右侧放不下（1020 + 6 + 150 > 1022）→ 翻左：950 − 6 − 150 = 794；
+        // 垂直：100 + 700 > 766 → 钳回 768 − 2 − 700 = 66
+        expect(flyout?.style.left).toBe('794px')
+        expect(flyout?.style.top).toBe('66px')
+        expect(flyout?.classList.contains('cn-dropdown__submenu--left')).toBe(true)
+        restore()
+        wrapper.unmount()
+    })
+
+    it('浮层尺寸量不到（jsdom 零矩形）：保留首帧锚点不误翻', async () => {
+        const wrapper = mountSubmenu()
+        await openSubmenuByClick(wrapper)
+        const restore = mockRects(
+            { top: 100, bottom: 124, left: 950, right: 1020, width: 70, height: 24 } as DOMRect,
+            { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 } as DOMRect,
+        )
+        ;(arrowEls(wrapper)[0] as HTMLElement).click()
+        await flushPromises()
+        await nextTick()
+        const flyout = flyoutEl(wrapper)
+        expect(flyout?.style.left).toBe('1026px')
+        expect(flyout?.style.top).toBe('100px')
+        expect(flyout?.classList.contains('cn-dropdown__submenu--left')).toBe(false)
+        restore()
+        wrapper.unmount()
+    })
+})
+
+describe('DropdownMenu：keepsOpen 与两段式条目共存（工单 02 兼容面）', () => {
+    it('keepsOpen 项在含 submenu 条目的菜单中照常留场（模板表表单交换特例不受扰）', async () => {
+        const wrapper = mount(DropdownMenu, {
+            props: {
+                label: '新增',
+                items: [
+                    {
+                        kind: 'submenu',
+                        label: '图片层',
+                        run: () => void runs.push('image'),
+                        children: [{ label: '1:1', run: () => void runs.push('image-1-1') }],
+                    },
+                    { label: '模板表', keepsOpen: true, run: () => void runs.push('form') },
+                ],
+            },
+        })
+        await wrapper.find('[data-dropdown-trigger]').trigger('click')
+        ;(itemEls(wrapper)[1] as HTMLElement).click()
+        await nextTick()
+        expect(runs).toEqual(['form'])
+        expect(menuEl(wrapper)).toBeDefined()
+        wrapper.unmount()
+    })
+})
