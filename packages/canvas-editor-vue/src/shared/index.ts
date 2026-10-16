@@ -21,28 +21,20 @@
  * 两浮层与选择器菜单共用）。
  * 这是唯一允许被各域引用的层——域间横向 import 被依赖红线
  * （editor-vue-*-isolation）禁止，跨域消费一律收口到这里。
- * 下拉底座两段式 submenu 条目（canvas-web-preset-submenu 工单 02）：类型
- * DropdownSubmenuEntry + 判定 isSubmenuEntry 与开合/翻转/二级键盘三纯函数
- * （nextOpenSubmenu / placeSubmenuInViewport / submenuKeyAction）随本体出
- * 口——面板新增菜单 IA（工单 03）经此消费。
+ * 下拉底座（editor-top-toolbar 工单 02 起入出口）：composable 与基础条目类型。
+ * 两段式 submenu 件（canvas-web-preset-submenu 工单 02：类型 DropdownSubmenuEntry、
+ * 判定 isSubmenuEntry、开合/翻转/二级键盘/焦点落点各纯函数）与包内消费域一样
+ * 只经 useDropdownMenu 模块直引（呈现件/面板/工具栏/单测），无 barrel 消费者，
+ * 不重复入出口（评审整改 F3 收敛——纯函数/类型导出按真实消费面入 barrel）。
  */
 export { default as HelpDialog } from './HelpDialog.vue'
 export { default as DropdownMenu } from './DropdownMenu.vue'
 export {
-    isSubmenuEntry,
-    nextOpenSubmenu,
-    placeSubmenuInViewport,
-    submenuKeyAction,
     useDropdownMenu,
     type DropdownMenuController,
     type DropdownMenuEntry,
     type DropdownMenuItem,
     type DropdownMenuSlotProps,
-    type DropdownSubmenuEntry,
-    type SubmenuAnchorBox,
-    type SubmenuKeyAction,
-    type SubmenuPlacement,
-    type SubmenuToggleAction,
 } from './useDropdownMenu'
 export {
     ARM_LAYER_CREATE_HINT,
