@@ -112,13 +112,13 @@ import {
     createTemplateTable,
     defaultSizeForRatio,
     deleteLayerInDraft,
+    findPresetEntry,
     insertRootLayerAdjacentInDraft,
     insertRootLayerInDraft,
     moveRootLayerInDraft,
     moveTableRowInDraft,
     pickNextTextStylePatch,
-    RATIO_PRESETS,
-    TEXT_PRESETS,
+    ratioValue,
     type DeletedLayerRef,
     type NextTextStyle,
     type RatioPresetId,
@@ -984,16 +984,9 @@ export class EditorSession {
      * - 交叉类型（文本层带比例档/图片层带文本档）各在对方清单查无此档、不落载荷。
      */
     armLayerCreate(type: LayerType, preset?: TextPresetId | RatioPresetId): void {
-        let payload = ''
-        if (preset !== undefined && type === 'TextLayer') {
-            const entry = TEXT_PRESETS.find((candidate) => candidate.id === preset)
-            if (entry) payload = entry.id
-        }
-        if (preset !== undefined && type === 'ImageLayer') {
-            const entry = RATIO_PRESETS.find((candidate) => candidate.id === preset)
-            if (entry) payload = entry.id
-        }
-        this.store.setArmedCreate(type, '', payload)
+        // 档位查档经 editing 助手单点（评审整改 F2）：交叉类型/未知 id 查无 = 空载荷
+        const entry = preset === undefined ? undefined : findPresetEntry(type, preset)
+        this.store.setArmedCreate(type, '', entry !== undefined ? entry.id : '')
     }
 
     /** 解除建层武装（取消入口）：仅清待命态（含模板表风味与预设载荷），零副作用。 */
@@ -1070,12 +1063,13 @@ export class EditorSession {
         const doc = this.store.doc
         if (!gesture || !doc) return
         // 预设档生效比：会话载荷命中比例清单即取档位比（会话内定死，武装态清后
-        // 消费不失效）；未命中/无载荷/free 档 = null（自由钳）
-        const presetEntry =
+        // 消费不失效）；未命中/无载荷/free 档 = null（自由钳）。档比派生复用
+        // editing 的 ratioValue（评审整改 F2——原内联 find + ratio 复制同语义）；
+        // 载荷是 string 形态的档位 id（store 不翻译型），断言只为过查档签名
+        const presetRatio =
             gesture.type === 'ImageLayer' && gesture.preset !== undefined
-                ? RATIO_PRESETS.find((candidate) => candidate.id === gesture.preset)
-                : undefined
-        const presetRatio = presetEntry?.ratio ? { ...presetEntry.ratio } : null
+                ? ratioValue(gesture.preset as RatioPresetId)
+                : null
         // Shift 瞬时反转：生效档具名 = 临时自由（去钳）、生效档自由 = 临时钳 1:1。
         // 仅 ImageLayer 参与反转（spec 决策 6 豁免面：其余层型无比例语义、Shift 无效果）
         const ratio =
@@ -1140,19 +1134,19 @@ export class EditorSession {
         // 层型走 createDefaultLayer 既有路径
         const templateRowsPath = gesture.templateRowsPath
         // 预设档消费（会话载荷，一次性）：文本档字号覆盖槽字号（槽外字段照槽）、
-        // 图片档比供死区缺省盒派生（free/未命中 = 工厂缺省）
+        // 图片档比供死区缺省盒派生（free/未命中 = 工厂缺省）。查档与档比派生经
+        // editing 助手单点（评审整改 F2：findPresetEntry / ratioValue）
         const presetTextEntry =
             gesture.type === 'TextLayer' && gesture.preset !== undefined
-                ? TEXT_PRESETS.find((candidate) => candidate.id === gesture.preset)
+                ? findPresetEntry(gesture.type, gesture.preset)
                 : undefined
         const textDefaults = presetTextEntry
             ? { ...this.store.ui.nextTextStyle, fontSize: presetTextEntry.fontSize }
             : this.store.ui.nextTextStyle
-        const presetRatioEntry =
+        const presetRatio =
             gesture.type === 'ImageLayer' && gesture.preset !== undefined
-                ? RATIO_PRESETS.find((candidate) => candidate.id === gesture.preset)
-                : undefined
-        const presetRatio = presetRatioEntry?.ratio ? { ...presetRatioEntry.ratio } : null
+                ? ratioValue(gesture.preset as RatioPresetId)
+                : null
         this.store.transact((draft) => {
             const layer = (
                 templateRowsPath !== undefined

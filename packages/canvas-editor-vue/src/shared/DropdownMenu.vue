@@ -66,6 +66,9 @@ import { nextTick, shallowRef, ref, watch, type ComponentPublicInstance } from '
 import { isEditableEventTarget } from './editableTarget'
 import {
     SUBMENU_GAP_PX,
+    focusTargetOnMenuClose,
+    focusTargetOnOpen,
+    focusTargetOnSubmenuClose,
     isSubmenuEntry,
     nextEnabledItemIndex,
     nextOpenSubmenu,
@@ -139,9 +142,10 @@ watch(open, (isOpen) => {
 const menuPosition = ref<{ left: number; edge: 'top' | 'bottom'; offset: number }>({ left: 0, edge: 'top', offset: 0 })
 
 /** 收起回焦触发钮：点外收（composable window 监听路径）不回焦——焦点归用户
- *  点击落点；其余组件内发起的收起（激活/Esc/Tab/触发钮点收）都回焦 */
+ *  点击落点；其余组件内发起的收起（激活/Esc/Tab/触发钮点收）都回焦。落点判定
+ *  在 focusTargetOnMenuClose 纯函数（评审整改 F5） */
 function focusTrigger(): void {
-    triggerEl.value?.focus()
+    focusTargetOnMenuClose(triggerEl.value)?.focus()
 }
 
 /** 触发钮元素记录（函数 ref）：内建钮与 #trigger 自绘钮同缝——自绘钮消费方
@@ -151,14 +155,14 @@ function setTriggerRef(el: Element | ComponentPublicInstance | null): void {
 }
 
 /** 开时焦点入菜单：首个启用项，全置灰兜底落菜单根（tabindex=-1 可编程聚焦）；
- *  等待期间已被收起的竞态兜底不落焦 */
+ *  落点判定在 focusTargetOnOpen 纯函数（评审整改 F5）；等待期间已被收起的竞态
+ *  兜底不落焦 */
 async function focusIntoMenu(): Promise<void> {
     await nextTick()
     if (!open.value) return
     const menu = menuEl.value
     if (menu === null) return
-    const first = menu.querySelector<HTMLElement>('[data-dropdown-item]:not([disabled])')
-    ;(first ?? menu).focus()
+    focusTargetOnOpen(menuItemEls(), menu).focus()
 }
 
 /** 非 separator 条目（DOM 项序与过滤序一致，激活分发与导航同源） */
@@ -179,6 +183,11 @@ function submenuHostEls(): HTMLElement[] {
 /** 当前在场二级浮层（单开不变量 → 至多一个，按钩子直查免 ref 簿记） */
 function submenuFlyoutEl(): HTMLElement | null {
     return menuEl.value?.querySelector<HTMLElement>('[data-dropdown-submenu]') ?? null
+}
+
+/** 二级子项元素（浮层 DOM 序，键盘导航落点与开入落点共用同一查询） */
+function submenuItemEls(): HTMLElement[] {
+    return Array.from(submenuFlyoutEl()?.querySelectorAll<HTMLElement>('[data-dropdown-submenu-item]') ?? [])
 }
 
 /** 菜单项元素（DOM 序，导航落点与激活分发共用同一查询） */
@@ -328,16 +337,16 @@ async function openSubmenuKeyboard(entry: DropdownSubmenuEntry, host: HTMLElemen
     if (openSubmenu.value !== entry || !open.value) return
     const flyout = submenuFlyoutEl()
     if (flyout === null) return
-    const first = flyout.querySelector<HTMLElement>('[data-dropdown-submenu-item]:not([disabled])')
-    ;(first ?? flyout).focus()
+    // 开入落点 = 首个启用子项、全置灰兜底浮层根（focusTargetOnOpen 纯函数，评审整改 F5）
+    focusTargetOnOpen(submenuItemEls(), flyout).focus()
 }
 
-/** 收二级并回焦 ▸（键盘收路径——←/Esc）：焦点所在两段行定位宿主，回焦同宿主
- *  ▸ 钮（APG「关子菜单回父项」惯例）；焦点不在行内只收不迁焦 */
+/** 收二级并回焦 ▸（键盘收路径——←/Esc）：落点判定在 focusTargetOnSubmenuClose
+ *  纯函数（评审整改 F5）——焦点所在两段行定位宿主，回焦同宿主 ▸ 钮（APG「关子
+ *  菜单回父项」惯例）；焦点不在行内只收不迁焦 */
 function closeSubmenuToArrow(): void {
     const active = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    const arrow =
-        active?.closest<HTMLElement>('[data-dropdown-submenu-host]')?.querySelector<HTMLElement>('[data-dropdown-submenu-arrow]') ?? null
+    const arrow = focusTargetOnSubmenuClose(active)
     openSubmenu.value = null
     arrow?.focus()
 }
@@ -347,7 +356,7 @@ function closeSubmenuToArrow(): void {
 function moveSubmenuFocus(key: MenuFocusKey): void {
     const flyout = submenuFlyoutEl()
     if (flyout === null) return
-    const els = Array.from(flyout.querySelectorAll<HTMLElement>('[data-dropdown-submenu-item]'))
+    const els = submenuItemEls()
     const enabled = els.map((el) => !el.hasAttribute('disabled'))
     const current = document.activeElement instanceof HTMLElement ? els.indexOf(document.activeElement) : -1
     const next = nextEnabledItemIndex(enabled, current, key)

@@ -52,9 +52,9 @@ import {
 import PanelIcon from '../shared/PanelIcon.vue'
 import DropdownMenu from '../shared/DropdownMenu.vue'
 import type { DropdownMenuEntry } from '../shared/useDropdownMenu'
-import { ARM_LAYER_CREATE_HINT, armLayerCreatePresetHint, detectShortcutPlatform, shortcutActionLabel } from '../shared/shortcutsHelp'
+import { ARM_LAYER_CREATE_HINT, detectShortcutPlatform, shortcutActionLabel } from '../shared/shortcutsHelp'
 import { useTransientFeedback } from '../shared/useTransientFeedback'
-import { PANEL_ADD_MENU } from './addMenu'
+import { PANEL_ADD_MENU, armLayerCreatePresetHint } from './addMenu'
 import TemplateTableForm from './TemplateTableForm.vue'
 import { isUpperHalf, useLayerPanel } from './useLayerPanel'
 const props = defineProps<{ editor: EditorSession }>()
@@ -131,10 +131,15 @@ const addMenuItems = computed<DropdownMenuEntry[]>(() =>
                       title: child.title,
                       // 档位说明灰字后缀（字号「40号」/形状「正方形」）走底座 shortcut 槽
                       shortcut: child.shortcut,
-                      dataAttrs:
-                          child.kind === 'text-preset'
-                              ? { 'data-add-layer': 'TextLayer', 'data-text-preset': child.preset }
-                              : { 'data-add-layer': 'ImageLayer', 'data-ratio-preset': child.preset },
+                      // 层型键单源（评审整改 F4）：data-add-layer 与主体/run 一致取
+                      // entry.type（二级子项必属宿主行层型），不再按子项档种二次
+                      // 硬编码；档种只决定档位 id 落哪个 data-* 键
+                      dataAttrs: {
+                          'data-add-layer': entry.type,
+                          ...(child.kind === 'text-preset'
+                              ? { 'data-text-preset': child.preset }
+                              : { 'data-ratio-preset': child.preset }),
+                      },
                       run: () => {
                           props.editor.armLayerCreate(entry.type, child.preset)
                           useTransientFeedback().show(armLayerCreatePresetHint(entry.label, child.label))

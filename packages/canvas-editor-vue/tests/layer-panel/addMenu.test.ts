@@ -7,10 +7,12 @@
  * 模板表，spec 决策 5），顺序与 title 随 ADD_MENU 单点维护。
  * 面板树形 IA（canvas-web-preset-submenu 工单 03，spec 决策 4）：PANEL_ADD_MENU
  * 平铺改树——一级 5 行与工具栏同构，文本层/图片层挂预设二级，其余行无 children。
+ * 带档名分发提示句 armLayerCreatePresetHint（评审整改 F1 自 shared/shortcutsHelp
+ * 迁入——面板菜单文案面）的句式断言随迁此侧。
  */
 import { describe, expect, it } from 'vitest'
 
-import { ADD_LAYER_MENU, ADD_MENU, PANEL_ADD_MENU } from '../../src/layer-panel/addMenu'
+import { ADD_LAYER_MENU, ADD_MENU, PANEL_ADD_MENU, armLayerCreatePresetHint } from '../../src/layer-panel/addMenu'
 
 describe('addMenu：面板＋与工具栏插入▾ 的同源数据面', () => {
     it('ADD_MENU 五项：四类图层（武装画拉）+ 模板表（表单确认改武装，只属面板）', () => {
@@ -93,5 +95,12 @@ describe('addMenu：面板树形 IA（canvas-web-preset-submenu 工单 03，spec
         for (const entry of ADD_LAYER_MENU) {
             expect('children' in entry).toBe(false)
         }
+    })
+})
+
+describe('armLayerCreatePresetHint：武装提示·带档变体（canvas-web-preset-submenu 工单 03，评审整改 F1 自 shared 迁入）', () => {
+    it('「画拉建{层型}（{档名}）」句式 + 现句尾：档名入句、操作指引保留（尾句复用 shared ARM_LAYER_CREATE_HINT）', () => {
+        expect(armLayerCreatePresetHint('图片层', '1:1')).toBe('画拉建图片层（1:1），画拉或点击落层，Esc 取消')
+        expect(armLayerCreatePresetHint('文本层', '标题')).toBe('画拉建文本层（标题），画拉或点击落层，Esc 取消')
     })
 })

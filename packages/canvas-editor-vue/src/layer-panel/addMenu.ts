@@ -12,9 +12,12 @@
  * 图片具名 5 档带形状后缀，「自由」不经预设进入——一级图片层本体即自由）；
  * 二维码层/表格/模板表无 children。预设条目在此只定数据面（label/后缀/title/
  * 目验 dataAttrs 素材），run 分发与底座 DropdownMenuEntry 装配归消费面
- * （LayerPanel.vue）。
+ * （LayerPanel.vue）。带档名分发提示句 armLayerCreatePresetHint 亦在此（评审
+ * 整改 F1 自 shared/shortcutsHelp 迁入——面板菜单文案面，单域消费不进 shared）。
  */
 import { RATIO_PRESETS, TEXT_PRESETS, type LayerType, type RatioPresetId, type TextPresetId } from '@hankchen/canvas-editor'
+
+import { ARM_LAYER_CREATE_HINT } from '../shared/shortcutsHelp'
 
 /** 新增菜单项（spec §2.1）：四类图层武装画拉（drag-create 工单 03）；模板表带
  *  rowsPath 必填表单。层型项不带 children——工具栏派生视图 ADD_LAYER_MENU 的
@@ -116,3 +119,16 @@ export const PANEL_ADD_MENU: readonly PanelAddMenuEntry[] = ADD_MENU.map((entry)
  *  文案；分发差异（模板表项弹层表单、四图层项直接武装）归消费面（LayerPanel /
  *  宿主）；工具栏不加预设（spec 决策 5 豁免，类型面无 children 结构性保证） */
 export const ADD_LAYER_MENU: readonly AddMenuKind[] = ADD_MENU
+
+/**
+ * 武装建层瞬时提示·带档变体（canvas-web-preset-submenu 工单 03；评审整改 F1 自
+ * shared/shortcutsHelp 迁入）：面板预设二级子项分发专用——「画拉建{层型}（{档名}）」
+ * 句式带档名让用户确认本次画拉吃的是哪一档（层型名与档名在分发点均已知，取自
+ * 本模块菜单常量，无需内核查询口），操作指引尾沿现句、复用 shared 的
+ * ARM_LAYER_CREATE_HINT 常量（文案单点仍在 shared，改句两处自动跟随）；快捷键/
+ * 一级主体/工具栏三入口恒非预设语义，维持现句不变。消费面仅 LayerPanel 分发点
+ * （单域），按包落位规则不进 shared 出口。
+ */
+export function armLayerCreatePresetHint(layerLabel: string, presetLabel: string): string {
+    return `画拉建${layerLabel}（${presetLabel}），${ARM_LAYER_CREATE_HINT}`
+}
