@@ -76,3 +76,79 @@ describe('预设载荷字段（store.ui.armedCreatePreset，沿 armedCreateRowsP
         expect(session.store.ui.armedCreatePreset).toBe('')
     })
 })
+
+describe('armLayerCreate 预设载荷化（不写槽，ADR 0021）', () => {
+    it('文本预设武装：档位入载荷，新层样式槽原样（普通武装语义不被预设染指）', () => {
+        const session = makeSession()
+        session.armLayerCreate('TextLayer', 'heading')
+        expect(session.store.ui.armedCreate).toBe('TextLayer')
+        expect(session.store.ui.armedCreatePreset).toBe('heading')
+        expect(session.store.ui.nextTextStyle.fontSize).toBe(24) // 槽不动（工厂缺省原样）
+    })
+
+    it('比例预设武装：档位入载荷（含 free 档——自由档载荷行为等价自由）', () => {
+        const session = makeSession()
+        session.armLayerCreate('ImageLayer', '1:1')
+        expect(session.store.ui.armedCreate).toBe('ImageLayer')
+        expect(session.store.ui.armedCreatePreset).toBe('1:1')
+        session.cancelArmLayerCreate()
+        session.armLayerCreate('ImageLayer', 'free')
+        expect(session.store.ui.armedCreatePreset).toBe('free')
+    })
+
+    it('重复武装换档更新载荷、同档短路零通知', () => {
+        const session = makeSession()
+        session.armLayerCreate('ImageLayer', '1:1')
+        let notified = 0
+        const unsubscribe = session.subscribe((change) => {
+            if (change.scope === 'ui' && change.branch === 'armedCreate') notified += 1
+        })
+        session.armLayerCreate('ImageLayer', '1:1') // 同档短路
+        expect(notified).toBe(0)
+        session.armLayerCreate('ImageLayer', '16:9') // 换档更新
+        expect(notified).toBe(1)
+        expect(session.store.ui.armedCreatePreset).toBe('16:9')
+        unsubscribe()
+    })
+
+    it('未知 id 不落载荷、武装照常（现有防御面沿袭）', () => {
+        const session = makeSession()
+        session.armLayerCreate('ImageLayer', 'nope' as never)
+        expect(session.store.ui.armedCreate).toBe('ImageLayer')
+        expect(session.store.ui.armedCreatePreset).toBe('')
+        session.cancelArmLayerCreate()
+        session.armLayerCreate('TextLayer', 'nope' as never)
+        expect(session.store.ui.armedCreate).toBe('TextLayer')
+        expect(session.store.ui.armedCreatePreset).toBe('')
+    })
+
+    it('交叉类型不落载荷、武装照常：文本层带比例档 / 图片层带文本档', () => {
+        const session = makeSession()
+        session.armLayerCreate('TextLayer', '1:1' as never)
+        expect(session.store.ui.armedCreate).toBe('TextLayer')
+        expect(session.store.ui.armedCreatePreset).toBe('')
+        session.cancelArmLayerCreate()
+        session.armLayerCreate('ImageLayer', 'heading' as never)
+        expect(session.store.ui.armedCreate).toBe('ImageLayer')
+        expect(session.store.ui.armedCreatePreset).toBe('')
+    })
+
+    it('取消武装（cancelArmLayerCreate）清载荷零残留', () => {
+        const session = makeSession()
+        session.armLayerCreate('ImageLayer', '9:16')
+        session.cancelArmLayerCreate()
+        expect(session.store.ui.armedCreate).toBeNull()
+        expect(session.store.ui.armedCreatePreset).toBe('')
+    })
+
+    it('预设武装与模板表风味武装互斥载荷（armLayerCreate 路径）', () => {
+        const session = makeSession()
+        session.armLayerCreate('ImageLayer', '1:1')
+        session.armTemplateTableCreate('order.items')
+        expect(session.store.ui.armedCreateRowsPath).toBe('order.items')
+        expect(session.store.ui.armedCreatePreset).toBe('')
+        session.armLayerCreate('ImageLayer', '4:3')
+        expect(session.store.ui.armedCreateRowsPath).toBe('')
+        expect(session.store.ui.armedCreatePreset).toBe('4:3')
+    })
+})

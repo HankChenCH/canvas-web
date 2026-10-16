@@ -107,44 +107,9 @@ describe('预设常量与纯函数（editing/layerPanel）', () => {
     })
 })
 
-describe('armLayerCreate 扩展：比例预设写槽再武装', () => {
-    it('六档命中即写槽再武装（含 free 显式重置入口）', () => {
-        const session = makeSession()
-        for (const preset of RATIO_PRESETS) {
-            session.armLayerCreate('ImageLayer', preset.id)
-            expect(session.store.ui.nextLayerRatio).toBe(preset.id)
-            expect(session.store.ui.armedCreate).toBe('ImageLayer')
-            session.cancelArmLayerCreate()
-        }
-    })
-
-    it('未知 id 跳写槽、武装照常（text-defaults 同门）', () => {
-        const session = makeSession()
-        session.store.setNextLayerRatio('4:3')
-        session.armLayerCreate('ImageLayer', 'nope' as never)
-        expect(session.store.ui.nextLayerRatio).toBe('4:3')
-        expect(session.store.ui.armedCreate).toBe('ImageLayer')
-    })
-
-    it('文本/比例预设互不干扰：图片层带文本预设不写两槽、文本层带比例档不写文本槽', () => {
-        const session = makeSession([textLayer()])
-        session.store.setNextLayerRatio('16:9')
-        session.armLayerCreate('ImageLayer', 'heading') // heading 是文本档、非比例档
-        expect(session.store.ui.nextLayerRatio).toBe('16:9')
-        expect(session.store.ui.nextTextStyle.fontSize).toBe(24)
-        expect(session.store.ui.armedCreate).toBe('ImageLayer')
-        session.cancelArmLayerCreate()
-
-        session.armLayerCreate('TextLayer', '1:1' as never) // 1:1 是比例档、非文本档
-        expect(session.store.ui.nextTextStyle.fontSize).toBe(24)
-        expect(session.store.ui.armedCreate).toBe('TextLayer')
-        session.cancelArmLayerCreate()
-
-        session.armLayerCreate('TextLayer', 'heading') // 文本预设照常写文本槽
-        expect(session.store.ui.nextTextStyle.fontSize).toBe(40)
-        expect(session.store.ui.nextLayerRatio).toBe('16:9')
-    })
-})
+// 「armLayerCreate 预设写槽再武装」一组已随 canvas-web-preset-submenu 工单 01
+// （ADR 0021）退役：预设改为随武装载荷一次性携带（ui.armedCreatePreset），不再
+// 写任何偏好槽——载荷语义面见 armedCreatePreset.test.ts。
 
 describe('createTo：按槽钳制橡皮筋（仅图片层）', () => {
     it('槽 16:9：拖 200×10 → 长轴驱动钳 200×113', () => {

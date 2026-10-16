@@ -973,30 +973,32 @@ export class EditorSession {
     /**
      * 武装建层（面板新增项/层型快捷键的统一入口，CONTEXT「武装」词条）：置 ui
      * 分支待命层型，下一次画布按下即开画拉；建层提交或 Esc 即解除——一次性
-     * 待命态，无粘性工具（spec 决策 2）。重复武装同型值等短路零通知。
+     * 待命态，无粘性工具（spec 决策 2）。重复武装同型同载荷值等短路零通知。
      *
-     * preset（text-defaults 工单 01 + image-ratio-preset 工单 01）：层型相关预设 =
-     * 写槽的快捷方式——命中档位先把档位值并入对应偏好槽再武装；未知 id = 跳过
-     * 写槽、武装照常（评审口径统一：「空转」只指写槽，武装层型本身仍合法）。
-     * - TextLayer + 文本预设档：写新层样式槽（v1 只 fontSize）；
-     * - ImageLayer + 比例预设档：写建层比例槽（'free' 即显式重置档）；QR 恒方
-     *   是层型硬钳、无比例槽（spec 豁免面）；
-     * - 交叉类型（文本层带比例档/图片层带文本档）各在对方清单查无此档、天然
-     *   跳写槽。
+     * preset（canvas-web-preset-submenu 工单 01，ADR 0021）：层型相关预设随武装
+     * 载荷一次性携带、**不再写任何偏好槽**——命中档位把档位 id 写进
+     * ui.armedCreatePreset（endCreate 落库一次性消费，取消路零残留）；未知 id =
+     * 不落载荷、武装照常（评审口径统一：「空转」只指载荷，武装层型本身仍合法）。
+     * - TextLayer + 文本预设档：载荷命中 TEXT_PRESETS（endCreate 档位字号直接
+     *   生效，不经新层样式槽——普通武装文本按槽的语义不受染指）；
+     * - ImageLayer + 比例预设档：载荷命中 RATIO_PRESETS（'free' 档载荷行为等价
+     *   自由；QR 恒方是层型硬钳、无比例语义，spec 豁免面）；
+     * - 交叉类型（文本层带比例档/图片层带文本档）各在对方清单查无此档、不落载荷。
      */
     armLayerCreate(type: LayerType, preset?: TextPresetId | RatioPresetId): void {
+        let payload = ''
         if (preset !== undefined && type === 'TextLayer') {
             const entry = TEXT_PRESETS.find((candidate) => candidate.id === preset)
-            if (entry) this.store.setNextTextStyle({ fontSize: entry.fontSize })
+            if (entry) payload = entry.id
         }
         if (preset !== undefined && type === 'ImageLayer') {
             const entry = RATIO_PRESETS.find((candidate) => candidate.id === preset)
-            if (entry) this.store.setNextLayerRatio(entry.id)
+            if (entry) payload = entry.id
         }
-        this.store.setArmedCreate(type)
+        this.store.setArmedCreate(type, '', payload)
     }
 
-    /** 解除建层武装（取消入口）：仅清待命态（含模板表风味载荷），零副作用。 */
+    /** 解除建层武装（取消入口）：仅清待命态（含模板表风味与预设载荷），零副作用。 */
     cancelArmLayerCreate(): void {
         this.store.setArmedCreate(null)
     }
