@@ -18,6 +18,7 @@ export {
     defaultNextTextStyle,
     defaultSizeForRatio,
     deleteLayerInDraft,
+    findPresetEntry,
     insertRootLayerAdjacentInDraft,
     insertRootLayerInDraft,
     moveGuard,
@@ -33,6 +34,7 @@ export {
     type NextTextStyle,
     type RatioPreset,
     type RatioPresetId,
+    type TextPreset,
     type TextPresetId,
 } from './layerPanel'
 export {

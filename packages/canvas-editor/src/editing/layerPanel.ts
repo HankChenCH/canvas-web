@@ -182,8 +182,14 @@ export interface NextTextStyle {
 /** 文本预设档位（CONTEXT「文本预设」词条）：heading 40 / subheading 28 / body 16 */
 export type TextPresetId = 'heading' | 'subheading' | 'body'
 
+/** 文本预设档位条目（评审整改 F2 查档返回面，RatioPreset 同形）：具名 id + 档位字号 */
+export interface TextPreset {
+    readonly id: TextPresetId
+    readonly fontSize: number
+}
+
 /** 文本预设常量（spec 决策 4）：v1 只定字号——字体缺口由新层样式槽补 */
-export const TEXT_PRESETS: readonly { id: TextPresetId; fontSize: number }[] = [
+export const TEXT_PRESETS: readonly TextPreset[] = [
     { id: 'heading', fontSize: 40 },
     { id: 'subheading', fontSize: 28 },
     { id: 'body', fontSize: 16 },
@@ -231,6 +237,25 @@ export const RATIO_PRESETS: readonly RatioPreset[] = [
 export function ratioValue(id: RatioPresetId): { w: number; h: number } | null {
     const entry = RATIO_PRESETS.find((candidate) => candidate.id === id)
     return entry?.ratio ? { ...entry.ratio } : null
+}
+
+/**
+ * 层型预设档位查档（canvas-web-preset-submenu 评审整改 F2）：武装/画拉会话载荷的
+ * 档位 id 按层型分流到对应清单单点查找——TextLayer 查 TEXT_PRESETS、ImageLayer 查
+ * RATIO_PRESETS，其余层型（无预设语义）与交叉类型（文本层带比例档/图片层带文本
+ * 档）在对方清单查无此档，返回 undefined（「未知 id = 不落载荷、武装照常」评审
+ * 口径的查表面）。session 建层管线的档位查找（armLayerCreate / endCreate）经此
+ * 消费，档比复制语义复用 ratioValue；presetId 收 string——store 载荷是 string
+ * 形态（ui 分支不翻译型），查档天然宽容（未知 id 查无）。重载让层型字面量收窄
+ * 返回面：TextLayer 只得文本档、ImageLayer 只得比例档。
+ */
+export function findPresetEntry(type: LayerType, presetId: string): TextPreset | RatioPreset | undefined
+export function findPresetEntry(type: 'TextLayer', presetId: string): TextPreset | undefined
+export function findPresetEntry(type: 'ImageLayer', presetId: string): RatioPreset | undefined
+export function findPresetEntry(type: LayerType, presetId: string): TextPreset | RatioPreset | undefined {
+    if (type === 'TextLayer') return TEXT_PRESETS.find((candidate) => candidate.id === presetId)
+    if (type === 'ImageLayer') return RATIO_PRESETS.find((candidate) => candidate.id === presetId)
+    return undefined
 }
 
 // 建层比例槽的两个配套函数已随槽退役（canvas-web-preset-submenu 工单 01，ADR

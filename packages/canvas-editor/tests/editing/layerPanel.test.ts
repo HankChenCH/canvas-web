@@ -8,6 +8,7 @@ import {
     createDefaultLayer,
     createTemplateTable,
     defaultSizeForRatio,
+    findPresetEntry,
     insertRootLayerAdjacentInDraft,
     type LayerOutlineNode,
     RATIO_PRESETS,
@@ -741,5 +742,29 @@ describe('比例预设常量与纯函数（清单不动，ADR 0021）', () => {
         expect(defaultSizeForRatio({ w: 3, h: 4 })).toEqual({ width: 150, height: 200 })
         expect(defaultSizeForRatio({ w: 9, h: 16 })).toEqual({ width: 113, height: 200 })
         expect(defaultSizeForRatio({ w: 1, h: 1 })).toEqual({ width: 200, height: 200 })
+    })
+})
+
+describe('findPresetEntry：层型预设档位查档（canvas-web-preset-submenu 评审整改 F2 助手单测）', () => {
+    it('TextLayer 查文本清单：命中得档位条目（id + 字号）', () => {
+        expect(findPresetEntry('TextLayer', 'heading')).toEqual({ id: 'heading', fontSize: 40 })
+        expect(findPresetEntry('TextLayer', 'body')).toEqual({ id: 'body', fontSize: 16 })
+    })
+
+    it('ImageLayer 查比例清单：具名档得条目（id + 有理数比），free 档也在清单（ratio null）', () => {
+        expect(findPresetEntry('ImageLayer', '16:9')).toEqual({ id: '16:9', ratio: { w: 16, h: 9 } })
+        expect(findPresetEntry('ImageLayer', 'free')).toEqual({ id: 'free', ratio: null })
+    })
+
+    it('交叉类型查无此档：文本层带比例档/图片层带文本档 = undefined（不落载荷的查表面）', () => {
+        expect(findPresetEntry('TextLayer', '1:1')).toBeUndefined()
+        expect(findPresetEntry('ImageLayer', 'heading')).toBeUndefined()
+    })
+
+    it('无预设语义层型与未知 id = undefined（QR 恒方是层型硬钳、清单外 id 宽容查无）', () => {
+        expect(findPresetEntry('QrCodeLayer', 'heading')).toBeUndefined()
+        expect(findPresetEntry('TableLayer', '1:1')).toBeUndefined()
+        expect(findPresetEntry('TextLayer', 'nope')).toBeUndefined()
+        expect(findPresetEntry('ImageLayer', 'nope')).toBeUndefined()
     })
 })
