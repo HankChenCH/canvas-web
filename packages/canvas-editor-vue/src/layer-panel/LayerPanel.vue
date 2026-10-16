@@ -13,10 +13,13 @@
  * 工单 02）——确认不再直建落层，改为武装（armTemplateTableCreate，工单 01 缝）+
  * 关菜单 + 状态栏瞬时提示（与四图层项同款），落库归画拉 endCreate；取消/Esc 关
  * 表单不武装、零副作用。
- * 新增菜单比例档位（image-ratio-preset 工单 02，spec 决策 2）：六档平铺在
- * 「图片层」之后——应用即写建层比例槽再武装（画拉按槽钳制，Shift 瞬时反转；
- * 数据面在 ./addMenu），普通「图片层」项分发不带 preset（武装后按槽值钳制，
- * 「自由」档位即显式重置入口）。
+ * 新增菜单两段式一级 + 预设二级（canvas-web-preset-submenu 工单 03，spec 决策 4，
+ * ADR 0021）：一级 5 行与工具栏「＋插入▾」同构——文本层/图片层为两段式命中区，
+ * 主体点击 = armLayerCreate(type) 无 preset 直建（γ 语义：文本按新层样式槽、图片
+ * 恒自由，预设不再写槽零粘性），右缘 ▸ 唤出预设二级（文本 3 档字号后缀、图片具
+ * 名 5 档形状后缀，「自由」不经预设进入）；二级子项分发 armLayerCreate(type,
+ * preset) 带档载荷一次性消费 + 带档名提示（armLayerCreatePresetHint）；数据面在
+ * ./addMenu（树形），二级浮层/键盘/焦点编排归 shared 底座（工单 02）。
  * 新增菜单走 shared 下拉底座（editor-top-toolbar 工单 05）：#trigger 自绘＋方钮、
  * #body 受控插槽承载共享 rowsPath 表单（模板表项 keepsOpen 交换出表单体），开合/
  * 点外收/Esc 收/a11y/键盘导航全归底座；aside 是 overflow 滚动容器——底座弹层
@@ -49,7 +52,7 @@ import {
 import PanelIcon from '../shared/PanelIcon.vue'
 import DropdownMenu from '../shared/DropdownMenu.vue'
 import type { DropdownMenuEntry } from '../shared/useDropdownMenu'
-import { ARM_LAYER_CREATE_HINT, detectShortcutPlatform, shortcutActionLabel } from '../shared/shortcutsHelp'
+import { ARM_LAYER_CREATE_HINT, armLayerCreatePresetHint, detectShortcutPlatform, shortcutActionLabel } from '../shared/shortcutsHelp'
 import { useTransientFeedback } from '../shared/useTransientFeedback'
 import { PANEL_ADD_MENU } from './addMenu'
 import TemplateTableForm from './TemplateTableForm.vue'
@@ -78,63 +81,67 @@ interface FlatRow {
     draggable: boolean
 }
 
-/** 新增菜单（工单 05 迁 DropdownMenu 底座）：本组件持菜单项数据面 + 表单开合态
- *  （#body 受控插槽承载共享表单组件 TemplateTableForm——工单 02 抽出，草稿/错误
- *  态随组件实例收挂即弃）；开合/点外收/Esc 收/键盘导航归底座。菜单数据面
- *  （PANEL_ADD_MENU/类型）在 ./addMenu——面板完整序（层型 + 文本预设 + 模板表，
- *  text-defaults 工单 02） */
+/** 菜单项（工单 03 树形装配）：面板树形数据面（PANEL_ADD_MENU，./addMenu）装
+ *  配成底座 DropdownMenuEntry——层型项换装两段式 submenu 条目（文本/图片两行）：
+ *  主体点击 = armLayerCreate(type) 无 preset（γ 语义：文本按新层样式槽、图片恒
+ *  自由，ADR 0021）+ 现句提示；▸ 唤出的预设二级子项 = armLayerCreate(type,
+ *  preset) 带档载荷 + 带档名提示（armLayerCreatePresetHint，档名取自菜单常量
+ *  label）；二维码层/表格无 children 走普通项。模板表项 keepsOpen 交换出表单体
+ *  （items 清空、菜单留场，链路不动）；表单开合态随组件实例收挂即弃。开合/点外
+ *  收/Esc 收/键盘导航/二级浮层全归底座 */
 const templateFormOpen = ref(false)
 
-/** 菜单项：模板表项 keepsOpen 交换出表单体（items 清空、菜单留场），图层四项
- *  武装画拉（drag-create 工单 03：点击 = 武装一次画拉，落库归画拉 endCreate）
- *  + 状态栏瞬时提示（与快捷键入口同句），分发即收归底座；文本预设项（text-defaults
- *  工单 02）= 内核 armLayerCreate 带 preset——先写新层样式槽再武装；比例档位项
- *  （image-ratio-preset 工单 02）同门——先写建层比例槽再武装，普通「图片层」项
- *  分发不带 preset（武装后按槽值钳制，槽是唯一偏好源） */
 const addMenuItems = computed<DropdownMenuEntry[]>(() =>
     templateFormOpen.value
         ? []
-        : PANEL_ADD_MENU.map((kind): DropdownMenuEntry =>
-              kind.kind === 'layer'
-                  ? {
-                        label: kind.label,
-                        title: kind.title,
-                        dataAttrs: { 'data-add-layer': kind.type },
-                        run: () => {
-                            props.editor.armLayerCreate(kind.type)
-                            useTransientFeedback().show(ARM_LAYER_CREATE_HINT)
-                        },
-                    }
-                  : kind.kind === 'text-preset'
-                    ? {
-                          label: kind.label,
-                          title: kind.title,
-                          dataAttrs: { 'data-add-layer': 'TextLayer', 'data-text-preset': kind.preset },
-                          run: () => {
-                              props.editor.armLayerCreate('TextLayer', kind.preset)
-                              useTransientFeedback().show(ARM_LAYER_CREATE_HINT)
-                          },
-                      }
-                    : kind.kind === 'ratio-preset'
-                      ? {
-                            label: kind.label,
-                            title: kind.title,
-                            dataAttrs: { 'data-add-layer': 'ImageLayer', 'data-ratio-preset': kind.preset },
-                            run: () => {
-                                props.editor.armLayerCreate('ImageLayer', kind.preset)
-                                useTransientFeedback().show(ARM_LAYER_CREATE_HINT)
-                            },
-                        }
-                      : {
-                            label: kind.label,
-                            title: kind.title,
-                            dataAttrs: { 'data-add-layer': 'template-table' },
-                            keepsOpen: true,
-                            run: () => {
-                                templateFormOpen.value = true
-                            },
-                        },
-          ),
+        : PANEL_ADD_MENU.map((entry): DropdownMenuEntry => {
+              // 模板表项 keepsOpen 交换出表单体（template-table-drag-create 工单 02 特例）
+              if (entry.kind === 'template-table') {
+                  return {
+                      label: entry.label,
+                      title: entry.title,
+                      dataAttrs: { 'data-add-layer': 'template-table' },
+                      keepsOpen: true,
+                      run: () => {
+                          templateFormOpen.value = true
+                      },
+                  }
+              }
+              // 主体分发（两段式直建段 + 普通项同式）：恒无 preset——γ 语义下面板
+              // 一级不再有「自由」档，图片层本体即自由（ADR 0021）
+              const dataAttrs = { 'data-add-layer': entry.type }
+              const run = (): void => {
+                  props.editor.armLayerCreate(entry.type)
+                  useTransientFeedback().show(ARM_LAYER_CREATE_HINT)
+              }
+              // 二维码层/表格：普通项无二级
+              if (entry.children === undefined) {
+                  return { label: entry.label, title: entry.title, dataAttrs, run }
+              }
+              // 文本层/图片层：两段式条目——主体直建 + ▸ 预设二级（子项带档载荷
+              // 分发 + 带档名提示；档名/层型名在分发点已知，取自菜单常量）
+              return {
+                  kind: 'submenu',
+                  label: entry.label,
+                  title: entry.title,
+                  dataAttrs,
+                  run,
+                  children: entry.children.map((child): DropdownMenuEntry => ({
+                      label: child.label,
+                      title: child.title,
+                      // 档位说明灰字后缀（字号「40号」/形状「正方形」）走底座 shortcut 槽
+                      shortcut: child.shortcut,
+                      dataAttrs:
+                          child.kind === 'text-preset'
+                              ? { 'data-add-layer': 'TextLayer', 'data-text-preset': child.preset }
+                              : { 'data-add-layer': 'ImageLayer', 'data-ratio-preset': child.preset },
+                      run: () => {
+                          props.editor.armLayerCreate(entry.type, child.preset)
+                          useTransientFeedback().show(armLayerCreatePresetHint(entry.label, child.label))
+                      },
+                  })),
+              }
+          }),
 )
 
 /** 表单确认（工单 02，spec 决策 1）：不再直建落层——非空 rowsPath 武装模板表建层

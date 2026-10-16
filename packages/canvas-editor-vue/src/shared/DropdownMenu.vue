@@ -61,7 +61,7 @@
  * mouseleave 误收。键盘与焦点全序见 onMenuKeydown 注释块（→ 开二级入首项、
  * ←/Esc 先收二级再收菜单、二级内 ↑↓ 循环跳置灰、Tab 沿现状）。
  */
-import { nextTick, ref, watch, type ComponentPublicInstance } from 'vue'
+import { nextTick, shallowRef, ref, watch, type ComponentPublicInstance } from 'vue'
 
 import { isEditableEventTarget } from './editableTarget'
 import {
@@ -115,8 +115,11 @@ const menuEl = ref<HTMLElement | null>(null)
 const { open, toggle, closeMenu } = useDropdownMenu({ container })
 
 /** 在场二级（单开不变量，以条目引用为键）：null = 全关；▸ 悬停/点击、→/←、
- *  Esc/移出菜单都经 nextOpenSubmenu 纯函数翻转（有单测） */
-const openSubmenu = ref<DropdownSubmenuEntry | null>(null)
+ *  Esc/移出菜单都经 nextOpenSubmenu 纯函数翻转（有单测）。shallowRef（工单 03
+ *  接线修复）：条目是身份键且从不深改，deep ref 落值时 toReactive 会存成代理，
+ *  与嵌套消费面（LayerPanel）模板迭代的原始条目 !== 恒错位——二级浮层永不开
+ *  （根挂载恰好迭代到代理才侥幸通过，工单 02 单测未暴露） */
+const openSubmenu = shallowRef<DropdownSubmenuEntry | null>(null)
 
 /** 二级浮层视口坐标（fixed 内联 style；首帧锚 + 渲染后钳位，主菜单同款两段式） */
 const submenuPosition = ref<SubmenuPlacement>({ left: 0, top: 0, side: 'right' })
