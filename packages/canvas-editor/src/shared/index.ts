@@ -93,9 +93,11 @@ export {
 
 export {
     enumerateRowsPathCandidates,
+    enumerateRowsPathPickerEntries,
     resolveRowsPathStartSchema,
     type RowsPathCandidate,
     type RowsPathCandidateResult,
+    type RowsPathPickerEntry,
 } from './rowsPathCandidates'
 
 export {

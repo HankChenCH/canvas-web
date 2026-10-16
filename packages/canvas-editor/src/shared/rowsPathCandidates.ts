@@ -31,6 +31,16 @@
  * 给根 schema 表根起点，故独立落件不改 expressionContext）；任一层解析不出
  * （rowsPath 无 items 声明/漂移/途经非表）→ null 降级无候选。
  *
+ * 点选器剪枝枚举件（rows-path-picker 工单 01，spec D5/D3）：级联点选器每层的
+ * 候选条目——在补全枚举语义上加剪枝谓词 leadsToArray，候选面收敛至「通往行数组
+ * 的路径」：标量子段不出现；对象子段仅当子树内沿 properties 链至少含一个可达
+ * 数组才出现；数组子段 = 终点条目（isArray 标记），不透传 items（数组套数组的
+ * 内层不可达）。无 partial 概念（纯点选无输入期），前缀 = 已积累点路径、逐段
+ * 全量已消费、尾段取子层；空层/漂移/畸形前缀一律返回空数组（空态呈现归 vue
+ * 面）。起点判别不在此重复造：调用方经 resolveRowsPathStartSchema 得起点后再
+ * 进本件。元信息同表达式补全先例（D8）：description/title 两字段分离透传，展示
+ * 回落 description ?? title 归呈现层。
+ *
  * 全模块纯函数、零 DOM；层内依赖仅 expressionSchema / expressionCandidates
  * （候选类型面）/ layerPath。
  */
@@ -68,14 +78,46 @@ function isScalarNode(node: ExpressionSchemaNode): boolean {
     return !isArrayNode(node) && node.properties === undefined
 }
 
+/** 前缀 + 段名的点路径拼接（起点相对；'' 前缀 = 头部候选即段名） */
+function joinSegment(prefix: string, key: string): string {
+    return prefix === '' ? key : `${prefix}.${key}`
+}
+
+/** 元信息装配（D8 共享面）：description/title 两字段分离透传，未声明不落键 */
+function withMeta<T extends { description?: string; title?: string }>(
+    target: T,
+    node: ExpressionSchemaNode,
+): T {
+    if (node.description !== undefined) target.description = node.description
+    if (node.title !== undefined) target.title = node.title
+    return target
+}
+
+/**
+ * 逐段下钻到目标层（补全/点选两枚举器共享的域规则）：数组内不下钻（具名段穿数
+ * 组在水合端无意义）；声明漂移/缺失走不通；落点须对象层（终点数组之下/标量不
+ * 构成层）。走不通 → null，全程不抛错。
+ */
+function descendToLayer(
+    start: ExpressionSchemaNode,
+    segments: readonly string[],
+): ExpressionSchemaNode | null {
+    let base = start
+    for (const segment of segments) {
+        if (isArrayNode(base)) return null
+        const child = schemaNodeAtPath(base, [segment])
+        if (child === null) return null
+        base = child
+    }
+    return isArrayNode(base) || isScalarNode(base) ? null : base
+}
+
 /** 一条候选的元信息组装：终点数组徽标数据恒 'array'（展示文案不在此层定） */
 function childCandidate(key: string, node: ExpressionSchemaNode, prefix: string): RowsPathCandidate {
-    const candidate: RowsPathCandidate = {
-        path: prefix === '' ? key : `${prefix}.${key}`,
-        segment: key,
-    }
-    if (node.description !== undefined) candidate.description = node.description
-    if (node.title !== undefined) candidate.title = node.title
+    const candidate = withMeta<RowsPathCandidate>(
+        { path: joinSegment(prefix, key), segment: key },
+        node,
+    )
     if (isArrayNode(node)) candidate.type = 'array'
     return candidate
 }
@@ -111,17 +153,79 @@ export function enumerateRowsPathCandidates(
     const partial = input.endsWith('.') ? '' : (segments[segments.length - 1] as string)
     const completed = segments.slice(0, -1)
 
-    let base = startSchema
-    for (const segment of completed) {
-        if (isArrayNode(base)) return null // 数组内不下钻：具名段穿数组在水合端无意义
-        const child = schemaNodeAtPath(base, [segment])
-        if (child === null) return null // 声明漂移/缺失/标量落点：无补全态不抛错
-        base = child
-    }
-    if (isArrayNode(base) || isScalarNode(base)) return null // 枚举落点非对象层（终点数组之下无下钻）
+    const base = descendToLayer(startSchema, completed)
+    if (base === null) return null // 数组内不下钻/漂移/标量落点：无补全态不抛错
 
     const view = levelCandidates(base, completed.join('.'))
     return { partial, candidates: view }
+}
+
+/**
+ * 一条 rowsPath 点选器条目（rows-path-picker 工单 01）：级联一层的可点项。
+ * 与 RowsPathCandidate 的分叉：无 partial/徽标面，换显式数组终点标记——点选器
+ * 按 isArray 分流「点选提交 / 只可下钻」，不再经「带尾点探一层」推断。
+ */
+export interface RowsPathPickerEntry {
+    /** 提交/下钻的完整点路径（起点相对；点选器 v-model 面就是它） */
+    path: string
+    /** 本段名（无元信息时的显示回落） */
+    segment: string
+    /** 显示名注解（D8 两字段分离透传；展示回落 description ?? title 归呈现层） */
+    title?: string
+    /** 说明（未声明为 undefined） */
+    description?: string
+    /** 数组终点标记：true = 行数组终点（点选即提交）；false = 对象中间站（只可下钻） */
+    isArray: boolean
+}
+
+/**
+ * 剪枝谓词（D5，独立可测）：节点是行数组，或其子树内沿 properties 链至少含一
+ * 个可达数组。只沿 properties 链下传、**不穿 items**——数组节点自身即终点（数
+ * 组套数组的内层经外层已不可达，无需问 items 内部）；无 properties 的节点（标
+ * 量/无键对象）= false。
+ */
+export function leadsToArray(node: ExpressionSchemaNode): boolean {
+    if (isArrayNode(node)) return true
+    if (node.properties === undefined) return false
+    for (const child of node.properties.values()) {
+        if (leadsToArray(child)) return true
+    }
+    return false
+}
+
+/** 一条条目的元信息组装（元信息面同 childCandidate：两字段分离、未声明不落键） */
+function pickerEntry(key: string, node: ExpressionSchemaNode, prefix: string): RowsPathPickerEntry {
+    return withMeta<RowsPathPickerEntry>(
+        { path: joinSegment(prefix, key), segment: key, isArray: isArrayNode(node) },
+        node,
+    )
+}
+
+/**
+ * 枚举点选器某层的候选条目（rows-path-picker 工单 01）：prefix 为已积累点路径，
+ * 逐段全量已消费、尾段取子层（'' = 起点层）；下钻域规则走 descendToLayer，每层
+ * 条目经 leadsToArray 剪枝至「通往行数组的路径」。起点 schema null / 前缀漂移
+ * （段缺失/标量落点）/ 畸形（双点/尾点/头点）/ 数组落点（数组不展开）→ 空数组，
+ * 全程不抛错——空态呈现归 vue 面（spec D6）。
+ */
+export function enumerateRowsPathPickerEntries(
+    startSchema: ExpressionSchemaNode | null,
+    prefix: string,
+): readonly RowsPathPickerEntry[] {
+    if (startSchema === null) return []
+    const segments = prefix === '' ? [] : prefix.split('.')
+    if (segments.includes('')) return [] // 畸形前缀：点选器只产全段路径，不构成层
+    const base = descendToLayer(startSchema, segments)
+    if (base === null) return [] // 数组不展开/漂移/标量落点：空层
+
+    const entries: RowsPathPickerEntry[] = []
+    if (base.properties !== undefined) {
+        for (const [key, child] of base.properties) {
+            if (!leadsToArray(child)) continue // D5 剪枝：标量与无可达数组的对象不出现
+            entries.push(pickerEntry(key, child, prefix))
+        }
+    }
+    return entries
 }
 
 /**

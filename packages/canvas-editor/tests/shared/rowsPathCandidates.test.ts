@@ -4,9 +4,15 @@ import type { Canvas } from '@hankchen/canvas'
 
 import {
     enumerateRowsPathCandidates,
+    enumerateRowsPathPickerEntries,
+    leadsToArray,
     resolveRowsPathStartSchema,
 } from '../../src/shared/rowsPathCandidates'
-import { parseExpressionSchema, type ExpressionSchemaNode } from '../../src/shared/expressionSchema'
+import {
+    parseExpressionSchema,
+    schemaNodeAtPath,
+    type ExpressionSchemaNode,
+} from '../../src/shared/expressionSchema'
 import { cellLayer, rowLayer, rowTemplateLayer, tableLayer, textLayer } from '../support/fixtures'
 
 /**
@@ -349,5 +355,170 @@ describe('组合面：起点判别 → 候选枚举（工单 03 接线预演）'
 
         const drill = enumerateRowsPathCandidates(start, 'lines.')
         expect(drill).toBeNull() // 内层 rowsPath 终点即数组，其下无下钻
+    })
+})
+
+/* --------------------------------------------------- 点选器剪枝枚举（D5 剪枝） */
+
+/**
+ * 点选器专用造数：plain 标量与 bareObject（子树无数组）应被剪掉；deep 三层对象
+ * 链只在叶下挂数组（整条链应显）；matrix 数组套数组（内层不可达）。
+ */
+const RAW_PICKER_SCHEMA = {
+    type: 'object',
+    properties: {
+        plain: { type: 'string' },
+        bareObject: { type: 'object', properties: { note: { type: 'string' } } },
+        deep: {
+            type: 'object',
+            description: '深层一层',
+            properties: {
+                deeper: {
+                    type: 'object',
+                    title: '深层二层',
+                    properties: {
+                        deepest: {
+                            type: 'object',
+                            description: '深层三层',
+                            properties: {
+                                rows: {
+                                    type: 'array',
+                                    description: '最深行数组',
+                                    items: { type: 'object', properties: {} },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        },
+        matrix: {
+            type: 'array',
+            items: { type: 'array', items: { type: 'object', properties: { cell: { type: 'string' } } } },
+        },
+    },
+}
+
+const PICKER_SCHEMA = schemaOf(RAW_PICKER_SCHEMA)
+
+/** 谓词测试取节点助手：fixture 静态保证命中，null 即造数错误 */
+function nodeAt(schema: ExpressionSchemaNode, segments: readonly string[]): ExpressionSchemaNode {
+    const node = schemaNodeAtPath(schema, segments)
+    if (node === null) throw new Error(`造数错误：${segments.join('.')} 应命中节点`)
+    return node
+}
+
+describe('leadsToArray：剪枝谓词独立测（D5）', () => {
+    it('标量 / 无键对象 / 子树无数组的对象 = false', () => {
+        expect(leadsToArray(nodeAt(SCHEMA, ['certName']))).toBe(false)
+        expect(leadsToArray(nodeAt(SCHEMA, ['issueDate']))).toBe(false)
+        expect(leadsToArray(nodeAt(SCHEMA, ['fields']))).toBe(false)
+        expect(leadsToArray(nodeAt(SCHEMA, ['fields', 'meta']))).toBe(false)
+        const loose = schemaOf({ type: 'object', properties: { loose: { type: 'object' } } })
+        expect(leadsToArray(nodeAt(loose, ['loose']))).toBe(false)
+    })
+
+    it('数组节点（type 或 items 声明）= true（终点自身，不问 items 内部）', () => {
+        expect(leadsToArray(nodeAt(SCHEMA, ['chapters']))).toBe(true)
+        expect(leadsToArray(nodeAt(SCHEMA, ['mixed']))).toBe(true)
+        expect(leadsToArray(nodeAt(PICKER_SCHEMA, ['matrix']))).toBe(true)
+    })
+
+    it('沿 properties 链可含数组 = true（中间层与深层都判真）', () => {
+        expect(leadsToArray(nodeAt(SCHEMA, ['org']))).toBe(true)
+        expect(leadsToArray(nodeAt(PICKER_SCHEMA, ['deep']))).toBe(true)
+        expect(leadsToArray(nodeAt(PICKER_SCHEMA, ['deep', 'deeper']))).toBe(true)
+    })
+})
+
+describe('enumerateRowsPathPickerEntries：点选器剪枝枚举（rows-path-picker 工单 01，D5）', () => {
+    it('根层剪枝：标量隐 / 无可达数组对象隐（fields 不出现）/ 含数组对象显 / 数组终点带标记，声明序保持', () => {
+        const entries = enumerateRowsPathPickerEntries(SCHEMA, '')
+        expect(entries.map((entry) => entry.segment)).toEqual(['org', 'chapters', 'mixed'])
+        expect(entries.map((entry) => entry.isArray)).toEqual([false, true, true])
+        expect(entries.map((entry) => entry.path)).toEqual(['org', 'chapters', 'mixed'])
+    })
+
+    it('对象条目可下钻：逐层取子层，数组条目即终点（prefix 段全量已消费）', () => {
+        expect(enumerateRowsPathPickerEntries(PICKER_SCHEMA, 'deep').map((entry) => entry.path)).toEqual([
+            'deep.deeper',
+        ])
+        expect(enumerateRowsPathPickerEntries(PICKER_SCHEMA, 'deep.deeper').map((entry) => entry.path)).toEqual([
+            'deep.deeper.deepest',
+        ])
+        expect(enumerateRowsPathPickerEntries(PICKER_SCHEMA, 'deep.deeper.deepest')).toEqual([
+            {
+                path: 'deep.deeper.deepest.rows',
+                segment: 'rows',
+                description: '最深行数组',
+                isArray: true,
+            },
+        ])
+    })
+
+    it('数组不展开（数组套数组内层不可达）：数组段作前缀 = 空层', () => {
+        expect(enumerateRowsPathPickerEntries(PICKER_SCHEMA, 'matrix')).toEqual([])
+        expect(enumerateRowsPathPickerEntries(SCHEMA, 'org.students')).toEqual([])
+        expect(enumerateRowsPathPickerEntries(SCHEMA, 'chapters')).toEqual([])
+    })
+
+    it('元信息两字段分离透传（展示回落 description ?? title 归呈现层），未声明键不落条目', () => {
+        const entries = enumerateRowsPathPickerEntries(SCHEMA, '')
+        const both = entries.find((entry) => entry.segment === 'chapters')
+        expect(both).toEqual({ path: 'chapters', segment: 'chapters', description: '章节列表', title: '章节', isArray: true })
+        const org = entries.find((entry) => entry.segment === 'org')
+        expect(org).toEqual({ path: 'org', segment: 'org', description: '机构信息', isArray: false })
+        expect('title' in (org as object)).toBe(false)
+        const deep = enumerateRowsPathPickerEntries(PICKER_SCHEMA, 'deep')[0]
+        expect(deep).toEqual({ path: 'deep.deeper', segment: 'deeper', title: '深层二层', isArray: false })
+        expect('description' in (deep as object)).toBe(false)
+    })
+
+    it('空态：null 起点 / 全树无可达行数组 → 空数组（不抛错）', () => {
+        expect(enumerateRowsPathPickerEntries(null, '')).toEqual([])
+        const flat = schemaOf({
+            type: 'object',
+            properties: {
+                name: { type: 'string' },
+                group: { type: 'object', properties: { count: { type: 'number' } } },
+            },
+        })
+        expect(enumerateRowsPathPickerEntries(flat, '')).toEqual([])
+        expect(enumerateRowsPathPickerEntries(flat, 'group')).toEqual([])
+    })
+
+    it('漂移/畸形前缀 → 空数组不抛错：缺失段 / 标量落点 / 双点 / 尾点 / 头点', () => {
+        expect(enumerateRowsPathPickerEntries(SCHEMA, 'missing')).toEqual([])
+        expect(enumerateRowsPathPickerEntries(SCHEMA, 'org.missing')).toEqual([])
+        expect(enumerateRowsPathPickerEntries(SCHEMA, 'org.missing.deeper')).toEqual([])
+        expect(enumerateRowsPathPickerEntries(SCHEMA, 'certName')).toEqual([])
+        expect(enumerateRowsPathPickerEntries(SCHEMA, 'org.name')).toEqual([])
+        expect(enumerateRowsPathPickerEntries(SCHEMA, 'org..students')).toEqual([])
+        expect(enumerateRowsPathPickerEntries(SCHEMA, 'org.')).toEqual([])
+        expect(enumerateRowsPathPickerEntries(SCHEMA, '.org')).toEqual([])
+    })
+
+    it('行 schema 起点（嵌套表场景）：行相对路径，标量行键剪掉', () => {
+        const rowSchema = schemaOf({
+            type: 'object',
+            properties: {
+                name: { type: 'string', description: '商品名称' },
+                lines: { type: 'array', description: '行明细', items: { type: 'object', properties: {} } },
+            },
+        })
+        expect(enumerateRowsPathPickerEntries(rowSchema, '')).toEqual([
+            { path: 'lines', segment: 'lines', description: '行明细', isArray: true },
+        ])
+        expect(enumerateRowsPathPickerEntries(rowSchema, 'lines')).toEqual([])
+    })
+
+    it('组合面：起点判别 → 点选器枚举（工单 03 接线预演）', () => {
+        const start = resolveRowsPathStartSchema(
+            NESTED_DOC,
+            ['layers', 0, 'template', 'cells', 0, 'content'],
+            START_SCHEMA,
+        )
+        if (start === null) throw new Error('嵌套表应解析出行 schema')
+        expect(enumerateRowsPathPickerEntries(start, '').map((entry) => entry.path)).toEqual(['lines'])
     })
 })
