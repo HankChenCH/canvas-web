@@ -40,7 +40,7 @@ import { computed, nextTick, onScopeDispose, ref, watch } from 'vue'
 import type { CompletionSource } from './completion'
 import { pathPickerEntries, type PathPickerEntry, type PathPickerMode } from './pathPickerModel'
 import { placePopupInViewport } from './popupPosition'
-import { ROWS_PATH_ARRAY_BADGE } from './rowsPathCompletionSource'
+import { ROWS_PATH_ARRAY_BADGE } from './rowsPathPickerSource'
 
 const props = defineProps<{
     /** 裸点路径原文（壳已拆 `{{}}`；存量违例拆不动时壳原样透传，只读回显） */

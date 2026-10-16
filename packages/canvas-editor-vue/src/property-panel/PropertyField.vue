@@ -26,10 +26,9 @@
  * 通道分流（有菜单指向点选、无菜单指向绑定）；声明未注入时给绑定门弱提示行
  * （菜单缺席的原因说明，resourceDiagnosticHint / RESOURCE_BINDING_HINT 单源）。
  *
- * 裸路径补全（rows-path-completion 工单 03，D6）：接线门随 rowsPath 换装退出本
- * 组件（rows-path-picker 工单 03）——rowsPath 字段改点选器控件后，面板内已无
- * 标记消费方；建表表单/右键轻表单亦随工单 04 换装点选器，usePathCompletion 已
- * 零消费方（退役归手输缝清扫工单 05）。数据字段表达式浮层（useExpressionCompletion）
+ * 裸路径补全（rows-path-completion 工单 03，D6）：接线门已随 rowsPath 换装退出本
+ * 组件（rows-path-picker 工单 03），usePathCompletion 随之零消费方并已于工单 05
+ * 整体退役（shared 导出撤除）。数据字段表达式浮层（useExpressionCompletion）
  * 零改动。
  *
  * 行解剖（面板布局优化，三种形态共用同一份控件分发）：
@@ -66,8 +65,9 @@ const props = defineProps<{
      */
     locked?: boolean
     /**
-     * 补全候选源（面板按字段分发：data 门字段 = 表达式源，rowsPath 标记字段 =
-     * 行相对源，工单 03）；null = 未注入/无接线/降级（浮层恒闭）。
+     * 补全候选源（面板按字段分发：data 门 textarea 字段 = 表达式源；资源字段与
+     * rowsPath 点选器字段 = 选择器源，经 source 下发进控件）；null = 未注入/
+     * 无接线/降级（浮层恒闭、选择器无菜单）。
      */
     completion?: CompletionSource | null
     /** pair 子字段的禁用态替代显示（键 = 子字段绝对键）；其他控件不传 */
@@ -121,8 +121,7 @@ const controlClass = computed(() => (props.field.data === true ? 'col-span-2' : 
  * 文本层（textarea 数据字段）。资源内容字段已换装——QR 走 resourceValue 控件、
  * imageSrc 表达式态走选择器（候选源经 props.completion 下发进控件），纯菜单
  * 点选不设手输缝（ADR 0020），浮层/手输面不复存在；rowsPath 字段亦随点选器
- * 换装（rows-path-picker 工单 03）退出标记门，裸路径补全面只剩建表表单的
- * 独立接线（shared 直引，不经本组件）。
+ * 换装（rows-path-picker 工单 03）退出标记门，裸路径补全面随工单 05 整体退役。
  * 其余字段零接线。
  */
 const wiresExpressionCompletion = computed(() => props.field.data === true && props.field.control === 'textarea')

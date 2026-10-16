@@ -18,7 +18,7 @@ import { parseExpressionSchema, type ExpressionSchemaNode } from '@hankchen/canv
 import ExpressionPathPicker from '../../src/shared/ExpressionPathPicker.vue'
 import type { CompletionSource } from '../../src/shared/completion'
 import { expressionCompletionSource } from '../../src/shared/expressionContext'
-import { rowsPathPickerSource } from '../../src/shared/rowsPathCompletionSource'
+import { rowsPathPickerSource } from '../../src/shared/rowsPathPickerSource'
 
 const RAW_SCHEMA = {
     type: 'object',

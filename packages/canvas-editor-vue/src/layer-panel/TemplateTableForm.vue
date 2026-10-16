@@ -22,7 +22,7 @@ import { computed, ref } from 'vue'
 import type { EditorSession } from '@hankchen/canvas-editor'
 
 import { useDataSourceSchema } from '../shared/useDataSourceSchema'
-import { rowsPathPickerSource } from '../shared/rowsPathCompletionSource'
+import { rowsPathPickerSource } from '../shared/rowsPathPickerSource'
 import ExpressionPathPicker from '../shared/ExpressionPathPicker.vue'
 
 const props = defineProps<{ editor: EditorSession }>()
@@ -53,7 +53,7 @@ const pickerSource = computed(() => rowsPathPickerSource(dataSourceSchema.value)
 
 <template>
     <div>
-        <p class="px-2 pt-1 text-[11px] leading-4 text-cn-muted">模板行按数据行路径展开成表</p>
+        <p class="px-2 pt-1 text-[11px] leading-4 text-cn-muted">模板行按取行路径展开成表</p>
         <div class="mx-1 my-1">
             <!-- rowsPath mode 级联点选器：恒根起点剪枝候选，数组终点点选即落值；
                  data-template-rows-path 目验钩子沿旧输入框位（fallthrough 落根盒） -->

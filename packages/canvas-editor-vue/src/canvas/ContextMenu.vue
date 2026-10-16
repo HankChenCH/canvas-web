@@ -31,7 +31,7 @@ import { isRootLayerPath, rootLayerOf, type EditorSession, type LayerPath } from
 import { useSelection } from '../shared/useSelection'
 import { detectShortcutPlatform, shortcutActionLabel } from '../shared/shortcutsHelp'
 import { useDataSourceSchema, DATA_SOURCE_GATE_HINT } from '../shared/useDataSourceSchema'
-import { rowsPathPickerSource } from '../shared/rowsPathCompletionSource'
+import { rowsPathPickerSource } from '../shared/rowsPathPickerSource'
 import ExpressionPathPicker from '../shared/ExpressionPathPicker.vue'
 
 const props = defineProps<{ editor: EditorSession }>()

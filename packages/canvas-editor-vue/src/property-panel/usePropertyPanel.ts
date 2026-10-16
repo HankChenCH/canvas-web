@@ -38,7 +38,7 @@ import {
     expressionFieldContext,
 } from '../shared/expressionContext'
 import { selectionFieldMergeKey } from '../shared/mergeKey'
-import { rowsPathPickerSource, rowsPathValueDrifts } from '../shared/rowsPathCompletionSource'
+import { rowsPathPickerSource, rowsPathValueDrifts } from '../shared/rowsPathPickerSource'
 import type { CompletionSource } from '../shared/completion'
 
 export type { FieldDef, FieldSection } from './fieldSchema'

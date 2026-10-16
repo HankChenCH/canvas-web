@@ -8,11 +8,9 @@
  * （呈现件 + 开合逻辑 composable；工具栏三下拉内建触发钮直用，状态栏缩放菜单/
  * 面板＋经 #trigger/#body 受控插槽迁移消费——issues/05）与表达式补全五件（数据
  * 契约/锚点测量/浮层控件/上下文判定与候选源适配——属性面板与画布文本
- * 编辑两域共用）及裸路径补全控件 usePathCompletion（rows-path-completion 工单
- * 02：复用同门 Popup/Anchor/applyCompletion，触发语义分轨——裸路径输入即弹；
- * rows-path-picker 工单 04 起两入口换装点选器后零消费方，退役归工单 05）、
- * rowsPath 候选源组装 rowsPathCompletionSource（工单 03/04：「行数组」文案置入
- * 的公共合流点；同上随换装零消费方，退役归工单 05）与点选器候选源组装
+ * 编辑两域共用；rows-path-completion 的裸路径补全控件 usePathCompletion 与
+ * rowsPathCompletionSource 手输源随 rowsPath 作者面纯点选化零消费方，已于
+ * rows-path-picker 工单 05 整体退役）与点选器候选源组装
  * rowsPathPickerSource（rows-path-picker 工单 02：剪枝枚举件适配，供选择器
  * mode='rowsPath' 消费——工单 04 起建表表单与右键轻表单两入口同源）与 schema
  * 声明切片桥 useDataSourceSchema（工单 04 自 status-bar
@@ -59,8 +57,7 @@ export {
 } from './expressionContext'
 export { useExpressionCompletion, type ExpressionCompletionState } from './useExpressionCompletion'
 export { expressionDiagnosticHint, useExpressionDiagnostics } from './useExpressionDiagnostics'
-export { usePathCompletion } from './usePathCompletion'
-export { rowsPathCompletionSource, rowsPathPickerSource, rowsPathValueDrifts } from './rowsPathCompletionSource'
+export { rowsPathPickerSource, rowsPathValueDrifts } from './rowsPathPickerSource'
 export { attachResourceTemplate, stripResourceTemplate } from './resourceTemplate'
 export { pathPickerEntries, type PathPickerEntry, type PathPickerMode } from './pathPickerModel'
 export {

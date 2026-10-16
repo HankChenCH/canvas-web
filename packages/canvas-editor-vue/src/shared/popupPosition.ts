@@ -7,8 +7,8 @@
  *
  * 实测缺陷（工单 06 背景，example 开发轨 2026-10-14）：浮层恒锚光标下方无翻转
  * 钳制，资源字段居面板底部——候选大半截出屏鼠标不可点。两控件（useExpression
- * Completion / usePathCompletion）的私有 clampToViewport 与本函数合并为单点，
- * 路径选择器菜单（工单 05）同函数消费。
+ * Completion / 已退役的 usePathCompletion，rows-path-picker 工单 05）的私有
+ * clampToViewport 与本函数合并为单点，路径选择器菜单（工单 05）同函数消费。
  *
  * 高/宽度量不到（0——首帧未渲染/降级）：按「放得下/原锚放」处理，不误翻转不
  * 误收口（首开路径由调用方延一拍补量）。纯几何、零 DOM、Node 可测。

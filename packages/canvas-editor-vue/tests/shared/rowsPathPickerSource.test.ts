@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest'
 
 import { parseExpressionSchema, type ExpressionSchemaNode } from '@hankchen/canvas-editor'
 
-import { rowsPathPickerSource, rowsPathValueDrifts } from '../../src/shared/rowsPathCompletionSource'
+import { rowsPathPickerSource, rowsPathValueDrifts } from '../../src/shared/rowsPathPickerSource'
 
 function schemaOf(raw: unknown): ExpressionSchemaNode {
     const parsed = parseExpressionSchema(raw)
