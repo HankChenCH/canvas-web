@@ -116,10 +116,8 @@ import {
     insertRootLayerInDraft,
     moveRootLayerInDraft,
     moveTableRowInDraft,
-    pickNextLayerRatio,
     pickNextTextStylePatch,
     RATIO_PRESETS,
-    ratioValue,
     TEXT_PRESETS,
     type DeletedLayerRef,
     type NextTextStyle,
@@ -973,30 +971,32 @@ export class EditorSession {
     /**
      * 武装建层（面板新增项/层型快捷键的统一入口，CONTEXT「武装」词条）：置 ui
      * 分支待命层型，下一次画布按下即开画拉；建层提交或 Esc 即解除——一次性
-     * 待命态，无粘性工具（spec 决策 2）。重复武装同型值等短路零通知。
+     * 待命态，无粘性工具（spec 决策 2）。重复武装同型同载荷值等短路零通知。
      *
-     * preset（text-defaults 工单 01 + image-ratio-preset 工单 01）：层型相关预设 =
-     * 写槽的快捷方式——命中档位先把档位值并入对应偏好槽再武装；未知 id = 跳过
-     * 写槽、武装照常（评审口径统一：「空转」只指写槽，武装层型本身仍合法）。
-     * - TextLayer + 文本预设档：写新层样式槽（v1 只 fontSize）；
-     * - ImageLayer + 比例预设档：写建层比例槽（'free' 即显式重置档）；QR 恒方
-     *   是层型硬钳、无比例槽（spec 豁免面）；
-     * - 交叉类型（文本层带比例档/图片层带文本档）各在对方清单查无此档、天然
-     *   跳写槽。
+     * preset（canvas-web-preset-submenu 工单 01，ADR 0021）：层型相关预设随武装
+     * 载荷一次性携带、**不再写任何偏好槽**——命中档位把档位 id 写进
+     * ui.armedCreatePreset（endCreate 落库一次性消费，取消路零残留）；未知 id =
+     * 不落载荷、武装照常（评审口径统一：「空转」只指载荷，武装层型本身仍合法）。
+     * - TextLayer + 文本预设档：载荷命中 TEXT_PRESETS（endCreate 档位字号直接
+     *   生效，不经新层样式槽——普通武装文本按槽的语义不受染指）；
+     * - ImageLayer + 比例预设档：载荷命中 RATIO_PRESETS（'free' 档载荷行为等价
+     *   自由；QR 恒方是层型硬钳、无比例语义，spec 豁免面）；
+     * - 交叉类型（文本层带比例档/图片层带文本档）各在对方清单查无此档、不落载荷。
      */
     armLayerCreate(type: LayerType, preset?: TextPresetId | RatioPresetId): void {
+        let payload = ''
         if (preset !== undefined && type === 'TextLayer') {
             const entry = TEXT_PRESETS.find((candidate) => candidate.id === preset)
-            if (entry) this.store.setNextTextStyle({ fontSize: entry.fontSize })
+            if (entry) payload = entry.id
         }
         if (preset !== undefined && type === 'ImageLayer') {
             const entry = RATIO_PRESETS.find((candidate) => candidate.id === preset)
-            if (entry) this.store.setNextLayerRatio(entry.id)
+            if (entry) payload = entry.id
         }
-        this.store.setArmedCreate(type)
+        this.store.setArmedCreate(type, '', payload)
     }
 
-    /** 解除建层武装（取消入口）：仅清待命态（含模板表风味载荷），零副作用。 */
+    /** 解除建层武装（取消入口）：仅清待命态（含模板表风味与预设载荷），零副作用。 */
     cancelArmLayerCreate(): void {
         this.store.setArmedCreate(null)
     }
@@ -1031,9 +1031,17 @@ export class EditorSession {
         const templateRowsPath = armed === 'TableLayer' && this.store.ui.armedCreateRowsPath !== ''
             ? this.store.ui.armedCreateRowsPath
             : undefined
+        // 预设载荷捕获（canvas-web-preset-submenu 工单 01）：文本/图片武装的预设档
+        // 随会话一次性定死（templateRowsPath 同门），createTo/endCreate 按生效档
+        // 消费；普通武装不进会话（undefined）
+        const preset =
+            (armed === 'TextLayer' || armed === 'ImageLayer') && this.store.ui.armedCreatePreset !== ''
+                ? this.store.ui.armedCreatePreset
+                : undefined
         this.store.setCreate({
             type: armed,
             templateRowsPath,
+            preset,
             startScene: point,
             currentScene: point,
             rect: { x: sceneX, y: sceneY, width: 0, height: 0 },
@@ -1050,21 +1058,29 @@ export class EditorSession {
      * 全部可见根层供轴，copyMode 首移同门）。零文档事务：修正只进会话几何，
      * 落库在 endCreate。
      *
-     * 建层比例槽（image-ratio-preset 工单 01，spec 决策 3/4）：仅 ImageLayer 按槽
-     * 钳制（QR 层不传 ratio、恒方语义不动，两钳互斥；其余层型无槽）；Shift 瞬时
-     * 反转槽态——槽非自由按 Shift = 临时自由、槽自由按 Shift = 临时钳 1:1，按住
-     * 生效松开还原（逐帧求位、不写槽、不改武装态，Figma 惯例的手势瞬时语义）。
+     * 建层预设档（canvas-web-preset-submenu 工单 01，ADR 0021，取代建层比例槽）：
+     * 仅 ImageLayer 按会话载荷档钳制（QR 层不传 ratio、恒方语义不动，两钳互斥；
+     * 其余层型无比例语义）；无载荷或 free 档 = 自由钳（普通武装恒自由）。
+     * Shift 瞬时反转源 = 生效档（载荷档或自由）：档具名按 Shift = 临时自由、
+     * 生效档自由（含无载荷）按 Shift = 临时钳 1:1，按住生效松开还原（逐帧求位、
+     * 不写载荷不改武装态，Figma 惯例的手势瞬时语义）。
      */
     createTo(sceneX: number, sceneY: number, shift = false): void {
         const gesture = this.store.ui.create
         const doc = this.store.doc
         if (!gesture || !doc) return
-        const slotRatio = gesture.type === 'ImageLayer' ? ratioValue(this.store.ui.nextLayerRatio) : null
-        // Shift 瞬时反转：槽非自由 = 临时自由（去钳）、槽自由 = 临时钳 1:1。
-        // 仅 ImageLayer 参与反转（spec 决策 6 豁免面：其余层型无槽、Shift 无效果）
+        // 预设档生效比：会话载荷命中比例清单即取档位比（会话内定死，武装态清后
+        // 消费不失效）；未命中/无载荷/free 档 = null（自由钳）
+        const presetEntry =
+            gesture.type === 'ImageLayer' && gesture.preset !== undefined
+                ? RATIO_PRESETS.find((candidate) => candidate.id === gesture.preset)
+                : undefined
+        const presetRatio = presetEntry?.ratio ? { ...presetEntry.ratio } : null
+        // Shift 瞬时反转：生效档具名 = 临时自由（去钳）、生效档自由 = 临时钳 1:1。
+        // 仅 ImageLayer 参与反转（spec 决策 6 豁免面：其余层型无比例语义、Shift 无效果）
         const ratio =
             gesture.type === 'ImageLayer'
-                ? (shift ? (slotRatio === null ? { w: 1, h: 1 } : null) : slotRatio)
+                ? (shift ? (presetRatio === null ? { w: 1, h: 1 } : null) : presetRatio)
                 : null
         const resolution = createRubberBandRect(
             gesture.type,
@@ -1088,14 +1104,19 @@ export class EditorSession {
      * - 死区外：单事务写入「createDefaultLayer 缺省形态 + position 左上角对准
      *   橡皮筋矩形（含吸附修正）+ shape.width/height」并 insertRootLayerInDraft
      *   置顶（priority min−1、push 数组尾）——尺寸取手势末态钳制结果（含 Shift
-     *   反转末态，image-ratio-preset 工单 01 spec 决策 4）；
+     *   反转末态，钳制源 = 会话预设档，canvas-web-preset-submenu 工单 01）；
      * - 死区内（点击兜底，位移按 CREATE_DEAD_ZONE_SCREEN_PX 屏幕 px 随 zoom 折算，
-     *   ALT_DRAG_DEAD_ZONE_SCREEN_PX 同门）：左上角对准点击点；尺寸按槽派生缺省
-     *   盒（image-ratio-preset 工单 01：ImageLayer 长边 200 定短边，自由 = 工厂
-     *   200×150 现状；忽略 shift——无位移可供等比约束；其余层型保持工厂缺省）。
+     *   ALT_DRAG_DEAD_ZONE_SCREEN_PX 同门）：左上角对准点击点；尺寸按会话预设档
+     *   派生缺省盒（ImageLayer 长边 200 定短边，自由/无载荷 = 工厂 200×150 现状；
+     *   忽略 shift——无位移可供等比约束；其余层型保持工厂缺省）。
      * 落库后自动选中新层并解除武装；返回新层路径（绑定层消费：文本层据此自动
      * 进文本编辑，spec 决策 6）。无会话/无文档空转返回 null。点击兜底不产生
      * 零尺寸层（缺省形态自带可见尺寸）。
+     *
+     * 预设档一次性消费（canvas-web-preset-submenu 工单 01，ADR 0021）：文本档
+     * 字号直接生效（不经新层样式槽——字体/行高等槽外字段仍按槽，普通武装语义
+     * 保留）；图片档比供死区缺省盒派生。档位随会话捕获，落库后武装与载荷双清
+     * （一次性语义，取消路零残留）。
      *
      * 模板表风味（template-table-drag-create 工单 01）：会话载荷 templateRowsPath
      * 非空即分派 createTemplateTable 工厂（死区外 shape = 手势正规化矩形，死区内
@@ -1118,8 +1139,21 @@ export class EditorSession {
         // 矩形（行模板宽 := 表宽耦合在工厂内生效）、死区内缺省壳 400×120；其余
         // 层型走 createDefaultLayer 既有路径
         const templateRowsPath = gesture.templateRowsPath
+        // 预设档消费（会话载荷，一次性）：文本档字号覆盖槽字号（槽外字段照槽）、
+        // 图片档比供死区缺省盒派生（free/未命中 = 工厂缺省）
+        const presetTextEntry =
+            gesture.type === 'TextLayer' && gesture.preset !== undefined
+                ? TEXT_PRESETS.find((candidate) => candidate.id === gesture.preset)
+                : undefined
+        const textDefaults = presetTextEntry
+            ? { ...this.store.ui.nextTextStyle, fontSize: presetTextEntry.fontSize }
+            : this.store.ui.nextTextStyle
+        const presetRatioEntry =
+            gesture.type === 'ImageLayer' && gesture.preset !== undefined
+                ? RATIO_PRESETS.find((candidate) => candidate.id === gesture.preset)
+                : undefined
+        const presetRatio = presetRatioEntry?.ratio ? { ...presetRatioEntry.ratio } : null
         this.store.transact((draft) => {
-            // 新层样式槽覆盖工厂缺省（text-defaults 工单 01）：工厂仅 TextLayer 臂消费
             const layer = (
                 templateRowsPath !== undefined
                     ? createTemplateTable(
@@ -1130,19 +1164,16 @@ export class EditorSession {
                                     shape: { width: gesture.rect.width, height: gesture.rect.height },
                                 },
                       )
-                    : createDefaultLayer(gesture.type, this.store.ui.nextTextStyle)
+                    : createDefaultLayer(gesture.type, textDefaults)
             ) as Draft<Layer>
             if (clicked) {
-                // 点击兜底：ImageLayer 按建层比例槽派生缺省盒（自由档走工厂缺省），
+                // 点击兜底：ImageLayer 按会话预设档派生缺省盒（自由档走工厂缺省），
                 // 其余层型缺省尺寸原样；position 左上角对准点击点（拖文件入画布
                 // 「左上角对准释放点」同门，spec 决策 5）
-                if (gesture.type === 'ImageLayer') {
-                    const ratio = ratioValue(this.store.ui.nextLayerRatio)
-                    if (ratio) {
-                        const size = defaultSizeForRatio(ratio)
-                        layer.shape.width = size.width
-                        layer.shape.height = size.height
-                    }
+                if (gesture.type === 'ImageLayer' && presetRatio) {
+                    const size = defaultSizeForRatio(presetRatio)
+                    layer.shape.width = size.width
+                    layer.shape.height = size.height
                 }
                 layer.position = { ...layer.position, x: gesture.startScene.x, y: gesture.startScene.y }
             } else {
@@ -1159,9 +1190,9 @@ export class EditorSession {
     }
 
     /**
-     * 取消画拉（Esc 语义）：清橡皮筋会话、命中轴回显与武装态——零文档写入、
-     * 零历史步（拖拽期纯视觉因此取消零回退成本，spec 决策 4）。幂等：无会话时
-     * 仅解除武装（待命态 Esc 同走此口）。
+     * 取消画拉（Esc 语义）：清橡皮筋会话、命中轴回显与武装态（含模板表风味与
+     * 预设载荷）——零文档写入、零历史步（拖拽期纯视觉因此取消零回退成本，spec
+     * 决策 4）。幂等：无会话时仅解除武装（待命态 Esc 同走此口）。
      */
     cancelCreate(): void {
         this.store.setCreate(null)
@@ -1342,7 +1373,9 @@ export class EditorSession {
     /**
      * 只读偏好（保存 prefs 的读取口）：与 store.ui 同源，给宿主一个不用下钻
      * store 的口。读 = getEditorPrefs，写 = applyEditorPrefs，对称成对；帧切片
-     * 走 restoreEditorState，两不相混。
+     * 走 restoreEditorState，两不相混。建层比例（nextLayerRatio）已退役不在此
+     * 带出（canvas-web-preset-submenu 工单 01，ADR 0021——预设随武装载荷一次性
+     * 携带，prefs 停写）。
      */
     getEditorPrefs(): EditorPrefsState {
         const ui = this.store.ui
@@ -1350,7 +1383,6 @@ export class EditorSession {
             rulersVisible: ui.rulersVisible,
             anchorExpanded: ui.anchorExpanded,
             nextTextStyle: ui.nextTextStyle,
-            nextLayerRatio: ui.nextLayerRatio,
         }
     }
 
@@ -1358,15 +1390,14 @@ export class EditorSession {
      * 应用偏好（会话建立时一次性，跨会话恢复 prefs 的写入口）：整体替换
      * rulersVisible/anchorExpanded，不进历史；值等写入经 store 短路零通知。
      * 新层样式（text-defaults 工单 01）走宽容读逐字段合并（pickNextTextStylePatch
-     * 共享谓词——与捕获同门，缺字/类型不符保留现值）；建层比例（image-ratio-preset
-     * 工单 01）走宽容读枚举收口（pickNextLayerRatio——非六档枚举值/旧快照缺字段
-     * 回落 'free'）。
+     * 共享谓词——与捕获同门，缺字/类型不符保留现值）。旧快照的 nextLayerRatio
+     * 遗留键宽容忽略（canvas-web-preset-submenu 工单 01：槽退役停读，载荷上多余
+     * 的键无害；schemaVersion 加法演进）。
      */
     applyEditorPrefs(prefs: EditorPrefsState): void {
         this.store.setRulersVisible(prefs.rulersVisible)
         this.store.setAnchorExpanded(prefs.anchorExpanded)
         this.store.setNextTextStyle(pickNextTextStylePatch(prefs.nextTextStyle))
-        this.store.setNextLayerRatio(pickNextLayerRatio(prefs.nextLayerRatio as unknown))
     }
 
     // ---- 对齐画布（layer-align-snap 工单 01）：图层盒整体对齐画布几何 ----

@@ -205,7 +205,9 @@ export function defaultNextTextStyle(): NextTextStyle {
 
 /**
  * 建层比例档位（spec 决策 1/2）：'free' = 自由钳（工厂行为兜底），其余五个具名
- * 有理数比。v1 固定清单、无自定义输入。
+ * 有理数比。v1 固定清单、无自定义输入。清单随建层比例槽退役保持不动
+ * （canvas-web-preset-submenu 工单 01，ADR 0021）：free 仍是「自由」枚举值与
+ * Shift 语义引用，具名档由武装预设载荷（armedCreatePreset）一次性携带消费。
  */
 export type RatioPresetId = 'free' | '1:1' | '4:3' | '3:4' | '16:9' | '9:16'
 
@@ -225,25 +227,15 @@ export const RATIO_PRESETS: readonly RatioPreset[] = [
     { id: '9:16', ratio: { w: 9, h: 16 } },
 ]
 
-/** 建层比例槽初值：自由（工厂画拉行为兜底） */
-export function defaultNextLayerRatio(): RatioPresetId {
-    return 'free'
-}
-
 /** 档位 → 钳制用有理数比：'free' → null（不钳），具名档 → {w, h} 副本 */
 export function ratioValue(id: RatioPresetId): { w: number; h: number } | null {
     const entry = RATIO_PRESETS.find((candidate) => candidate.id === id)
     return entry?.ratio ? { ...entry.ratio } : null
 }
 
-/**
- * 建层比例槽的宽容读（prefs 恢复唯一入口）：六档枚举值原样收，其余（旧快照
- * 缺字段/存储端脏值）回落 'free'。载荷来自宿主 JSON 快照，类型层的形状信任
- * 不了，运行时验；未知 prefs 键由调用方整体忽略（不进本函数视野）。
- */
-export function pickNextLayerRatio(raw: unknown): RatioPresetId {
-    return RATIO_PRESETS.some((candidate) => candidate.id === raw) ? (raw as RatioPresetId) : 'free'
-}
+// 建层比例槽的两个配套函数已随槽退役（canvas-web-preset-submenu 工单 01，ADR
+// 0021）：defaultNextLayerRatio（槽初值）与 pickNextLayerRatio（prefs 宽容读）
+// ——预设改随武装载荷一次性携带，停写停读，旧快照键由调用方宽容忽略。
 
 /**
  * 死区点击缺省盒的比例派生（spec 决策 3）：长边 200 定短边——短边 = round(长边

@@ -7,8 +7,11 @@ import {
     buildLayerOutline,
     createDefaultLayer,
     createTemplateTable,
+    defaultSizeForRatio,
     insertRootLayerAdjacentInDraft,
     type LayerOutlineNode,
+    RATIO_PRESETS,
+    ratioValue,
 } from '../../src/editing/layerPanel'
 import { cloneLayerSubtree } from '../../src/editing/clipboard'
 import type { Draft } from 'immer'
@@ -712,5 +715,31 @@ describe('createTemplateTable：shape 参数化（template-table-drag-create 工
         expect(table.template!.cells[0]!.shape.width).toBe(260)
         const content = table.template!.cells[0]!.content
         expect(content && content.type === 'TextLayer' ? content.shape.width : null).toBe(260)
+    })
+})
+
+// 比例预设常量与纯函数一组自 nextLayerRatio.test.ts 迁入（canvas-web-preset-submenu
+// 工单 01）：建层比例槽退役后清单照旧不动（ADR 0021——free 仍是「自由」枚举值与
+// Shift 语义引用，defaultSizeForRatio 服务预设档死区缺省盒派生）。
+describe('比例预设常量与纯函数（清单不动，ADR 0021）', () => {
+    it('RATIO_PRESETS 六档固定清单（free + 五个具名比）', () => {
+        expect(RATIO_PRESETS.map((preset) => preset.id)).toEqual(['free', '1:1', '4:3', '3:4', '16:9', '9:16'])
+    })
+
+    it('ratioValue：free → null（不钳），具名档 → 有理数 {w, h}', () => {
+        expect(ratioValue('free')).toBeNull()
+        expect(ratioValue('1:1')).toEqual({ w: 1, h: 1 })
+        expect(ratioValue('4:3')).toEqual({ w: 4, h: 3 })
+        expect(ratioValue('3:4')).toEqual({ w: 3, h: 4 })
+        expect(ratioValue('16:9')).toEqual({ w: 16, h: 9 })
+        expect(ratioValue('9:16')).toEqual({ w: 9, h: 16 })
+    })
+
+    it('defaultSizeForRatio 死区派生：长边 200 定短边（round half-up）', () => {
+        expect(defaultSizeForRatio({ w: 16, h: 9 })).toEqual({ width: 200, height: 113 }) // round(112.5)
+        expect(defaultSizeForRatio({ w: 4, h: 3 })).toEqual({ width: 200, height: 150 })
+        expect(defaultSizeForRatio({ w: 3, h: 4 })).toEqual({ width: 150, height: 200 })
+        expect(defaultSizeForRatio({ w: 9, h: 16 })).toEqual({ width: 113, height: 200 })
+        expect(defaultSizeForRatio({ w: 1, h: 1 })).toEqual({ width: 200, height: 200 })
     })
 })

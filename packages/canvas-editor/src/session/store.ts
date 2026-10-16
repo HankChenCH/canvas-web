@@ -21,7 +21,7 @@ import type { ResizeHandle } from '../spatial/resize'
 import { pathsEqual, type LayerPath } from '../shared/layerPath'
 import type { ExpressionSchemaNode } from '../shared/expressionSchema'
 import type { ResourceStatusMap } from '../shared/resourceStatus'
-import { defaultNextLayerRatio, defaultNextTextStyle, type NextTextStyle, type RatioPresetId } from '../editing/layerPanel'
+import { defaultNextTextStyle, type NextTextStyle } from '../editing/layerPanel'
 
 enablePatches()
 // 关闭 immer 自动冻结：文档树以「不可变 + 结构共享」语义流转（引用相等即未变），
@@ -88,6 +88,14 @@ export interface CreateGesture {
      * （G 快捷键 V1 空表语义原样）。
      */
     templateRowsPath?: string
+    /**
+     * 建层预设载荷（canvas-web-preset-submenu 工单 01，ADR 0021）：beginLayerCreate
+     * 时从 ui.armedCreatePreset 捕获（templateRowsPath 同门，会话内定死）——文本层
+     * 载荷命中 TEXT_PRESETS = 档位字号直接生效（不经新层样式槽）；图片层载荷命中
+     * RATIO_PRESETS = 比例钳橡皮筋与死区缺省盒（Shift 瞬时反转源 = 本生效档）。
+     * undefined = 普通武装（文本按槽、图片恒自由）。
+     */
+    preset?: string
     /** 起点场景坐标（两点正规化与死区判定基准） */
     startScene: Point
     /** 当前指针场景坐标 */
@@ -164,6 +172,17 @@ export interface EditorUi {
      * 不进 wire（红线 3 延伸），beginLayerCreate 捕获进建层会话；openDocument 重置。
      */
     armedCreateRowsPath: string
+    /**
+     * 武装 token 的预设载荷（canvas-web-preset-submenu 工单 01，ADR 0021）：预设
+     * 随武装一次性携带、不再写任何偏好槽——armedCreate === 'TextLayer' 且本载荷
+     * 命中 TEXT_PRESETS = 文本预设风味（endCreate 按档位字号直接生效，不经新层
+     * 样式槽）；armedCreate === 'ImageLayer' 且本载荷命中 RATIO_PRESETS = 比例
+     * 预设风味（createTo 钳橡皮筋、endCreate 死区缺省盒）。空串 = 普通武装
+     * （文本按新层样式槽、图片恒自由），与 armedCreateRowsPath 同款空值语义。
+     * ui 瞬态载荷——不进 graph、不进 wire、不进 prefs（红线 3 延伸），
+     * beginLayerCreate 捕获进建层会话；openDocument 重置。
+     */
+    armedCreatePreset: string
     /** 进行中的画拉建层橡皮筋会话（拖拽期纯视觉，文档零变更）；null = 无 */
     create: CreateGesture | null
     /** 进行中的文本编辑会话；null = 非编辑态 */
@@ -185,18 +204,10 @@ export interface EditorUi {
      * 族字段的权威写（updateSpec 捕获）更新槽，建层（endCreate/addRootLayer）
      * 以槽值覆盖工厂缺省。与锚点折叠同款的面板偏好——openDocument 换文档不重
      * 置，永不进历史；随工程数据 prefs 桶跨会话持久（宿主通道，内核零 localStorage）。
+     * 文本预设档不写槽（canvas-web-preset-submenu 工单 01，ADR 0021：预设随武装
+     * 载荷一次性携带，槽只保留属性面板信号一种语义）。
      */
     nextTextStyle: NextTextStyle
-    /**
-     * 建层比例槽（image-ratio-preset 工单 01，CONTEXT「建层比例」词条）：记忆
-     * 「下一个新建图片层用什么宽高比」的编辑器级偏好——六档、缺省自由，仅
-     * ImageLayer 消费（QR 恒方是层型硬钳，其余层型无此槽）。比例预设的应用 =
-     * 写槽再武装画拉（armLayerCreate），普通图片层项/快捷键 I 不带 preset、武装
-     * 后按槽值钳制——槽是唯一偏好源。与锚点折叠同款的面板偏好——openDocument
-     * 换文档不重置，永不进历史；随工程数据 prefs 桶跨会话持久（宿主通道，内核
-     * 零 localStorage）。
-     */
-    nextLayerRatio: RatioPresetId
     /**
      * 数据源 schema 声明（content-completion 工单 03/08，D2 宿主随会话注入）：
      * 编译产物形状树或降级 null（根级结构性拒绝，注入期经
@@ -335,12 +346,12 @@ export class EditorStore {
         resize: null,
         armedCreate: null,
         armedCreateRowsPath: '',
+        armedCreatePreset: '',
         create: null,
         editing: null,
         renaming: null,
         anchorExpanded: false,
         nextTextStyle: defaultNextTextStyle(),
-        nextLayerRatio: defaultNextLayerRatio(),
         dataSourceSchema: null,
         guides: [],
         rulersVisible: true,
@@ -378,7 +389,7 @@ export class EditorStore {
 
     /** 打开/替换文档：ui 选择/编辑/重命名会话与双向历史一并重置（新文档不继承旧路径/旧事务）；
      *  参考线/锁定集合/查找会话/建层武装与画拉会话随当次会话清空（对位轴/文档内容防护/
-     *  查询词/待命层型不跨文档），标尺显隐/锚点折叠/新层样式/建层比例作为偏好保留 */
+     *  查询词/待命层型不跨文档），标尺显隐/锚点折叠/新层样式作为偏好保留 */
     openDocument(canvas: Canvas): void {
         this.docValue = canvas
         this.undoSteps = []
@@ -391,6 +402,7 @@ export class EditorStore {
             resize: null,
             armedCreate: null,
             armedCreateRowsPath: '',
+            armedCreatePreset: '',
             create: null,
             editing: null,
             renaming: null,
@@ -506,12 +518,24 @@ export class EditorStore {
     /**
      * 建层武装置/解除（null，drag-create 工单 01）；标量值等短路（重复武装同型
      * 不通知）。rowsPath（template-table-drag-create 工单 01）：模板表风味载荷
-     * 与层型一体写——同层型同载荷才短路（重复武装同型换载荷要更新），解除
-     * （null）一律清载荷。
+     * 与层型一体写；preset（canvas-web-preset-submenu 工单 01）：预设载荷与层型
+     * 一体写——同层型同载荷才短路（重复武装同型换载荷要更新），解除（null）
+     * 一律清载荷（rowsPath 与 preset 双清）。
      */
-    setArmedCreate(type: LayerType | null, rowsPath = ''): void {
-        if (this.uiValue.armedCreate === type && this.uiValue.armedCreateRowsPath === rowsPath) return
-        this.uiValue = { ...this.uiValue, armedCreate: type, armedCreateRowsPath: type === null ? '' : rowsPath }
+    setArmedCreate(type: LayerType | null, rowsPath = '', preset = ''): void {
+        if (
+            this.uiValue.armedCreate === type
+            && this.uiValue.armedCreateRowsPath === rowsPath
+            && this.uiValue.armedCreatePreset === preset
+        ) {
+            return
+        }
+        this.uiValue = {
+            ...this.uiValue,
+            armedCreate: type,
+            armedCreateRowsPath: type === null ? '' : rowsPath,
+            armedCreatePreset: type === null ? '' : preset,
+        }
         this.notify({ scope: 'ui', branch: 'armedCreate' })
     }
 
@@ -540,24 +564,15 @@ export class EditorStore {
     }
 
     /**
-     * 新层样式槽逐字段合并（text-defaults 工单 01：捕获/预设/prefs 恢复的统一
-     * 写入口）：patch 并入现值，五字段值等短路（重复写同值零通知），不进历史。
+     * 新层样式槽逐字段合并（text-defaults 工单 01：捕获/prefs 恢复的统一写入口；
+     * canvas-web-preset-submenu 工单 01 起预设不再写槽）：patch 并入现值，五字段
+     * 值等短路（重复写同值零通知），不进历史。
      */
     setNextTextStyle(patch: Partial<NextTextStyle>): void {
         const next = { ...this.uiValue.nextTextStyle, ...patch }
         if (nextTextStyleEqual(this.uiValue.nextTextStyle, next)) return
         this.uiValue = { ...this.uiValue, nextTextStyle: next }
         this.notify({ scope: 'ui', branch: 'nextTextStyle' })
-    }
-
-    /**
-     * 建层比例槽写入（image-ratio-preset 工单 01：比例预设应用 / prefs 恢复的
-     * 统一写入口）：值等短路（重复写同档零通知），仅 ui 通知、不进历史。
-     */
-    setNextLayerRatio(id: RatioPresetId): void {
-        if (this.uiValue.nextLayerRatio === id) return
-        this.uiValue = { ...this.uiValue, nextLayerRatio: id }
-        this.notify({ scope: 'ui', branch: 'nextLayerRatio' })
     }
 
     /**
