@@ -18,6 +18,9 @@
  *   拆不动的原文直接传入）+ 级联菜单钮。菜单为单面板逐层下钻（层级栈 + 返回
  *   行），object 节点点选下钻（可下钻判定 = 尾点取层非空，pathPickerModel），
  *   叶子点选提交（update:modelValue + change 同发，壳层包壳走既有 commit 管线）。
+ * - 面包屑前缀（rows-path-picker 工单 06，两 mode 同享）：非根层行在段名前弱化
+ *   显示已积累路径，根层行不渲染前缀维持纯段名——前缀派生/分隔符常量/截断面
+ *   语义的权威描述见 pathPickerModel 模块头，模板只做拆分呈现。
  * - `source === null`（未绑 schema，引用以声明为门）：不渲染菜单入口，组件
  *   整体只读回显；disabled 同款（会话内容锁定面）。
  * - 浮层 Teleport 到 body + fixed 定位（躲面板 overflow 裁剪），锚点 = 组件根
@@ -38,7 +41,13 @@
 import { computed, nextTick, onScopeDispose, ref, watch } from 'vue'
 
 import type { CompletionSource } from './completion'
-import { pathPickerEntries, type PathPickerEntry, type PathPickerMode } from './pathPickerModel'
+import {
+    PATH_PICKER_BREADCRUMB_SEPARATOR,
+    pathPickerEntries,
+    pathPickerParentPrefix,
+    type PathPickerEntry,
+    type PathPickerMode,
+} from './pathPickerModel'
 import { placePopupInViewport } from './popupPosition'
 import { ROWS_PATH_ARRAY_BADGE } from './rowsPathPickerSource'
 
@@ -97,6 +106,14 @@ const emptyText = computed(() =>
 function badgeText(type: string): string {
     return props.mode === 'rowsPath' && type === 'array' ? ROWS_PATH_ARRAY_BADGE : type
 }
+
+/** 当前层菜单行（工单 06 呈现拆分）：条目 + 面包屑前缀（path 去尾段，根层行 '' 不渲染前缀） */
+const currentRows = computed(() =>
+    (currentLevel.value?.entries ?? []).map((entry) => ({
+        entry,
+        prefix: pathPickerParentPrefix(entry.path),
+    })),
+)
 
 function buildLevel(prefix: string, label: string): PickerLevel {
     return {
@@ -327,29 +344,38 @@ onScopeDispose(detachListeners, true)
                     class="cn-pathpicker__empty px-2 py-2 text-cn-muted"
                 >{{ emptyText }}</div>
                 <button
-                    v-for="(entry, index) in currentLevel.entries"
-                    :key="`${entry.path}`"
+                    v-for="(row, index) in currentRows"
+                    :key="`${row.entry.path}`"
                     type="button"
                     role="menuitem"
                     class="cn-pathpicker__option flex w-full items-center gap-1.5 px-2 py-1.5 text-left"
                     :class="index === activeIndex ? 'cn-pathpicker__option--active' : ''"
-                    :aria-label="entry.path"
-                    :title="entry.path"
-                    @click="activate(entry)"
+                    :aria-label="row.entry.path"
+                    :title="row.entry.path"
+                    @click="activate(row.entry)"
                     @mousemove="activeIndex = index"
                 >
-                    <span class="cn-pathpicker__segment min-w-0 truncate font-mono text-cn-fg">{{ entry.item.segment }}</span>
+                    <!-- 面包屑前缀（工单 06）：非根层行弱化父路径，点选途中全路径可见；
+                         min-w-0 truncate 可截，段名 shrink-0 尾段恒可见（max-w 截断面不回退） -->
                     <span
-                        v-if="entry.item.type"
+                        v-if="row.prefix !== ''"
+                        class="cn-pathpicker__prefix min-w-0 truncate font-mono text-cn-muted"
+                    >{{ row.prefix }} {{ PATH_PICKER_BREADCRUMB_SEPARATOR }}</span>
+                    <span
+                        class="cn-pathpicker__segment truncate font-mono text-cn-fg"
+                        :class="row.prefix === '' ? 'min-w-0' : 'shrink-0 max-w-full'"
+                    >{{ row.entry.item.segment }}</span>
+                    <span
+                        v-if="row.entry.item.type"
                         class="shrink-0 rounded-sm bg-cn-field px-1 py-0.5 text-[9px] leading-none text-cn-muted"
-                    >{{ badgeText(entry.item.type) }}</span>
+                    >{{ badgeText(row.entry.item.type) }}</span>
                     <span
-                        v-if="entry.item.description ?? entry.item.title"
+                        v-if="row.entry.item.description ?? row.entry.item.title"
                         class="min-w-0 flex-1 truncate text-[10px] leading-none text-cn-muted"
-                    >{{ entry.item.description ?? entry.item.title }}</span>
+                    >{{ row.entry.item.description ?? row.entry.item.title }}</span>
                     <!-- 可下钻指示（object/结构节点）：点选进入下一层 -->
                     <span
-                        v-if="entry.drillable"
+                        v-if="row.entry.drillable"
                         class="cn-pathpicker__drill ml-auto shrink-0 text-cn-muted"
                         aria-hidden="true"
                     >›</span>

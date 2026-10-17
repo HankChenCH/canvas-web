@@ -23,6 +23,11 @@
  *     语义标记）：数组终点可激活不可下钻（数组条目保留在候选面、不做探层二
  *     次推断），对象中间站只可下钻不可激活（D3：数组是唯一可点终点）。「行
  *     数组」徽标文案归组件呈现层映射，不进数据契约。
+ * - 面包屑前缀（rows-path-picker 工单 06，纯呈现派生）：菜单行在段名前弱化
+ *   显示已积累路径——pathPickerParentPrefix(path) = path 去尾段（`order.items`
+ *   → 'order'），根层行（无父段）空串不渲染前缀；分隔符单点常量
+ *   PATH_PICKER_BREADCRUMB_SEPARATOR 同住此处（展示词汇单点，两 mode 级联壳
+ *   同享）。拆分呈现归组件模板（前缀 truncate、段名 shrink-0 尾段恒可见）。
  */
 import type { CompletionItem, CompletionSource } from './completion'
 
@@ -73,4 +78,17 @@ function rowsPathEntry(path: string, item: CompletionItem): PathPickerEntry {
 function isDrillable(source: CompletionSource, path: string): boolean {
     const sub = source(`${path}.`)
     return sub !== null && sub.candidates.some((item) => item.kind === 'path')
+}
+
+/** 菜单行面包屑分隔符（工单 06 展示词汇单点）：前缀与现段名之间的连接符 */
+export const PATH_PICKER_BREADCRUMB_SEPARATOR = '›'
+
+/**
+ * 菜单行面包屑前缀（工单 06）：path 去尾段——下钻行在段名前弱化显示已积累
+ * 路径（点选途中完整落点随时可见），根层行（无父段）空串（组件不渲染前缀，
+ * 呈现维持纯段名不变）。纯派生 Node 可测，拆分呈现归组件模板。
+ */
+export function pathPickerParentPrefix(path: string): string {
+    const cut = path.lastIndexOf('.')
+    return cut === -1 ? '' : path.slice(0, cut)
 }

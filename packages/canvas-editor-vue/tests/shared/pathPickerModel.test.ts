@@ -11,7 +11,11 @@
 import { describe, expect, it } from 'vitest'
 
 import type { CompletionItem, CompletionSource } from '../../src/shared/completion'
-import { pathPickerEntries, type PathPickerEntry } from '../../src/shared/pathPickerModel'
+import {
+    pathPickerEntries,
+    pathPickerParentPrefix,
+    type PathPickerEntry,
+} from '../../src/shared/pathPickerModel'
 
 /** 桩源：手工清单（调用签名 → 候选），带 kind 维度全形态 */
 function stubSource(levels: Record<string, readonly CompletionItem[]>): CompletionSource {
@@ -118,5 +122,20 @@ describe('pathPickerEntries：终点形态分叉（rows-path-picker 工单 02，
         expect(matrix(pathPickerEntries(forkedSource, 'order.', 'rowsPath'))).toEqual([
             ['order.items', true, false],
         ])
+    })
+})
+
+describe('pathPickerParentPrefix：菜单行面包屑前缀（rows-path-picker 工单 06）', () => {
+    it('下钻行 = 已积累路径去尾段（点选途中全路径可见的呈现面）', () => {
+        expect(pathPickerParentPrefix('order.items')).toBe('order')
+        expect(pathPickerParentPrefix('order.items.deep')).toBe('order.items')
+        expect(pathPickerParentPrefix('row.name')).toBe('row')
+        expect(pathPickerParentPrefix('$root.order')).toBe('$root')
+    })
+
+    it('根层行（无父段）= 空串：组件不渲染前缀，呈现维持纯段名不变', () => {
+        expect(pathPickerParentPrefix('rows')).toBe('')
+        expect(pathPickerParentPrefix('$root')).toBe('')
+        expect(pathPickerParentPrefix('')).toBe('')
     })
 })

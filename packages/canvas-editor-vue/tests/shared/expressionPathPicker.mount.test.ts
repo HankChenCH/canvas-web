@@ -74,6 +74,11 @@ const optionSegments = (): string[] =>
     Array.from(document.body.querySelectorAll('.cn-pathpicker__option .cn-pathpicker__segment')).map(
         (node) => node.textContent ?? '',
     )
+/** 面包屑前缀（工单 06）：非根层行的弱化父路径行（内容 = 前缀 + 分隔符）；根层行不渲染 */
+const optionPrefixes = (): string[] =>
+    Array.from(document.body.querySelectorAll('.cn-pathpicker__option .cn-pathpicker__prefix')).map(
+        (node) => node.textContent ?? '',
+    )
 const optionEls = (): HTMLElement[] =>
     Array.from(document.body.querySelectorAll<HTMLElement>('.cn-pathpicker__option'))
 const openMenu = async (wrapper: VueWrapper): Promise<void> => {
@@ -116,13 +121,15 @@ describe('级联菜单：逐层枚举 → 下钻 → 提交（真实枚举器源
         await openMenu(wrapper)
         expect(menuEl()).not.toBeNull()
         expect(optionSegments()).toEqual(['orderNo', 'order', '$root'])
+        // 根层行（前缀空）保持纯段名不变：不渲染面包屑前缀
+        expect(optionPrefixes()).toEqual([])
         // order 是 object（下钻层非空）→ 带 ›；orderNo 是 scalar 叶子
         const options = optionEls()
         expect(options[0]!.querySelector('.cn-pathpicker__drill')).toBeNull()
         expect(options[1]!.querySelector('.cn-pathpicker__drill')).not.toBeNull()
     })
 
-    it('object 点选下钻：层级栈进一层 + 返回行；叶子点选提交全路径并收起', async () => {
+    it('object 点选下钻：层级栈进一层 + 返回行；下钻行带弱化父路径前缀；叶子点选提交全路径并收起', async () => {
         const wrapper = mountPicker({ modelValue: '', source })
         await openMenu(wrapper)
 
@@ -130,6 +137,10 @@ describe('级联菜单：逐层枚举 → 下钻 → 提交（真实枚举器源
         await optionEls()[1]!.click()
         await nextTick()
         expect(optionSegments()).toEqual(['items', 'totalAmount'])
+        // 面包屑前缀（工单 06）：弱化父路径（text-cn-muted）+ 分隔符，段名维持纯文本
+        expect(optionPrefixes()).toEqual(['order ›', 'order ›'])
+        const prefixEl = document.body.querySelector('.cn-pathpicker__prefix')!
+        expect(prefixEl.className).toContain('text-cn-muted')
         expect(document.body.querySelector('.cn-pathpicker__back')?.textContent).toContain('根级字段')
 
         // 点 items（数组收敛为叶子）→ 提交全路径，update:modelValue + change 同发
@@ -140,7 +151,7 @@ describe('级联菜单：逐层枚举 → 下钻 → 提交（真实枚举器源
         expect(menuEl()).toBeNull()
     })
 
-    it('返回行回上一层层级栈', async () => {
+    it('返回行回上一层层级栈（根层行前缀随之退场）', async () => {
         const wrapper = mountPicker({ modelValue: '', source })
         await openMenu(wrapper)
         await optionEls()[1]!.click() // order 下钻
@@ -148,6 +159,7 @@ describe('级联菜单：逐层枚举 → 下钻 → 提交（真实枚举器源
         await document.body.querySelector<HTMLElement>('.cn-pathpicker__back')!.click()
         await nextTick()
         expect(optionSegments()).toEqual(['orderNo', 'order', '$root'])
+        expect(optionPrefixes()).toEqual([])
     })
 
     it('行上下文源（模板格内容层形态）：头部含 row/$index，$index 叶子直提', async () => {
@@ -165,6 +177,7 @@ describe('级联菜单：逐层枚举 → 下钻 → 提交（真实枚举器源
         await openMenu(wrapper)
         // 行上下文头部：orderNo/order/$root/row/$index
         expect(optionSegments()).toEqual(['orderNo', 'order', '$root', 'row', '$index'])
+        expect(optionPrefixes()).toEqual([])
 
         // $index 是标量叶子：直接提交
         await optionEls()[4]!.click()
@@ -256,18 +269,22 @@ describe('rowsPath mode 终点形态分叉（rows-path-picker 工单 02，spec D
         const wrapper = mountPicker({ modelValue: '', source: rowsSource, mode: 'rowsPath' })
         await openMenu(wrapper)
         expect(optionSegments()).toEqual(['rows', 'order'])
+        expect(optionPrefixes()).toEqual([]) // 根层行：资源面视觉零变化的同款纯段名
         const options = optionEls()
         expect(options[0]!.querySelector('.cn-pathpicker__drill')).toBeNull()
         expect(options[0]!.textContent).toContain('行数组')
         expect(options[1]!.querySelector('.cn-pathpicker__drill')).not.toBeNull()
     })
 
-    it('点对象不可激活只下钻：不发表单事件，进子层', async () => {
+    it('点对象不可激活只下钻：下钻行带父路径前缀，不发表单事件', async () => {
         const wrapper = mountPicker({ modelValue: '', source: rowsSource, mode: 'rowsPath' })
         await openMenu(wrapper)
         await optionEls()[1]!.click() // order（对象中间站）
         await nextTick()
         expect(optionSegments()).toEqual(['items'])
+        // 前缀仅呈现（工单 06 值面零改动）：行上 :aria-label/:title 仍是全路径
+        expect(optionPrefixes()).toEqual(['order ›'])
+        expect(optionEls()[0]!.getAttribute('aria-label')).toBe('order.items')
         expect(wrapper.emitted('update:modelValue')).toBeUndefined()
         expect(wrapper.emitted('change')).toBeUndefined()
     })
@@ -287,6 +304,7 @@ describe('rowsPath mode 终点形态分叉（rows-path-picker 工单 02，spec D
         await openMenu(wrapper)
         await optionEls()[1]!.click() // order 下钻
         await nextTick()
+        expect(optionPrefixes()).toEqual(['order ›']) // 点选途中全路径可见
         await optionEls()[0]!.click() // order.items（数组终点）
         await nextTick()
         expect(wrapper.emitted('update:modelValue')!).toEqual([['order.items']])
