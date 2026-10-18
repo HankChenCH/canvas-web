@@ -103,6 +103,11 @@ export interface FieldDef {
     readonly nonEmpty?: boolean
     /** select 取值域（领域常量原样引用，不自创缩写） */
     readonly domain?: readonly string[]
+    /**
+     * select 选项显示名（value → 标签，image-fit 工单 05「适配」）：缺省 = 原值
+     * 显示。值仍提交 wire 原值，文案只呈现
+     */
+    readonly optionLabels?: Readonly<Record<string, string>>
     readonly min?: number
     readonly max?: number
     readonly step?: number
@@ -235,11 +240,32 @@ const TEXT_SECTION: FieldSection = {
     ],
 }
 
+/**
+ * 适配模式取值（image-fit 工单 05，ADR 0023）：镜像 js-canvas 的 IMAGE_FIT_*
+ * 常量——内核 barrel 零 diff 红线不转出（editor-vue 禁直连 canvas），字面串对齐
+ * wire 契约；v1 已知值仅 contain，未知值渲染面降级 cover（白名单在核心渲染臂）
+ */
+const IMAGE_FIT_COVER = 'cover'
+const IMAGE_FIT_CONTAIN = 'contain'
+
 const IMAGE_SECTION: FieldSection = {
     title: '图片',
     // 上传控件（缩略图回显 + 上传 + 紧凑路径行）；静态值语义不变——data 门提交
     // 走 updateData（字面接管），引用形态（data URL/宿主存储）归 uploadHandler
-    fields: [{ key: ['src'], label: '资源地址', control: 'imageSrc', data: true, resource: true }],
+    //
+    // 「适配」（ADR 0023，image-fit 工单 05）：静态声明二选一——铺满裁切（cover，
+    // 缺省）/完整显示（contain）；不带 data/resource 标记（无表达式态），提交走
+    // updateSpec 权威写。缺省态 wire 无键，读侧经 layerFieldTarget 投影回显 cover
+    fields: [
+        { key: ['src'], label: '资源地址', control: 'imageSrc', data: true, resource: true },
+        {
+            key: ['fit'],
+            label: '适配',
+            control: 'select',
+            domain: [IMAGE_FIT_COVER, IMAGE_FIT_CONTAIN],
+            optionLabels: { [IMAGE_FIT_COVER]: '铺满裁切', [IMAGE_FIT_CONTAIN]: '完整显示' },
+        },
+    ],
 }
 
 const QR_SECTION: FieldSection = {
@@ -415,6 +441,19 @@ export function canvasFieldTarget(canvas: Canvas | null): Canvas | null {
 
 /** 全空背景值对象（读取投影与提交折算共用的一份底形；kernel 归一门会再收口） */
 export const EMPTY_CANVAS_BACKGROUND: CanvasBackground = { color: null, image: null }
+
+/**
+ * 图层级读取视图（image-fit 工单 05，canvasFieldTarget 同门）：ImageLayer 的 fit
+ * 缺省态（wire 无键 = cover）投影为 cover——适配字段否则被 readField 的 ok:false
+ * 过滤掉，选中任一未声明的图片层「适配」行即消失。已声明（含未知值）与非图片层
+ * 原样透传（不拷贝不重整）；投影只作用读侧，提交仍走 updateSpec 直写文档
+ */
+export function layerFieldTarget(layer: Layer): Layer {
+    if (layer.type === 'ImageLayer' && layer.fit === undefined) {
+        return { ...layer, fit: 'cover' }
+    }
+    return layer
+}
 
 // ---- 字段值读取 ----
 

@@ -227,3 +227,52 @@ describe('ImageSrcField：物化状态角标（与画布失败标识同源）', 
         expect(bare.find('.cn-imagesrc__status').exists()).toBe(false)
     })
 })
+
+describe('ImageSrcField：源图内在尺寸读数（image-fit 工单 05 搭车项）', () => {
+    const loadThumb = async (
+        wrapper: ReturnType<typeof mountedWith>,
+        width: number,
+        height: number,
+    ): Promise<void> => {
+        const img = wrapper.find('.cn-imagesrc__thumb img')
+        // configurable：同一 img 元素复用（src 换图不换节点），读数需可重复打桩
+        Object.defineProperty(img.element, 'naturalWidth', { value: width, configurable: true })
+        Object.defineProperty(img.element, 'naturalHeight', { value: height, configurable: true })
+        await img.trigger('load')
+        await nextTick()
+    }
+
+    it('装载完成后显示像素与宽高比；装载前无读数行', async () => {
+        const wrapper = mountedWith(uploadContext(), '/hd.png')
+        expect(wrapper.find('.cn-imagesrc__intrinsic').exists()).toBe(false)
+        await loadThumb(wrapper, 1920, 1080)
+        expect(wrapper.find('.cn-imagesrc__intrinsic').text()).toBe('源图 1920×1080 · 16:9')
+    })
+
+    it('src 变更即撤读数（旧图读数不残留），重装载后按新图更新', async () => {
+        const wrapper = mountedWith(uploadContext(), '/a.png')
+        await loadThumb(wrapper, 800, 600)
+        expect(wrapper.find('.cn-imagesrc__intrinsic').exists()).toBe(true)
+
+        await wrapper.setProps({ modelValue: '/b.png' })
+        expect(wrapper.find('.cn-imagesrc__intrinsic').exists()).toBe(false)
+
+        await loadThumb(wrapper, 640, 361)
+        expect(wrapper.find('.cn-imagesrc__intrinsic').text()).toContain('1.77:1')
+    })
+
+    it('装载失败（@error）不显示读数', async () => {
+        const wrapper = mountedWith(uploadContext(), '/broken.png')
+        await wrapper.find('.cn-imagesrc__thumb img').trigger('error')
+        expect(wrapper.find('.cn-imagesrc__intrinsic').exists()).toBe(false)
+    })
+
+    it('降级/表达式形态无缩略图即无读数行（读数随装载通道在场）', () => {
+        const degraded = mountedWith(null, '/a.png')
+        expect(degraded.find('.cn-imagesrc__intrinsic').exists()).toBe(false)
+        degraded.unmount()
+
+        const expression = mountedWith(uploadContext(), '{{cover}}', { dataMode: 'expression' })
+        expect(expression.find('.cn-imagesrc__intrinsic').exists()).toBe(false)
+    })
+})

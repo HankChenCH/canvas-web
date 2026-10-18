@@ -6,7 +6,8 @@
  * uploadImage 动作换引用）+ 紧凑路径行（复用 TextField 的 IME 守卫与提交语义，
  * 兼作精确回显与外链/相对路径手写通道）。上传完成以 change 收口提交引用——
  * 走 updateData 字面接管管线，一步历史；失败不上报 change，错误挂入口提示
- * （与 FontField 同门）。
+ * （与 FontField 同门）。源图内在尺寸只读展示随缩略图装载在场（image-fit
+ * 工单 05 搭车项：像素 + 宽高比，判断 cover/contain 的直接依据）。
  *
  * 表达式态（resource-expression-single-ref 工单 05，ADR 0020）：资源表达式必须
  * 恰为单个裸路径片段——退化 TextField 换装级联路径选择器（复用 resourceValue
@@ -14,7 +15,7 @@
  * 纯菜单点选不设手输缝）。上传通道在表达式态不存在（写引用会字面接管清标记）。
  * 静态态（缩略图 + 上传 + 路径行）不动。
  */
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import type { ResourceStatus } from '@hankchen/canvas-editor'
 
@@ -22,6 +23,7 @@ import type { CompletionSource } from '../../shared/completion'
 import type { FieldDef } from '../fieldSchema'
 import { injectImageUpload } from '../imageUpload'
 import { uploadFileFromDom } from '../../shared/uploadFile'
+import { intrinsicSizeLabel } from './intrinsicSize'
 import ResourceValueField from './ResourceValueField.vue'
 import TextField from './TextField.vue'
 
@@ -57,6 +59,25 @@ const statusBadge = computed(() => {
 const uploading = ref(false)
 const uploadError = ref<string | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
+
+// 源图内在尺寸读数（image-fit 工单 05 搭车项）：随缩略图装载自然获得（img 的
+// load 事件携带 naturalWidth/Height），src 变更即撤（旧图读数不残留，重装载更新），
+// 装载失败不显示。只读展示零提交面
+const intrinsic = ref<{ width: number; height: number } | null>(null)
+const intrinsicLabel = computed(() =>
+    intrinsic.value === null ? null : intrinsicSizeLabel(intrinsic.value.width, intrinsic.value.height),
+)
+
+function onThumbLoad(event: Event): void {
+    const el = event.target as HTMLImageElement
+    intrinsic.value = el.naturalWidth > 0 && el.naturalHeight > 0
+        ? { width: el.naturalWidth, height: el.naturalHeight }
+        : null
+}
+
+watch(() => props.modelValue, () => {
+    intrinsic.value = null
+})
 
 function onPick(): void {
     uploadError.value = null
@@ -99,6 +120,8 @@ async function onFileChange(event: Event): Promise<void> {
                     :src="modelValue ?? undefined"
                     class="absolute inset-0 size-full object-cover"
                     alt=""
+                    @load="onThumbLoad"
+                    @error="intrinsic = null"
                 />
             <span
                 v-if="statusBadge"
@@ -131,6 +154,12 @@ async function onFileChange(event: Event): Promise<void> {
                 @click="emit('change', '')"
             >清除</button>
         </div>
+        <!-- 源图内在尺寸只读展示（image-fit 工单 05 搭车项，ADR 0023）：像素 + 宽高比，
+             判断 cover/contain 的直接依据；随缩略图装载在场，降级/表达式形态无读数 -->
+        <span
+            v-if="intrinsicLabel"
+            class="cn-imagesrc__intrinsic text-[11px] leading-4 text-cn-muted"
+        >源图 {{ intrinsicLabel }}</span>
     </div>
     <ResourceValueField
         v-else-if="dataMode === 'expression'"

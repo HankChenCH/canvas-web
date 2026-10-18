@@ -171,6 +171,23 @@ describe('SelectField', () => {
         await wrapper.find('select').setValue('center')
         expect(wrapper.emitted('change')!.at(-1)).toEqual(['center'])
     })
+
+    it('optionLabels：选项显示名按映射渲染，value 仍提交原值（image-fit 工单 05「适配」）', async () => {
+        const field: FieldDef = {
+            key: ['fit'],
+            label: '适配',
+            control: 'select',
+            domain: ['cover', 'contain'],
+            optionLabels: { cover: '铺满裁切', contain: '完整显示' },
+        }
+        const wrapper = mount(SelectField, { props: { field, modelValue: 'cover' } })
+        const options = wrapper.findAll('option')
+        expect(options.map((o) => o.text())).toEqual(['铺满裁切', '完整显示'])
+        expect(options.map((o) => o.element.value)).toEqual(['cover', 'contain'])
+
+        await wrapper.find('select').setValue('contain')
+        expect(wrapper.emitted('change')!.at(-1)).toEqual(['contain'])
+    })
 })
 
 describe('AlignField（对齐分段图标按钮组，layer-panel-ux 工单 05）', () => {

@@ -9,6 +9,10 @@
  *   图片源经 setImage 预载回写（远程物化在工单 04），未注册的 src 只画盒不绘制；
  * - drawText：布局层只给纯对齐锚点，基线差由本端以 TextMetrics 消化（ADR-0003 同款——
  *   PHP 的 GD 基线魔数 round(fontSize*0.1) 不移植）；字体经 fonts.ts 的判定与注册缝。
+ *
+ * 可选能力口（image-fit 工单 05）：imageIntrinsicSize 供源图内在尺寸，渲染契约臂
+ * 据此算 contain 收缩矩形（cover.ts containRect 是其图层无关几何镜像）——后端绘制
+ * 面零改动，五原语契约冻结（ADR 0023）。
  */
 import type { Border, BorderSide, RenderBackend, TextDrawOptions } from '@hankchen/canvas'
 
@@ -153,6 +157,23 @@ export class Canvas2DBackend implements RenderBackend, ViewportAwareBackend {
             width,
             height,
         )
+    }
+
+    /**
+     * 源图内在尺寸度量（渲染契约可选能力口，image-fit 工单 05）：contain 计划按
+     * 此收缩目标矩形，查询键与 drawImage 同一 src 引用、同一次物化回写的 images
+     * 表（预览与导出 forkWith 共享，零参数穿透）。尺寸取 naturalWidth/Height
+     * 优先（与 drawImage 同门）；未注册/非法尺寸返回 null，渲染臂按 cover 降级
+     * （PHP getimagesize 失败同门）。查询口非绘制原语，五原语契约冻结不动
+     */
+    imageIntrinsicSize(src: string): { width: number; height: number } | null {
+        const image = this.images.get(src)
+        if (!image) return null
+
+        const width = naturalWidth(image)
+        const height = naturalHeight(image)
+        if (width <= 0 || height <= 0) return null
+        return { width, height }
     }
 
     /**

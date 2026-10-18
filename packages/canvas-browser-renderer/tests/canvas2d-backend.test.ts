@@ -7,6 +7,7 @@ import type { TextDrawOptions } from '@hankchen/canvas'
 
 import { builtinFontShorthand, canvasFontCssFamily, isBuiltinFontRef } from '../src/fonts'
 import { Canvas2DBackend } from '../src/index'
+import type { DrawableImage } from '../src/canvas2d-backend'
 import { qrModuleMatrix } from '../src/qr'
 
 interface CtxOp {
@@ -374,6 +375,55 @@ describe('drawImage：cover 绘制编排', () => {
     })
 })
 
+describe('imageIntrinsicSize：contain 度量能力口（image-fit 工单 05，ADR 0023）', () => {
+    it('已注册图片返回尺寸；HTMLImageElement 形态优先 naturalWidth/naturalHeight', () => {
+        const backend = new Canvas2DBackend(fakeCtx().ctx)
+        backend.setImage('a.png', { width: 200, height: 100 })
+        backend.setImage('nat.png', { width: 1, height: 1, naturalWidth: 640, naturalHeight: 480 } as DrawableImage)
+
+        expect(backend.imageIntrinsicSize!('a.png')).toEqual({ width: 200, height: 100 })
+        expect(backend.imageIntrinsicSize!('nat.png')).toEqual({ width: 640, height: 480 })
+    })
+
+    it('未注册/非法尺寸（≤0）返回 null：渲染臂按 cover 降级（getimagesize 失败同门）', () => {
+        const backend = new Canvas2DBackend(fakeCtx().ctx)
+        backend.setImage('zero.png', { width: 0, height: 0 })
+
+        expect(backend.imageIntrinsicSize!('missing.png')).toBeNull()
+        expect(backend.imageIntrinsicSize!('zero.png')).toBeNull()
+    })
+
+    it('contain 计划空隙零绘制指令：整渲染仅图层盒背景一次 fillRect + 收缩矩形一次 drawImage', () => {
+        const { ops, ctx } = fakeCtx()
+        const backend = new Canvas2DBackend(ctx)
+        backend.setImage('wide.png', { width: 40, height: 10 })
+
+        const doc = decodeGraph({
+            canvas: { width: 60, height: 40 },
+            layers: [{
+                type: 'ImageLayer',
+                spec: {
+                    shape: {
+                        width: 60,
+                        height: 40,
+                        padding: { top: 10, bottom: 10, left: 10, right: 10 },
+                        backgroundColor: '#ff0000',
+                    },
+                    fit: 'contain',
+                },
+                data: { value: 'wide.png' },
+            }],
+        })
+        renderCanvas(doc, backend)
+
+        const fills = ops.filter((o) => o.call === 'fillRect')
+        const draws = ops.filter((o) => o.call === 'drawImage')
+        expect(fills).toEqual([{ call: 'fillRect', args: [0, 0, 60, 40] }]) // 仅盒背景，无 letterbox 填充
+        // 收缩矩形：内容盒 40×20，scale = min(1, 2) = 1 → 40×10 居中于 (10, 15)
+        expect(draws).toEqual([{ call: 'drawImage', args: ['__image__', 0, 0, 40, 10, 10, 15, 40, 10] }])
+    })
+})
+
 /** 点位取样：假 ctx 内建最小软件光栅（fillRect + drawImage 最近邻采样），渲染整图后逐点取色 */
 describe('点位取样断言（背景色、cover 中缝）', () => {
     type RGB = [number, number, number]
@@ -513,6 +563,80 @@ describe('点位取样断言（背景色、cover 中缝）', () => {
             expect(getPixel(x, 20)).toEqual([0, 0, 255])
         }
         expect(getPixel(5, 20)).toEqual([255, 0, 0])
+    })
+
+    it('contain 居中：等比收缩矩形完整落入内容盒，上下空隙透明露图层背景色', () => {
+        const { ctx, getPixel } = makeSurfaceCtx()
+        const backend = new Canvas2DBackend(ctx)
+        // 源图 40×10（4:1）进内容盒 40×20（2:1）：scale = min(1, 2) = 1 → 40×10，
+        // 盒内垂直居中于 y=15..24（containRect 收缩 + alignedOrigin 放置，核心渲染臂）
+        backend.setImage('fit.png', twoToneImage(40, 10, [0, 0, 255], [0, 255, 0]))
+
+        const canvas = decodeGraph({
+            canvas: { width: 60, height: 40 },
+            layers: [{
+                type: 'ImageLayer',
+                spec: {
+                    shape: {
+                        width: 60,
+                        height: 40,
+                        padding: { top: 10, bottom: 10, left: 10, right: 10 },
+                        backgroundColor: '#ff0000',
+                    },
+                    fit: 'contain',
+                },
+                data: { value: 'fit.png' },
+            }],
+        })
+        renderCanvas(canvas, backend)
+
+        // 空隙透明：padding 区与内容盒内上下空隙都露背景色（无 letterbox 填充）
+        expect(getPixel(5, 5)).toEqual([255, 0, 0])
+        expect(getPixel(55, 35)).toEqual([255, 0, 0])
+        expect(getPixel(30, 12)).toEqual([255, 0, 0])
+        expect(getPixel(30, 27)).toEqual([255, 0, 0])
+        // 收缩矩形内容：左半蓝、右半绿，中缝落在矩形中线 x=30
+        expect(getPixel(12, 20)).toEqual([0, 0, 255])
+        expect(getPixel(29, 20)).toEqual([0, 0, 255])
+        expect(getPixel(30, 20)).toEqual([0, 255, 0])
+        expect(getPixel(47, 20)).toEqual([0, 255, 0])
+    })
+
+    it('contain 非居中 align：left/bottom 按对齐放置（bottom = 盒高 - 矩形高，与 imageOrigin 同门）', () => {
+        const { ctx, getPixel } = makeSurfaceCtx()
+        const backend = new Canvas2DBackend(ctx)
+        // 内容盒 46×34，源图 40×10：scale = min(1.15, 3.4) = 1.15 → 46×11；
+        // left → x = padding.left = 6，bottom → y = 40 - 11 = 29（padding.bottom 不参与）
+        backend.setImage('fit.png', twoToneImage(40, 10, [0, 0, 255], [0, 255, 0]))
+
+        const canvas = decodeGraph({
+            canvas: { width: 60, height: 40 },
+            layers: [{
+                type: 'ImageLayer',
+                spec: {
+                    shape: {
+                        width: 60,
+                        height: 40,
+                        padding: { top: 2, bottom: 4, left: 6, right: 8 },
+                        backgroundColor: '#ff0000',
+                    },
+                    align: { horizontal: 'left', vertical: 'bottom' },
+                    fit: 'contain',
+                },
+                data: { value: 'fit.png' },
+            }],
+        })
+        renderCanvas(canvas, backend)
+
+        // 矩形上方（内容盒内）与 padding 区露背景色
+        expect(getPixel(10, 20)).toEqual([255, 0, 0])
+        expect(getPixel(30, 2)).toEqual([255, 0, 0])
+        expect(getPixel(3, 35)).toEqual([255, 0, 0])
+        // 矩形内容 (6..51, 29..39)：左半蓝、右半绿，中缝落在矩形中线 x=29
+        expect(getPixel(10, 34)).toEqual([0, 0, 255])
+        expect(getPixel(28, 34)).toEqual([0, 0, 255])
+        expect(getPixel(29, 34)).toEqual([0, 255, 0])
+        expect(getPixel(45, 34)).toEqual([0, 255, 0])
     })
 
     /** 一次渲染一个独立取样面（缓冲不清屏，避免跨渲染残影污染取样） */

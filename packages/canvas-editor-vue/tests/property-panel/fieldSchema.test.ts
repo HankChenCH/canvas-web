@@ -19,6 +19,7 @@ import {
     canvasFieldTarget,
     fieldSectionsForPath,
     fieldSectionsForType,
+    layerFieldTarget,
     layerRoleAt,
     readField,
     type FieldDef,
@@ -101,11 +102,13 @@ describe('type 标识 ↔ 注册表映射', () => {
 
     it('每种 type 实际渲染的每个字段 key 都能在该 type 的领域实例上解析（路径与文档模型同步）', () => {
         // 用 fieldSectionsForPath（visibleWhen 过滤后的渲染面）断言：type 共享组里
-        // 被 visibleWhen 门控的字段（如 angle）只在门控 type 上要求可解析
+        // 被 visibleWhen 门控的字段（如 angle）只在门控 type 上要求可解析。
+        // 面板读目标经 layerFieldTarget 投影（fit 缺省 → cover 回显，image-fit 工单
+        // 05；canvas-background 的 canvasFieldTarget 同门），本断言随同投影
         for (const type of LAYER_TYPES) {
             const layer = layerByType(type)
             for (const key of fieldKeys(fieldSectionsForPath(['layers', 0], layer))) {
-                const read = readField(layer, key.split('.'))
+                const read = readField(layerFieldTarget(layer), key.split('.'))
                 expect([type, key, read.ok]).toEqual([type, key, true])
             }
         }
@@ -161,6 +164,44 @@ describe('type 标识 ↔ 注册表映射', () => {
         }
         expect(find('TextLayer').horizontal.domain).toEqual(HORIZONTAL_ALIGNS)
         expect(find('TextLayer').vertical.domain).toEqual(VERTICAL_ALIGNS)
+    })
+})
+
+describe('适配字段（image-fit 工单 05，ADR 0023）', () => {
+    const imageLayer = (): Extract<Layer, { type: 'ImageLayer' }> => layerByType('ImageLayer') as Extract<Layer, { type: 'ImageLayer' }>
+
+    it('IMAGE 区段 src 之后追加 fit（适配）；其余 type 无此字段', () => {
+        const imageSection = fieldSectionsForType('ImageLayer').find((s) => s.title === '图片')!
+        expect(imageSection.fields.map((f) => f.key.join('.'))).toEqual(['src', 'fit'])
+        for (const type of ['TextLayer', 'QrCodeLayer', 'TableLayer'] as const) {
+            expect(fieldKeys(fieldSectionsForType(type))).not.toContain('fit')
+        }
+    })
+
+    it('fit 字段描述：select 控件、cover/contain 值域 + 中文选项、静态声明无表达式态', () => {
+        const fit = flatFields(fieldSectionsForType('ImageLayer')).find((f) => f.key[0] === 'fit')!
+        expect(fit.control).toBe('select')
+        expect(fit.domain).toEqual(['cover', 'contain'])
+        expect(fit.optionLabels).toEqual({ cover: '铺满裁切', contain: '完整显示' })
+        // 静态声明：不带 data/resource 标记——无取值方式段，提交走 updateSpec
+        expect(fit.data).toBeUndefined()
+        expect(fit.resource).toBeUndefined()
+    })
+
+    it('layerFieldTarget：fit 缺省投影为 cover 回显；contain/未知值/非图片层原样透传', () => {
+        // 缺省态（wire 无 fit 键）：投影补 cover，readField 命中（否则字段被过滤不渲染）
+        const bare = imageLayer()
+        expect(bare.fit).toBeUndefined()
+        expect(readField(layerFieldTarget(bare), ['fit'])).toEqual({ ok: true, value: 'cover' })
+
+        // 已声明/未知值：引用透传（未知值显示交给控件域外行为，投影不越权归一）
+        const contained = { ...bare, fit: 'contain' }
+        expect(layerFieldTarget(contained)).toBe(contained)
+        const unknown = { ...bare, fit: 'seventies' }
+        expect(layerFieldTarget(unknown)).toBe(unknown)
+
+        const text = layerByType('TextLayer')
+        expect(layerFieldTarget(text)).toBe(text)
     })
 })
 

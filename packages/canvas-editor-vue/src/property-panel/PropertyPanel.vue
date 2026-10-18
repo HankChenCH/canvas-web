@@ -19,7 +19,7 @@ import { computed, provide } from 'vue'
 
 import type { Anchor, EditorSession, ResourceStatus } from '@hankchen/canvas-editor'
 
-import { canvasFieldTarget, readField, pairItemKey, type FieldDef, type FieldDisplay } from './fieldSchema'
+import { canvasFieldTarget, layerFieldTarget, readField, pairItemKey, type FieldDef, type FieldDisplay } from './fieldSchema'
 import AnchorDisclosureField from './fields/AnchorDisclosureField.vue'
 import PropertyField from './PropertyField.vue'
 import { IMAGE_UPLOAD_KEY } from './imageUpload'
@@ -97,12 +97,14 @@ const typeBadge = computed(() => {
 const CONTENT_LOCK_HINT = '内容编辑中：请在画布编辑框内修改，退出后此处更新'
 
 const visibleSections = computed<readonly RenderSection[]>(() => {
-    // 目标对象：选中层优先；仅当确无选择时回退画布（选中存在但解析失败说明
+    // 目标对象：选中层优先（经 layerFieldTarget 读取投影——fit 缺省回显 cover，
+    // image-fit 工单 05）；仅当确无选择时回退画布（选中存在但解析失败说明
     // 选择已失效——此时不渲染画布字段，避免展示一份提交不进去的表单）。
     // 画布经 canvasFieldTarget 读取投影（canvas-background 工单 04）：background
     // null 投影全空值对象，未设/清空态背景区段照常渲染
-    const target = panel.layer.value
-        ?? (panel.selection.value ? null : canvasFieldTarget(panel.canvas.value))
+    const target = panel.layer.value !== null
+        ? layerFieldTarget(panel.layer.value)
+        : (panel.selection.value ? null : canvasFieldTarget(panel.canvas.value))
     if (!target) return []
     const scope = panel.selection.value?.join('.') ?? 'canvas'
     // 行级动态提示只对图层级目标求值（谓词签名收图层；画布级无 hint 面）

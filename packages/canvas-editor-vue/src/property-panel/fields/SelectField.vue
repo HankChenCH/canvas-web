@@ -21,6 +21,6 @@ function onChange(event: Event): void {
         :value="modelValue"
         @change="onChange"
     >
-        <option v-for="option in field.domain ?? []" :key="option" :value="option">{{ option }}</option>
+        <option v-for="option in field.domain ?? []" :key="option" :value="option">{{ field.optionLabels?.[option] ?? option }}</option>
     </select>
 </template>

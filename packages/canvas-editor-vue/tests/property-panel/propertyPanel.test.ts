@@ -913,3 +913,57 @@ describe('imageSrc 控件面板接线（图片资源地址上传形态）', () =
         wrapper.unmount()
     })
 })
+
+describe('适配字段（image-fit 工单 05，ADR 0023）：二选一可写可回显，提交/撤销走既有事务', () => {
+    const imageLayer = (overrides: Record<string, unknown> = {}): Layer =>
+        ({ ...textLayer(), type: 'ImageLayer', src: '/a.png', expression: null, ...overrides } as Layer)
+
+    async function mountWithEditor(layers: readonly Layer[]) {
+        const editor = new EditorSession({ scheduleFrame: nullScheduler })
+        editor.openDocument({ width: 800, height: 600, background: null, layers })
+        const wrapper = mount(PropertyPanel, { props: { editor } })
+        editor.setSelection(['layers', 0])
+        await wrapper.vm.$nextTick()
+        return { editor, wrapper }
+    }
+
+    it('缺省回显铺满裁切：wire 无 fit 键的层经投影读 cover，选项为中文文案', async () => {
+        const { editor, wrapper } = await mountWithEditor([imageLayer()])
+        expect(editor.store.doc!.layers[0]!.type === 'ImageLayer' && editor.store.doc!.layers[0]!.fit).toBeUndefined()
+
+        // 图片层表单里唯一的 select 即「适配」（imageSrc 降级纯路径输入，无下拉）
+        const select = wrapper.find('select')
+        expect(select.exists()).toBe(true)
+        expect((select.element as HTMLSelectElement).value).toBe('cover')
+        expect(select.findAll('option').map((o) => o.text())).toEqual(['铺满裁切', '完整显示'])
+        wrapper.unmount()
+    })
+
+    it('切「完整显示」：updateSpec 落 fit=contain 一步历史；undo 回缺省并回显铺满裁切', async () => {
+        const { editor, wrapper } = await mountWithEditor([imageLayer()])
+        const select = wrapper.find('select')
+
+        await select.setValue('contain')
+        const layer = editor.store.doc!.layers[0]!
+        expect(layer.type === 'ImageLayer' && layer.fit).toBe('contain')
+        expect(editor.store.history).toHaveLength(1)
+
+        editor.undo()
+        await wrapper.vm.$nextTick()
+        const undone = editor.store.doc!.layers[0]!
+        expect(undone.type === 'ImageLayer' && undone.fit).toBeUndefined()
+        // 回显随投影读缺省态（不残留 contain 显示）
+        expect((wrapper.find('select').element as HTMLSelectElement).value).toBe('cover')
+        wrapper.unmount()
+    })
+
+    it('切回「铺满裁切」：显式 cover 落领域值（wire 归一不落键归核心 encode）', async () => {
+        const { editor, wrapper } = await mountWithEditor([imageLayer({ fit: 'contain' })])
+        expect((wrapper.find('select').element as HTMLSelectElement).value).toBe('contain')
+
+        await wrapper.find('select').setValue('cover')
+        const layer = editor.store.doc!.layers[0]!
+        expect(layer.type === 'ImageLayer' && layer.fit).toBe('cover')
+        wrapper.unmount()
+    })
+})
