@@ -18,8 +18,8 @@ importers:
   packages/canvas-browser-renderer:
     dependencies:
       '@hankchen/canvas':
-        specifier: ^0.2.0
-        version: 0.2.0
+        specifier: ^0.3.0
+        version: 0.3.0
       qrcode:
         specifier: ^1.5.4
         version: 1.5.4
@@ -37,8 +37,8 @@ importers:
   packages/canvas-editor:
     dependencies:
       '@hankchen/canvas':
-        specifier: ^0.2.0
-        version: 0.2.0
+        specifier: ^0.3.0
+        version: 0.3.0
       '@hankchen/canvas-browser-renderer':
         specifier: workspace:*
         version: link:../canvas-browser-renderer
@@ -361,6 +361,9 @@ packages:
 
   '@hankchen/canvas@0.2.0':
     resolution: {integrity: sha512-PwxWyDiOZcyHUIjAlHSm7r8n8zDu/2lnXxIT/J2GPcOltMLzc4clC2tcagk8XwcVSwSXKKPNqbVRkPFcFn9bAw==}
+
+  '@hankchen/canvas@0.3.0':
+    resolution: {integrity: sha512-bGUQYHjQFYyQuUQ2LUu+2/tgWF7xz43nP9s6EouizPu1xY8rE9bVcsWBpVhPAHphEHmW5w/Eeu4kF25ziQ0FpA==}
 
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
@@ -2169,6 +2172,8 @@ snapshots:
   '@exodus/bytes@1.16.0': {}
 
   '@hankchen/canvas@0.2.0': {}
+
+  '@hankchen/canvas@0.3.0': {}
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
