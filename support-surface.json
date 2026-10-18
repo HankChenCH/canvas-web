@@ -1,0 +1,18 @@
+{
+    "declaration": "canvas-semantics/support-surface v1",
+    "implementation": {
+        "repo": "github.com/HankChenCH/canvas-web",
+        "language": "ts",
+        "profile": "editor",
+        "note": "编辑器画像:仅声明扫描模块(expression-scan,编辑器扫描面/作者面辅助与求值器钉同一份切分语义);求值/填充/分页/流装箱四契约不在本仓支持面,按缺席 = 不支持处理"
+    },
+    "contracts": [
+        {
+            "id": "expression-scan",
+            "version": "v1.0",
+            "moduleFiles": [
+                { "id": "scan", "support": "supported", "note": "" }
+            ]
+        }
+    ]
+}
