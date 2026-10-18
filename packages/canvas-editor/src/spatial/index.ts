@@ -25,7 +25,15 @@ export {
     type Viewport,
     type ZoomBounds,
 } from './camera'
-export { hitTest, type HitTestOptions } from './hitTest'
+// 底图豁免的全幅判定、头根进料与右键命中解析（canvas-background 工单 05）：命中
+// 豁免与「转为画布背景」转换门同门，绑定层不得自行手写几何判定
+export {
+    baseImageCandidateAt,
+    coversCanvas,
+    headRootBox,
+    hitTest,
+    type HitTestOptions,
+} from './hitTest'
 export {
     SNAP_THRESHOLD_SCREEN_PX,
     resolveSnap,

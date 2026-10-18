@@ -46,7 +46,7 @@ import {
     type ZoomBounds,
 } from '../spatial/camera'
 import type { LayerBox, Layer, LayerType, ImageLayer } from '@hankchen/canvas'
-import { hitTest as hitTestAt } from '../spatial/hitTest'
+import { baseImageCandidateAt, coversCanvas, headRootBox, hitTest as hitTestAt } from '../spatial/hitTest'
 import {
     resolveSnap,
     resolveSnapPoints,
@@ -253,6 +253,44 @@ function normalizeCanvasBackground(value: CanvasBackground | null): CanvasBackgr
 function sameCanvasBackground(a: CanvasBackground | null, b: CanvasBackground | null): boolean {
     if (a === null || b === null) return a === b
     return a.color === b.color && a.image === b.image
+}
+
+/**
+ * 底图转换不可行的原因（canvas-background 工单 05，右键菜单置灰 title 分轨；
+ * null = 可转换）。locked 只由会话查询口产出（ui 分支态，纯函数管不着）。
+ */
+export type BaseImageConversionBlock =
+    | 'not-head-root' // 非数组头根（非垫底层）或路径悬空
+    | 'not-image' // 头根但非图片层
+    | 'not-covering' // 头根图片层但盒未覆盖画布矩形
+    | 'hidden' // 隐藏的头根图片层：转换会让图片常驻渲染（背景无显隐面），画布视觉必变
+    | 'expression-marked' // 数据表达式标记：背景静态，数据驱动底图不迁移（不静默丢标记）
+    | 'no-image-src' // 无图引用（纯色底形态）——无可迁移引用，出路由画布属性面板
+    | 'locked' // 锁定子树（删除面同门）
+
+/**
+ * 底图转换门（canvas-background 工单 05）：条件与命中豁免同门——数组头根 +
+ * 图片层 + 盒覆盖画布矩形（进料与判定复用 spatial 的 headRootBox/coversCanvas
+ * 单点，盒解析与 hitTest 同参：原点起算 + 同一布局策略），另加三道文档面护栏
+ * ——隐藏（豁免门经 visible 早退实际不含隐藏层，且背景无显隐面、转换必改视觉）、
+ * 表达式标记（转换会静默丢标记）与无图引用（没有引用可写 background.image）。
+ * 锁定不在此判定：属 ui 分支由会话查询口叠加。
+ */
+function baseImageConversionBlockInDoc(
+    doc: Canvas,
+    path: LayerPath,
+    policies: TextLayoutPolicies | undefined,
+): BaseImageConversionBlock | null {
+    if (path.length !== 2 || path[0] !== 'layers' || path[1] !== 0) return 'not-head-root'
+    const head = headRootBox(doc, policies)
+    if (head === null) return 'not-head-root'
+    if (head.layer.type !== 'ImageLayer') return 'not-image'
+    if (!coversCanvas(head.box, doc.width, doc.height)) return 'not-covering'
+    const layer = head.layer as ImageLayer
+    if (layer.visible === false) return 'hidden'
+    if (layer.expression !== null) return 'expression-marked'
+    if (layer.src === null || layer.src.trim() === '') return 'no-image-src'
+    return null
 }
 
 /** 查找游标钳位：派生命中列表内回落（末处/首处），空命中为 0（读侧收口） */
@@ -1862,6 +1900,62 @@ export class EditorSession {
             }
             draft[key] = value as number
         }, options)
+    }
+
+    /**
+     * 底图转换查询（canvas-background 工单 05，右键菜单门态唯一权威）：路径处
+     * 图层距「转为画布背景」的阻塞原因，null = 可转换。文档面条件见
+     * baseImageConversionBlockInDoc（豁免同门），此处叠加锁定子树（删除面同门
+     * ——转换含删层，锁定层不出路）。无文档/无路径归 not-head-root。
+     */
+    baseImageConversionBlock(path: LayerPath | null): BaseImageConversionBlock | null {
+        const doc = this.store.doc
+        if (!doc || path === null) return 'not-head-root'
+        const block = baseImageConversionBlockInDoc(doc, path, this.textPolicies)
+        if (block !== null) return block
+        return this.isLocked(path) ? 'locked' : null
+    }
+
+    /**
+     * 底图右键命中解析（canvas-background 工单 05，豁免的命中缝）：命中豁免使
+     * 头根覆盖图片层的自身盒退出正常命中面，右键菜单却要能选中它（「转为画布
+     * 背景」的入口前提）——宿主在命中未中时按此兜底解析转换候选，选择落地由
+     * 宿主决定（纯查询零副作用）。预览视图上解析（hitTest 同门）并映射回文档
+     * 身份；左键点选路径不经过这里，豁免行为零改动。
+     */
+    baseImageAt(sceneX: number, sceneY: number): LayerPath | null {
+        const view = this.previewCanvas
+        if (!view) return null
+        const hit = baseImageCandidateAt(view, sceneX, sceneY, this.textPolicies, {
+            lockedPaths: this.store.ui.lockedPaths,
+        })
+        if (hit === null) return null
+        const docPath = viewPathToDocPath(view, hit)
+        return docPath ? (docPath as LayerPath) : null
+    }
+
+    /**
+     * 转为画布背景（canvas-background 工单 05，存量底图出路）：选中头根图片层
+     * 的图片引用写入画布背景 image 分量 + 删除该图层，单事务一步历史、整体撤销
+     * （背景与图层都还原）。条件经 baseImageConversionBlock 同一门（违例静默
+     * 空转，无历史步）；既有背景色保留（只写 image 分量——先色后图语义不破，
+     * 已有背景图被垫底层的引用接管，同一门下二者本就是同一视觉位）。
+     */
+    convertSelectionToBackground(): boolean {
+        const doc = this.store.doc
+        const path = this.store.ui.selection
+        if (!doc || path === null) return false
+        if (this.baseImageConversionBlock(path) !== null) return false
+        // 门已拒 no-image-src：src 非空非空白是转换前提，此处断言消费（漂移即炸）
+        const src = (resolveLayer(doc, path) as ImageLayer).src!
+        this.store.transact((draft) => {
+            const current = normalizeCanvasBackground(draft.background ?? null)
+            draft.background = { color: current?.color ?? null, image: src }
+            deleteLayerInDraft(draft, path)
+        })
+        // 头根 splice：选择/悬停/重命名/锁定集合随删层平移重映射（deleteLayer 同门）
+        this.remapPathSlices([], 'layers', 0, 0)
+        return true
     }
 
     // ---- 数据源 schema 声明（content-completion 工单 03/08）：D2 宿主随会话注入 ----

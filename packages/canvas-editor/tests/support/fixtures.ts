@@ -253,3 +253,9 @@ export function templateTableWire(): WireLayerNode {
         }),
     })
 }
+
+/** 与画布等宽高的垫底图片层（底图惯例形态，canvas-background 工单 05：原点起算
+ *  覆盖 800×600 缺省画布面；src/显隐/表达式标记等由覆写改装） */
+export function baseImageLayer(overrides: LayerOverrides<ImageLayer> = {}): ImageLayer {
+    return imageLayer({ src: '/bg.png', shape: { width: 800, height: 600 }, ...overrides })
+}

@@ -34,8 +34,10 @@ export interface HitTestOptions {
  * spec「渲染与交互」2026-09-27 拍板的底图豁免（Fabric backgroundImage 不入命中图、
  * Konva listening(false) 同构）：只作用于数组头根层——「数组按 priority 降序、
  * 头先画垫底」的叠放不变量决定了它是唯一的视觉垫底层。
+ * 双消费者（canvas-background 工单 05）：命中豁免与「转为画布背景」转换门同门——
+ * 判定一处收口，两处语义永不漂移。
  */
-function coversCanvas(box: LayerBox, canvasWidth: number, canvasHeight: number): boolean {
+export function coversCanvas(box: LayerBox, canvasWidth: number, canvasHeight: number): boolean {
     return box.x <= 0
         && box.y <= 0
         && box.x + box.width >= canvasWidth
@@ -116,4 +118,40 @@ export function hitTest(
         if (hit) return hit
     }
     return null
+}
+
+/**
+ * 头根层盒解析（底图判定共用来料）：数组头缺失返回 null。命中豁免与「转为画布
+ * 背景」转换门共用此唯一进料（同层、同参盒解析），两处几何语义永不漂移
+ * （canvas-background 工单 05）。
+ */
+export function headRootBox(
+    canvas: Canvas,
+    policies?: TextLayoutPolicies,
+): { layer: Layer; box: LayerBox } | null {
+    const layer = canvas.layers[0]
+    if (!layer) return null
+    return { layer, box: resolveLayerBox(layer, 0, 0, canvas.width, canvas.height, policies) }
+}
+
+/**
+ * 底图右键命中解析（canvas-background 工单 05）：豁免使头根覆盖图片层的自身盒
+ * 退出正常命中面，右键菜单却要能选中它（「转为画布背景」的入口缝）——命中未中
+ * 时按此解析兜底。只解析转换候选：数组头 + 图片层 + 覆盖画布（coversCanvas
+ * 同门）+ 可见 + 未锁定；表达式标记与无图引用照常解析（菜单要能选中它置灰说明）。
+ * 纯查询零副作用——选择落地由调用方决定。
+ */
+export function baseImageCandidateAt(
+    canvas: Canvas,
+    sceneX: number,
+    sceneY: number,
+    policies?: TextLayoutPolicies,
+    options?: HitTestOptions,
+): LayerPath | null {
+    const head = headRootBox(canvas, policies)
+    if (head === null || head.layer.type !== 'ImageLayer' || head.layer.visible === false) return null
+    const lockedPaths = options?.lockedPaths
+    if (lockedPaths !== undefined && isLockedPath(['layers', 0], lockedPaths)) return null
+    if (!coversCanvas(head.box, canvas.width, canvas.height)) return null
+    return contains(head.box, sceneX, sceneY) ? ['layers', 0] : null
 }

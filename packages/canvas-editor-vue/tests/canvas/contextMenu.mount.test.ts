@@ -17,7 +17,7 @@ import { mount } from '@vue/test-utils'
 import { EditorSession, type FrameScheduler, type Layer, type TableLayer, type TextLayer } from '@hankchen/canvas-editor'
 
 import ContextMenu from '../../src/canvas/ContextMenu.vue'
-import { cellLayer, rowLayer, rowTemplateLayer, tableLayer, textLayer } from '../../../canvas-editor/tests/support/fixtures'
+import { baseImageLayer, cellLayer, rowLayer, rowTemplateLayer, tableLayer, textLayer } from '../../../canvas-editor/tests/support/fixtures'
 
 const nullScheduler: FrameScheduler = () => () => {}
 
@@ -575,6 +575,72 @@ describe('ContextMenu：转为模板表门态与轻表单点选（rows-path-pick
         expect(table.rows).toHaveLength(0)
         expect(editor.store.history).toHaveLength(1)
         expect(wrapper.find('.cn-context-menu').exists()).toBe(false)
+        wrapper.unmount()
+    })
+})
+
+describe('ContextMenu：转为画布背景（canvas-background 工单 05）', () => {
+    it('条件内：项出现且可用，点击转换 + 关菜单（背景写入、图层删除、一步历史）', async () => {
+        const editor = makeEditor([baseImageLayer(), textLayer({ priority: 20 })])
+        editor.setSelection(['layers', 0])
+        const wrapper = mountMenu(editor)
+        await wrapper.vm.openAt(10, 10)
+        const item = itemButtons(wrapper).find((b) => b.text() === '转为画布背景')
+        expect(item).toBeDefined()
+        expect(item!.attributes('disabled')).toBeUndefined()
+        await item!.trigger('click')
+        const doc = editor.store.doc!
+        expect(doc.layers).toHaveLength(1)
+        expect(doc.layers[0]!.type).toBe('TextLayer')
+        expect(doc.background).toEqual({ color: null, image: '/bg.png' })
+        expect(editor.store.history).toHaveLength(1)
+        expect(wrapper.find('.cn-context-menu').exists()).toBe(false)
+        wrapper.unmount()
+    })
+
+    it('表达式标记底图：置灰 + title（数据驱动底图不迁移），点击不转换、标记不丢', async () => {
+        const editor = makeEditor([baseImageLayer({ expression: '{{row.cover}}', src: '{{row.cover}}' })])
+        editor.setSelection(['layers', 0])
+        const wrapper = mountMenu(editor)
+        await wrapper.vm.openAt(10, 10)
+        const item = itemButtons(wrapper).find((b) => b.text() === '转为画布背景')!
+        expect(item.attributes('disabled')).toBeDefined()
+        expect(item.attributes('title')).toContain('静态声明')
+        await item.trigger('click')
+        const layer = editor.store.doc!.layers[0]!
+        expect(layer.type).toBe('ImageLayer')
+        expect(layer.type === 'ImageLayer' && layer.expression).toBe('{{row.cover}}')
+        expect(editor.store.history).toHaveLength(0)
+        wrapper.unmount()
+    })
+
+    it('非覆盖图片层/锁定层：置灰 + title 分轨', async () => {
+        const notCovering = makeEditor([baseImageLayer({ shape: { width: 400, height: 300 } })])
+        notCovering.setSelection(['layers', 0])
+        const w1 = mountMenu(notCovering)
+        await w1.vm.openAt(10, 10)
+        const item1 = itemButtons(w1).find((b) => b.text() === '转为画布背景')!
+        expect(item1.attributes('disabled')).toBeDefined()
+        expect(item1.attributes('title')).toContain('覆盖整个画布')
+        w1.unmount()
+
+        const locked = makeEditor([baseImageLayer()])
+        locked.setSelection(['layers', 0])
+        locked.toggleLayerLock(['layers', 0])
+        const w2 = mountMenu(locked)
+        await w2.vm.openAt(10, 10)
+        const item2 = itemButtons(w2).find((b) => b.text() === '转为画布背景')!
+        expect(item2.attributes('disabled')).toBeDefined()
+        expect(item2.attributes('title')).toContain('锁定')
+        w2.unmount()
+    })
+
+    it('非图片层选择：项不出现（转换项按类型显隐，同模板表先例）', async () => {
+        const editor = makeEditor([textLayer({ shape: { width: 800, height: 600 } })])
+        editor.setSelection(['layers', 0])
+        const wrapper = mountMenu(editor)
+        await wrapper.vm.openAt(10, 10)
+        expect(itemButtons(wrapper).map((b) => b.text())).not.toContain('转为画布背景')
         wrapper.unmount()
     })
 })

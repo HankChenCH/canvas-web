@@ -7,8 +7,9 @@
  *   打开时发生一次，pan/zoom 不跟随；越界钳位（打开后量实际尺寸）保证画布边缘
  *   完整可见。
  * - 动作全部经内核 action（toggleLayerVisibility/duplicateSelection/copyStyle/
- *   pasteStyle/bringForward/sendBackward/bringToFront/sendToBack/deleteLayer），
- *   组件零文档写语义；可用态按选中路径裁剪（内核语义，v1 单选）：显示/隐藏 = 根层
+ *   pasteStyle/bringForward/sendBackward/bringToFront/sendToBack/deleteLayer/
+ *   convertSelectionToBackground），组件零文档写语义；可用态按选中路径裁剪（内核语义，
+ *   v1 单选）：显示/隐藏 = 根层
  *   选择（visible 住 LayerBase 面）；删除 = 有选择；副本 = 可复制（可落根层的类型，见
  *   canCopySelection）；样式复制/粘贴（canvas-web-style-paste 工单 02，spec 决策 7，
  *   置于创建副本之后）= 内核只读查询口同门——复制 = 有可解析选择且源类型有样式面
@@ -16,6 +17,10 @@
  *   样式槽非空 + 有可解析选择；前移一层/后移一层与置顶/置底 = 根层选择（isRootLayerPath
  *   ——容器内行/格是数组序语义，无此操作；kbd-nav 工单 05 补前移/后移置于
  *   置顶/置底之上，边界不置灰——内核空转为权威）。
+ * - 转为画布背景（canvas-background 工单 05，spec Q8 入口只放右键菜单）：图片
+ *   根层选择时出现，门态 = 内核 baseImageConversionBlock 查询口（条件与命中豁免
+ *   同门：数组头 + 图片层 + 覆盖画布；表达式标记层置灰不转——背景静态，不静默
+ *   丢标记），命中未中时底图候选经表面 baseImageAt 兜底选中（豁免的命中缝）。
  * - 关闭时机：执行任一动作、画布 pointerdown（表面组件转发 close）、Escape
  *   （表面组件转发）。菜单根拦截 pointerdown 冒泡（点菜单项不触发画布点选）与
  *   contextmenu（菜单上右键不换目标重开）。⌥⌘C/V 键位随注册表自带，本组件零键位代码。
@@ -26,7 +31,13 @@
  */
 import { computed, nextTick, ref } from 'vue'
 
-import { isRootLayerPath, rootLayerOf, type EditorSession, type LayerPath } from '@hankchen/canvas-editor'
+import {
+    isRootLayerPath,
+    rootLayerOf,
+    type BaseImageConversionBlock,
+    type EditorSession,
+    type LayerPath,
+} from '@hankchen/canvas-editor'
 
 import { useSelection } from '../shared/useSelection'
 import { detectShortcutPlatform, shortcutActionLabel } from '../shared/shortcutsHelp'
@@ -110,6 +121,42 @@ const canConvertToTemplate = computed(() => {
     return last !== undefined && last.cells.length > 0
 })
 
+// ---- 转为画布背景的门态（canvas-background 工单 05）：内核查询口唯一权威 ----
+
+/**
+ * 底图转换阻塞原因（canvas-background 工单 05）：仅图片根层选择时查询（其余
+ * 类型整项不出现，同转为模板表的类型门）；内核查询口一次求值——selection 作
+ * 响应锚 + open 依赖强制重算（canCopyStyle 同门，删层后重开菜单不陈旧）。
+ */
+const conversionBlock = computed<BaseImageConversionBlock | null>(() => {
+    void open.value
+    const path = selection.value
+    if (path === null || selectedRootLayer.value?.type !== 'ImageLayer') return null
+    return props.editor.baseImageConversionBlock(path)
+})
+
+/** 转换项 title（置灰 + title 统一先例）：阻塞原因分轨，可用态无 title */
+const toBackgroundTitle = computed(() => {
+    switch (conversionBlock.value) {
+        case 'not-head-root':
+            return '仅数组头的垫底图片图层可转换'
+        case 'not-image':
+            return '仅图片图层可转换'
+        case 'not-covering':
+            return '仅覆盖整个画布的垫底图片图层可转换'
+        case 'hidden':
+            return '隐藏图层不可转换——先恢复显示再转换'
+        case 'expression-marked':
+            return '表达式驱动的底图不转换——背景是静态声明，标记保留在图层上'
+        case 'no-image-src':
+            return '该图层无图片引用——纯色底请在画布属性面板设置背景色'
+        case 'locked':
+            return '图层已锁定——解锁后可转换'
+        default:
+            return undefined
+    }
+})
+
 // ---- 转为模板表的门态与轻表单点选源（rows-path-picker 工单 04，spec D1/D3） ----
 
 /**
@@ -160,7 +207,7 @@ function confirmConvert(): void {
 }
 
 interface MenuItem {
-    key: 'visibility' | 'duplicate' | 'copy-style' | 'paste-style' | 'forward' | 'backward' | 'front' | 'back' | 'delete' | 'to-template' | 'to-rows'
+    key: 'visibility' | 'duplicate' | 'copy-style' | 'paste-style' | 'forward' | 'backward' | 'front' | 'back' | 'to-background' | 'to-template' | 'to-rows' | 'delete'
     label: string
     enabled: boolean
     /** 禁用/说明文案（spec §2.5 反馈规范：置灰 + title 统一） */
@@ -242,6 +289,20 @@ const items = computed<MenuItem[]>(() => [
         title: isRoot.value ? undefined : '置顶/置底仅对根图层生效',
         run: () => props.editor.sendToBack(),
     },
+    // 转为画布背景（canvas-background 工单 05，spec Q8 入口只放右键菜单）：图片
+    // 根层选择时出现（其余类型不出现，同转换项显隐先例），内核查询口 null 才
+    // 可用；表达式标记/无图引用等置灰分轨见 toBackgroundTitle
+    ...(selectedRootLayer.value?.type === 'ImageLayer'
+        ? [
+              {
+                  key: 'to-background',
+                  label: '转为画布背景',
+                  enabled: conversionBlock.value === null,
+                  title: toBackgroundTitle.value,
+                  run: () => props.editor.convertSelectionToBackground(),
+              } satisfies MenuItem,
+          ]
+        : []),
     // 转换项（spec §2.3 C3）：状态互斥动作用显隐不是禁用——模板态显示「转回」，
     // V1 表显示「转为…」，其余类型不出现
     ...(isTemplateTableSelection.value

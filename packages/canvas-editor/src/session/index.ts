@@ -6,6 +6,7 @@
 export {
     ALT_DRAG_DEAD_ZONE_SCREEN_PX,
     EditorSession,
+    type BaseImageConversionBlock,
     type EditorSessionOptions,
     type FrameScheduler,
     type InvalidateTarget,

@@ -22,7 +22,9 @@
  * - 文本编辑（工单 11）：宿主内挂 TextEditingOverlay，双击进入（命中 TextLayer）、
  *   编辑中点 textarea 外先提交再点选、textarea 内指针归编辑光标。
  * - 右键菜单（工单 14）：contextmenu → 场景命中即右键选中 → 视口坐标开菜单
- *   （ContextMenu 内挂组件）；Escape/画布点按/动作执行即关。
+ *   （ContextMenu 内挂组件）；Escape/画布点按/动作执行即关。命中未中按底图候选
+ *   兜底解析（canvas-background 工单 05，baseImageAt——豁免的命中缝，「转为画布
+ *   背景」的入口前提），仍无目标关菜单；左键路径不经过这里，豁免零改动。
  * - 查找条（find-replace 工单 03）：FindBar 内挂组件，画布顶部居中浮动；开合
  *   随内核查找会话（⌘F 经 useShortcuts 桥分派 beginFind），Esc 两路关闭（输入框
  *   内归面板键面，焦点漂出后经本组件窗口监听转发）与聚焦归面板。
@@ -352,8 +354,11 @@ onMounted(() => {
     }
 
     // 右键菜单（工单 14）：命中即右键选中（excalidraw 同款）并按视口坐标开菜单；
-    // 未命中关菜单。编辑中与左键同流：textarea 外右键先提交编辑再点选（防菜单在
-    // 编辑态删层）；textarea 内右键交浏览器原生菜单（文本编辑的原生操作面）。
+    // 未中先按底图候选兜底解析（canvas-background 工单 05——豁免使头根覆盖图片
+    // 层自身盒退出命中面，「转为画布背景」要能选中它），仍无目标才关菜单。左键
+    // 点选路径不经过这里，命中豁免行为零改动。编辑中与左键同流：textarea 外右键
+    // 先提交编辑再点选（防菜单在编辑态删层）；textarea 内右键交浏览器原生菜单
+    // （文本编辑的原生操作面）。
     const onContextMenu = (e: MouseEvent) => {
         if (textEditRef.value?.isEditing()) {
             if (textEditRef.value.ownsEventTarget(e.target)) return
@@ -362,7 +367,9 @@ onMounted(() => {
         e.preventDefault()
         const point = hostPoint(e)
         const scene = editor.toScenePoint(point.x, point.y)
-        if (editor.selectAt(scene.x, scene.y) === null) {
+        const target = editor.hitTest(scene.x, scene.y) ?? editor.baseImageAt(scene.x, scene.y)
+        editor.setSelection(target)
+        if (target === null) {
             contextMenuRef.value?.close()
             return
         }
