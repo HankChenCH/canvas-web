@@ -41,7 +41,7 @@ const RAW_SCHEMA = {
 
 function makeEditor(layers: readonly Layer[]): EditorSession {
     const editor = new EditorSession({ scheduleFrame: nullScheduler })
-    editor.openDocument({ width: 800, height: 600, layers: [...layers] })
+    editor.openDocument({ width: 800, height: 600, background: null, layers: [...layers] })
     return editor
 }
 

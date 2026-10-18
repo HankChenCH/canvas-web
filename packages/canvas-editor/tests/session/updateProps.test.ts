@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { encodeLayer, type Canvas } from '@hankchen/canvas'
+import { encodeGraph, encodeLayer, type Canvas } from '@hankchen/canvas'
 
 import { EditorSession, type FrameScheduler } from '../../src/session/editor'
 import { imageLayer, qrLayer, tableLayer, textLayer } from '../support/fixtures'
@@ -18,6 +18,7 @@ function makeEditor(doc: Canvas): EditorSession {
 const docWith = (layers: Canvas['layers']): Canvas => ({
     width: 800,
     height: 600,
+    background: null,
     layers,
 })
 
@@ -236,5 +237,69 @@ describe('updateCanvasProp：画布级字段写入（未选中目标时的面板
         const editor = makeEditor(textDoc())
         editor.updateCanvasProp('width', 800)
         expect(editor.store.history).toHaveLength(0)
+    })
+})
+
+describe('updateCanvasProp background：背景整体一步事务（canvas-background 工单 04）', () => {
+    it('整对象写入生效，null 分量保留值对象形态', () => {
+        const editor = makeEditor(textDoc())
+        editor.updateCanvasProp('background', { color: '#ffffff', image: null })
+        expect(editor.store.doc!.background).toEqual({ color: '#ffffff', image: null })
+    })
+
+    it('分量为归一门：空串归 null，两分量皆空 = 清背景（null），镜像解码语义', () => {
+        const editor = makeEditor(textDoc())
+        editor.updateCanvasProp('background', { color: '  ', image: '/bg.png' })
+        expect(editor.store.doc!.background).toEqual({ color: null, image: '/bg.png' })
+
+        editor.updateCanvasProp('background', { color: '', image: '' })
+        expect(editor.store.doc!.background).toBeNull()
+
+        editor.updateCanvasProp('background', { color: null, image: null })
+        expect(editor.store.doc!.background).toBeNull()
+    })
+
+    it('null 整体清除', () => {
+        const editor = makeEditor(textDoc())
+        editor.updateCanvasProp('background', { color: '#ffffff', image: null })
+        editor.updateCanvasProp('background', null)
+        expect(editor.store.doc!.background).toBeNull()
+    })
+
+    it('结构相同的整对象空转（immer 引义换新对象不产生历史步）', () => {
+        const editor = makeEditor(textDoc())
+        editor.updateCanvasProp('background', { color: '#ffffff', image: null })
+        editor.updateCanvasProp('background', { color: '#ffffff', image: null })
+        expect(editor.store.history).toHaveLength(1)
+    })
+
+    it('mergeKey 合并为一步；跨分量独立 mergeKey 各为一步（面板 per-part 键的语义锁定）', () => {
+        const editor = makeEditor(textDoc())
+        editor.updateCanvasProp('background', { color: '#ffffff', image: null }, { mergeKey: 'canvas:background.color' })
+        editor.updateCanvasProp('background', { color: '#fefefe', image: null }, { mergeKey: 'canvas:background.color' })
+        expect(editor.store.history).toHaveLength(1)
+
+        editor.updateCanvasProp('background', { color: '#fefefe', image: '/bg.png' }, { mergeKey: 'canvas:background.image' })
+        expect(editor.store.history).toHaveLength(2)
+        expect(editor.store.doc!.background).toEqual({ color: '#fefefe', image: '/bg.png' })
+    })
+
+    it('一次撤销整步还原（清色保图 / 全清两态都可逆）', () => {
+        const editor = makeEditor(textDoc())
+        editor.updateCanvasProp('background', { color: '#ffffff', image: '/bg.png' })
+        editor.updateCanvasProp('background', { color: null, image: '/bg.png' })
+        editor.undo()
+        expect(editor.store.doc!.background).toEqual({ color: '#ffffff', image: '/bg.png' })
+        editor.undo()
+        expect(editor.store.doc!.background).toBeNull()
+    })
+
+    it('条件写键纪律：设背景 encode 出 background 键（仅非空分量），清空后 wire 无 background 键', () => {
+        const editor = makeEditor(textDoc())
+        editor.updateCanvasProp('background', { color: '#ffffff', image: null })
+        expect(encodeGraph(editor.store.doc!).canvas?.background).toEqual({ color: '#ffffff' })
+
+        editor.updateCanvasProp('background', null)
+        expect(encodeGraph(editor.store.doc!).canvas).not.toHaveProperty('background')
     })
 })

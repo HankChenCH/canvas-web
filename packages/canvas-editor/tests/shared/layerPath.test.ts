@@ -12,7 +12,7 @@ import {
 } from '../../src/shared/layerPath'
 import { cellLayer, qrLayer, rowLayer, tableLayer, templateTableWire, textLayer } from '../support/fixtures'
 
-const doc = (layers: Canvas['layers']): Canvas => ({ width: 2400, height: 1500, layers })
+const doc = (layers: Canvas['layers']): Canvas => ({ width: 2400, height: 1500, background: null, layers })
 
 /** 工单 06 目验同款嵌套：表 (96,1120) 600×200，两行（90/110），行一 300 宽双格 */
 function tableDoc(): Canvas {

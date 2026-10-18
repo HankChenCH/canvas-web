@@ -24,7 +24,7 @@ const PADDING_COPY = '内边距作用于内容盒，不改变图层尺寸'
 
 function makeEditor(layers: readonly Layer[]): EditorSession {
     const editor = new EditorSession({ scheduleFrame: nullScheduler })
-    editor.openDocument({ width: 800, height: 600, layers })
+    editor.openDocument({ width: 800, height: 600, background: null, layers })
     return editor
 }
 
@@ -171,6 +171,23 @@ describe('PropertyPanel：schema 驱动表单', () => {
         await numbers[0]!.trigger('input')
         await numbers[0]!.trigger('change')
         expect(editor.store.doc!.width).toBe(1024)
+        wrapper.unmount()
+    })
+
+    it('未选中：背景区段恒在（未设背景也渲染，投影读取态），选中图层即隐（canvas-background 工单 04）', async () => {
+        const editor = makeEditor([textLayer()])
+        const wrapper = mount(PropertyPanel, { props: { editor } })
+        // 未设背景（background null）：背景区段照常渲染，色/图字段可编辑
+        expect(wrapper.text()).toContain('背景色')
+        expect(wrapper.text()).toContain('背景图')
+        expect(wrapper.find('input[type="color"]')).toBeTruthy()
+
+        // 选中图层：面板切图层级——画布背景字段不出现（背景不属图层树）。
+        // 「背景图」是画布背景区段独有标签（图层级 shape.backgroundColor 撞「背景色」
+        // 三字，不能作判据）；画布区段标题「背景」亦随图层级表单消失
+        editor.setSelection(['layers', 0])
+        await wrapper.vm.$nextTick()
+        expect(wrapper.text()).not.toContain('背景图')
         wrapper.unmount()
     })
 
@@ -846,7 +863,7 @@ describe('imageSrc 控件面板接线（图片资源地址上传形态）', () =
         options: Partial<ConstructorParameters<typeof EditorSession>[0]> = {},
     ) {
         const editor = new EditorSession({ scheduleFrame: nullScheduler, ...options })
-        editor.openDocument({ width: 800, height: 600, layers })
+        editor.openDocument({ width: 800, height: 600, background: null, layers })
         const wrapper = mount(PropertyPanel, { props: { editor } })
         editor.setSelection(['layers', 0])
         await wrapper.vm.$nextTick()

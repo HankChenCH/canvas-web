@@ -5,7 +5,7 @@ import type { Canvas } from '@hankchen/canvas'
 import { hitTest } from '../../src/spatial/hitTest'
 import { cellLayer, imageLayer, qrLayer, rowLayer, tableLayer, textLayer } from '../support/fixtures'
 
-const doc = (layers: Canvas['layers']): Canvas => ({ width: 2400, height: 1500, layers })
+const doc = (layers: Canvas['layers']): Canvas => ({ width: 2400, height: 1500, background: null, layers })
 
 describe('叠放次序：数组尾（视觉最上层）优先', () => {
     const canvas = doc([

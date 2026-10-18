@@ -21,7 +21,7 @@ const nullScheduler: FrameScheduler = () => () => {}
 
 function makeEditor(): EditorSession {
     const editor = new EditorSession({ scheduleFrame: nullScheduler })
-    editor.openDocument({ width: 800, height: 600, layers: [textLayer({ priority: 10, text: '甲' })] })
+    editor.openDocument({ width: 800, height: 600, background: null, layers: [textLayer({ priority: 10, text: '甲' })] })
     return editor
 }
 
@@ -114,6 +114,7 @@ describe('useShortcuts：折算 → 分类 → 分派', () => {
         editor.openDocument({
             width: 800,
             height: 600,
+            background: null,
             layers: [
                 textLayer({ priority: 20, text: '底' }),
                 textLayer({ priority: 10, text: '顶' }),

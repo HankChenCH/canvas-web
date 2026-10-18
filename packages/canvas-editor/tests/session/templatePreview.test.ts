@@ -17,7 +17,7 @@ const nullScheduler = () => () => {}
 
 const makeSession = (layers: Canvas['layers'], width = 400, height = 300) => {
     const session = new EditorSession({ scheduleFrame: nullScheduler })
-    session.openDocument({ width, height, layers })
+    session.openDocument({ width, height, background: null, layers })
     return session
 }
 

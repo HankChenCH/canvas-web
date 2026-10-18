@@ -173,6 +173,14 @@ export class Materializer {
      */
     materialize(doc: CanvasDoc): void {
         const referenced = new Map<string, ResourceRef>()
+        // 画布背景图（canvas-background 工单 04）：图层树之外的第二收集源——
+        // 渲染端 paintBackground 递原始引用给 drawImage，未装载即静默不画，
+        // 导出排空闸也据此等待背景图就绪。背景色非资源，零条目。
+        const backgroundImage = doc.background?.image
+        if (backgroundImage) {
+            const key = imageResourceKey(backgroundImage)
+            referenced.set(key, { key, kind: 'image', ref: backgroundImage })
+        }
         forEachLayerBox(doc, (layer) => {
             const ref = resourceRefOf(layer)
             if (ref === null || referenced.has(ref.key)) return

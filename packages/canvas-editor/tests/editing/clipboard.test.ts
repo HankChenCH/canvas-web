@@ -27,7 +27,7 @@ const nullScheduler: FrameScheduler = () => () => {}
 
 const makeSession = (layers: readonly Layer[]) => {
     const session = new EditorSession({ scheduleFrame: nullScheduler })
-    session.openDocument({ width: 800, height: 600, layers: [...layers] })
+    session.openDocument({ width: 800, height: 600, background: null, layers: [...layers] })
     return session
 }
 
@@ -331,7 +331,7 @@ describe('⌘V 真原位（alt-drag-paste 工单 02，spec 决策 5–6）', () 
         ])
         select(session, ['layers', 1])
         session.copySelection()
-        session.openDocument({ width: 400, height: 300, layers: [textLayer({ priority: 5, text: '彼' })] })
+        session.openDocument({ width: 400, height: 300, background: null, layers: [textLayer({ priority: 5, text: '彼' })] })
 
         // sourcePath ['layers', 1] 在新文档越界（仅 1 层）→ 退化置顶
         expect(session.pasteFromClipboard()).toEqual(['layers', 1])

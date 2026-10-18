@@ -17,6 +17,7 @@ function makeEditor(doc: Canvas): EditorSession {
 const singleTextDoc = (): Canvas => ({
     width: 400,
     height: 300,
+    background: null,
     layers: [textLayer({ priority: 10, position: { anchor: 'top-left', x: 40, y: 30 } })],
 })
 
@@ -36,6 +37,7 @@ describe('beginTextEdit：进入文本编辑（会话住 ui 分支，不进历�
         const editor = makeEditor({
             width: 400,
             height: 300,
+            background: null,
             layers: [
                 textLayer({ priority: 10, text: expression, expression }),
                 textLayer({ priority: 5 }),
@@ -80,6 +82,7 @@ describe('beginTextEdit：进入文本编辑（会话住 ui 分支，不进历�
         const editor = makeEditor({
             width: 400,
             height: 300,
+            background: null,
             layers: [imageLayer({ priority: 10 }), textLayer({ priority: 5 })],
         })
 
@@ -98,6 +101,7 @@ describe('beginTextEdit：进入文本编辑（会话住 ui 分支，不进历�
         const editor = makeEditor({
             width: 400,
             height: 300,
+            background: null,
             layers: [textLayer({ priority: 10 }), textLayer({ priority: 5 })],
         })
         const listener = vi.fn()
@@ -211,6 +215,7 @@ describe('空文本提交 = 删除图层（一步历史，可撤销）', () => {
         const editor = makeEditor({
             width: 400,
             height: 300,
+            background: null,
             layers: [tableLayer([rowLayer([cellLayer(textLayer({ priority: 1 }), { shape: { width: 200, height: 60 } })])])],
         })
         editor.beginTextEdit(['layers', 0, 'rows', 0, 'cells', 0, 'content'])
@@ -232,6 +237,7 @@ describe('空文本提交 = 删除图层（一步历史，可撤销）', () => {
         const editor = makeEditor({
             width: 400,
             height: 300,
+            background: null,
             layers: [textLayer({ priority: 10 }), imageLayer({ priority: 5 })],
         })
         editor.beginTextEdit(['layers', 0])
@@ -251,6 +257,7 @@ describe('表达式会话提交矩阵（spec 决策 3：空串判定先于片段
         return {
             width: 400,
             height: 300,
+            background: null,
             layers: [textLayer({ priority: 10, text: expression, expression })],
         }
     }
@@ -338,6 +345,7 @@ describe('表达式会话提交矩阵（spec 决策 3：空串判定先于片段
         const editor = makeEditor({
             width: 400,
             height: 300,
+            background: null,
             layers: [tableLayer([rowLayer([
                 cellLayer(
                     textLayer({ priority: 1, text: expression, expression, shape: { width: 200, height: 60 } }),
@@ -378,6 +386,7 @@ describe('提交未变化短路：对比对象随会话模式（字面对比 tex
         const editor = makeEditor({
             width: 400,
             height: 300,
+            background: null,
             layers: [textLayer({ priority: 10, text: expression, expression })],
         })
         editor.beginTextEdit(['layers', 0])
@@ -392,6 +401,7 @@ describe('提交未变化短路：对比对象随会话模式（字面对比 tex
         const editor = makeEditor({
             width: 400,
             height: 300,
+            background: null,
             layers: [textLayer({ priority: 10, text: expression, expression })],
         })
         editor.beginTextEdit(['layers', 0])
@@ -417,6 +427,7 @@ describe('textEditLayout.expressionMode：pill 激活态与补全 enabled 的内
         const editor = makeEditor({
             width: 400,
             height: 300,
+            background: null,
             layers: [textLayer({ priority: 10 }), textLayer({ priority: 5, text: expression, expression })],
         })
 
@@ -429,6 +440,7 @@ describe('textEditLayout.expressionMode：pill 激活态与补全 enabled 的内
         const editor = makeEditor({
             width: 400,
             height: 300,
+            background: null,
             layers: [textLayer({ priority: 10, text: expression, expression })],
         })
         editor.beginTextEdit(['layers', 0])
@@ -477,6 +489,7 @@ describe('textEditLayout：编辑 overlay 的布局描述（与绘制同一套�
         const editor = makeEditor({
             width: 400,
             height: 300,
+            background: null,
             layers: [
                 textLayer({ priority: 10, align: { horizontal: 'center', vertical: 'center' } }),
                 textLayer({ priority: 5, align: { horizontal: 'left', vertical: 'bottom' }, shape: { padding: { top: 2, bottom: 3, left: 4, right: 5 } } }),
@@ -496,6 +509,7 @@ describe('textEditLayout：编辑 overlay 的布局描述（与绘制同一套�
         const editor = makeEditor({
             width: 400,
             height: 300,
+            background: null,
             layers: [tableLayer([rowLayer([
                 // 解码契约：格内容宽高与格同步（结构夹具按同值构造）
                 cellLayer(textLayer({ priority: 1, shape: { width: 200, height: 60 } }), { shape: { width: 200, height: 60 } }),
@@ -543,6 +557,7 @@ describe('textEditLayout 对当前文档现算（ADR 0019 会话期 live 联动�
         const editor = makeEditor({
             width: 400,
             height: 300,
+            background: null,
             layers: [
                 textLayer({ priority: 10, align: { horizontal: 'left', vertical: 'center' }, autowrap: true }),
             ],

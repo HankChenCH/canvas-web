@@ -101,7 +101,7 @@ function manualScheduler(): FrameScheduler & { flush: () => void } {
     )
 }
 
-const emptyDoc = { width: 400, height: 300, layers: [] }
+const emptyDoc = { width: 400, height: 300, background: null, layers: [] }
 
 function mountSurface(painterFactory?: (editor: EditorSession) => OverlayPainter) {
     const scheduler = manualScheduler()
@@ -269,6 +269,7 @@ describe('Alt+拖快速复制：altKey 读取传递（alt-drag-paste 工单 01�
         editor.openDocument({
             width: 800,
             height: 600,
+            background: null,
             layers: [textLayer({ priority: 10 })],
         })
 
@@ -292,6 +293,7 @@ describe('Alt+拖快速复制：altKey 读取传递（alt-drag-paste 工单 01�
         editor.openDocument({
             width: 800,
             height: 600,
+            background: null,
             layers: [textLayer({ priority: 10 })],
         })
 
@@ -316,7 +318,7 @@ describe('八柄缩放接线（工单 07）：柄面优先于图层命中', () =
 
     it('点 se 柄开缩放会话：位移写回宽高，抬手闭合且一步历史', () => {
         const { editor, cleanup } = mountSurface()
-        editor.openDocument({ width: 800, height: 600, layers: [textLayer({ priority: 10 })] })
+        editor.openDocument({ width: 800, height: 600, background: null, layers: [textLayer({ priority: 10 })] })
         editor.setSelection(['layers', 0])
 
         dispatchPointer('pointerdown', { button: 0, clientX: 100, clientY: 50 })
@@ -337,6 +339,7 @@ describe('八柄缩放接线（工单 07）：柄面优先于图层命中', () =
         editor.openDocument({
             width: 800,
             height: 600,
+            background: null,
             layers: [
                 textLayer({ priority: 10 }),
                 textLayer({ priority: 20, position: { anchor: 'top-left', x: 90, y: 40 } }),
@@ -357,6 +360,7 @@ describe('八柄缩放接线（工单 07）：柄面优先于图层命中', () =
         editor.openDocument({
             width: 800,
             height: 600,
+            background: null,
             layers: [tableLayer([rowLayer([cellLayer(textLayer())])])],
         })
         // 行 fixture 在 (0,0)——其 se 柄位不存在，点 (100,50) 命中表格（改选）
@@ -404,7 +408,7 @@ describe('画拉建层接线（drag-create 工单 02）：武装态手势 + Esc 
 
     it('武装态左键按下开画拉：不平移、不改选、不开拖动/缩放会话；move 求位、up 落库选中解除武装', () => {
         const { editor, cleanup } = mountSurface()
-        editor.openDocument({ width: 800, height: 600, layers: [textLayer({ priority: 10 })] })
+        editor.openDocument({ width: 800, height: 600, background: null, layers: [textLayer({ priority: 10 })] })
         editor.setSelection(['layers', 0])
         editor.armLayerCreate('TableLayer')
 
@@ -430,7 +434,7 @@ describe('画拉建层接线（drag-create 工单 02）：武装态手势 + Esc 
 
     it('非武装态行为回归不变：空白按下拖拽仍平移、不建层', () => {
         const { editor, cleanup } = mountSurface()
-        editor.openDocument({ width: 800, height: 600, layers: [textLayer({ priority: 10 })] })
+        editor.openDocument({ width: 800, height: 600, background: null, layers: [textLayer({ priority: 10 })] })
 
         dispatchPointer('pointerdown', { button: 0, clientX: 300, clientY: 200 })
         expect(editor.store.ui.create).toBeNull()
@@ -443,7 +447,7 @@ describe('画拉建层接线（drag-create 工单 02）：武装态手势 + Esc 
 
     it('武装态空格+左键 / 中键平移不受影响（wantPan 先于武装分派）', () => {
         const { editor, cleanup } = mountSurface()
-        editor.openDocument({ width: 800, height: 600, layers: [] })
+        editor.openDocument({ width: 800, height: 600, background: null, layers: [] })
         editor.armLayerCreate('TableLayer')
 
         // 中键平移
@@ -466,7 +470,7 @@ describe('画拉建层接线（drag-create 工单 02）：武装态手势 + Esc 
 
     it('Esc 解除武装（待命态）：零副作用，不走 escapeSelection 选择升级链', () => {
         const { editor, cleanup } = mountSurface()
-        editor.openDocument({ width: 800, height: 600, layers: [textLayer({ priority: 10 })] })
+        editor.openDocument({ width: 800, height: 600, background: null, layers: [textLayer({ priority: 10 })] })
         editor.setSelection(['layers', 0]) // 根层选中：escapeSelection 会清空选择
         editor.armLayerCreate('TableLayer')
 
@@ -480,7 +484,7 @@ describe('画拉建层接线（drag-create 工单 02）：武装态手势 + Esc 
 
     it('Esc 取消画拉（画拉态）：会话清除零文档写入，随后的抬手空转', () => {
         const { editor, cleanup } = mountSurface()
-        editor.openDocument({ width: 800, height: 600, layers: [] })
+        editor.openDocument({ width: 800, height: 600, background: null, layers: [] })
         editor.armLayerCreate('TextLayer')
 
         dispatchPointer('pointerdown', { button: 0, clientX: 100, clientY: 100 })
@@ -499,7 +503,7 @@ describe('画拉建层接线（drag-create 工单 02）：武装态手势 + Esc 
 
     it('文本层画完自动进入编辑会话（spec 决策 6「画框即打字」）', () => {
         const { editor, cleanup } = mountSurface()
-        editor.openDocument({ width: 800, height: 600, layers: [] })
+        editor.openDocument({ width: 800, height: 600, background: null, layers: [] })
         editor.armLayerCreate('TextLayer')
 
         dispatchPointer('pointerdown', { button: 0, clientX: 100, clientY: 100 })
@@ -512,7 +516,7 @@ describe('画拉建层接线（drag-create 工单 02）：武装态手势 + Esc 
 
     it('非文本层仅选中不进编辑', () => {
         const { editor, cleanup } = mountSurface()
-        editor.openDocument({ width: 800, height: 600, layers: [] })
+        editor.openDocument({ width: 800, height: 600, background: null, layers: [] })
         editor.armLayerCreate('QrCodeLayer')
 
         dispatchPointer('pointerdown', { button: 0, clientX: 100, clientY: 100 })
@@ -525,7 +529,7 @@ describe('画拉建层接线（drag-create 工单 02）：武装态手势 + Esc 
 
     it('武装态 crosshair 光标：待命即现、画拉中保持、落库解除随武装清空', async () => {
         const { editor, cleanup } = mountSurface()
-        editor.openDocument({ width: 800, height: 600, layers: [] })
+        editor.openDocument({ width: 800, height: 600, background: null, layers: [] })
         const host = () => surfaceHost() as HTMLElement
 
         editor.armLayerCreate('TextLayer')
@@ -548,7 +552,7 @@ describe('画拉建层接线（drag-create 工单 02）：武装态手势 + Esc 
         const { editor, scheduler, cleanup } = mountSurface((editor) => (args) =>
             drawCreateRubberBand(bandCtx as unknown as CanvasRenderingContext2D, editor, args),
         )
-        editor.openDocument({ width: 800, height: 600, layers: [] })
+        editor.openDocument({ width: 800, height: 600, background: null, layers: [] })
         editor.armLayerCreate('TextLayer')
 
         // 按下即建会话但零尺寸不画；合帧语义下 move 后的 flush 画的是最新 rect
@@ -579,7 +583,7 @@ describe('手势 Shift 传缝（image-ratio-preset 工单 02）：pointermove �
 
     it('画拉：Shift 瞬时反转槽态（槽自由 + Shift = 临时钳 1:1），松开还原自由、落库取末态', () => {
         const { editor, cleanup } = mountSurface()
-        editor.openDocument({ width: 800, height: 600, layers: [] })
+        editor.openDocument({ width: 800, height: 600, background: null, layers: [] })
         editor.armLayerCreate('ImageLayer')
 
         dispatchPointer('pointerdown', { button: 0, clientX: 300, clientY: 200 })
@@ -597,7 +601,7 @@ describe('手势 Shift 传缝（image-ratio-preset 工单 02）：pointermove �
 
     it('画拉：槽钳生效与 Shift 反转（档位 16:9 写槽——普通画拉钳 16:9、按 Shift 临时自由）', () => {
         const { editor, cleanup } = mountSurface()
-        editor.openDocument({ width: 800, height: 600, layers: [] })
+        editor.openDocument({ width: 800, height: 600, background: null, layers: [] })
         editor.armLayerCreate('ImageLayer', '16:9')
 
         dispatchPointer('pointerdown', { button: 0, clientX: 300, clientY: 200 })
@@ -613,7 +617,7 @@ describe('手势 Shift 传缝（image-ratio-preset 工单 02）：pointermove �
     it('八柄缩放：Shift 等比保持盒比例（宽驱动派生高），松开还原自由缩放', () => {
         const { editor, cleanup } = mountSurface()
         // 图片层 fixture 缺省盒 (0,0) 100×50，se 柄中心 = (100,50)
-        editor.openDocument({ width: 800, height: 600, layers: [imageLayer()] })
+        editor.openDocument({ width: 800, height: 600, background: null, layers: [imageLayer()] })
         editor.setSelection(['layers', 0])
 
         dispatchPointer('pointerdown', { button: 0, clientX: 100, clientY: 50 })

@@ -4,7 +4,7 @@ import type { Canvas } from '@hankchen/canvas'
 
 import { EditorStore, type EditorChange } from '../../src/session/store'
 
-const doc = (layers: Canvas['layers'] = []): Canvas => ({ width: 100, height: 80, layers })
+const doc = (layers: Canvas['layers'] = []): Canvas => ({ width: 100, height: 80, background: null, layers })
 
 describe('EditorStore 初始态', () => {
     it('未打开文档时 doc 为 null，视口为恒等相机', () => {
@@ -33,7 +33,7 @@ describe('doc 分支：整体替换（patch 事务管线见 transact.test.ts）'
         const replacement = doc()
         store.openDocument(replacement)
         expect(store.doc).toBe(replacement)
-        expect(first).toEqual({ width: 100, height: 80, layers: [] })
+        expect(first).toEqual({ width: 100, height: 80, background: null, layers: [] })
     })
 })
 

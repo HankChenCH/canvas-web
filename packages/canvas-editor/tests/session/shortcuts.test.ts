@@ -24,7 +24,7 @@ const nullScheduler: FrameScheduler = () => () => {}
 
 const makeSession = () => {
     const session = new EditorSession({ scheduleFrame: nullScheduler })
-    session.openDocument({ width: 800, height: 600, layers: [textLayer({ priority: 10, text: '甲' })] })
+    session.openDocument({ width: 800, height: 600, background: null, layers: [textLayer({ priority: 10, text: '甲' })] })
     return session
 }
 
@@ -356,6 +356,7 @@ describe('样式粘贴条目（canvas-web-style-paste 工单 01）：⌥⌘C/⌥
         session.openDocument({
             width: 800,
             height: 600,
+            background: null,
             layers: [
                 textLayer({ priority: 20, text: '源', fontSize: 24, fontColor: '#ff0000' }),
                 textLayer({ priority: 10, text: '目标' }),
@@ -521,6 +522,7 @@ describe('executeShortcut：z 序与缩放分派（kbd-nav 工单 01）', () => 
         session.openDocument({
             width: 800,
             height: 600,
+            background: null,
             layers: [
                 textLayer({ priority: 30, text: '底' }),
                 textLayer({ priority: 20, text: '中' }),

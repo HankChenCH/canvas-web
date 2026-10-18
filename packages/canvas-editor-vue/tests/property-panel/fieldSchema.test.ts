@@ -6,6 +6,7 @@ import {
     LAYER_TYPES,
     VERTICAL_ALIGNS,
     type Border,
+    type Canvas,
     type Layer,
     type LayerType,
     type Padding,
@@ -15,6 +16,7 @@ import {
     CANVAS_FIELD_SECTIONS,
     FIELD_SECTIONS_BY_TYPE,
     UNDRAWN_CONTENT_HINT,
+    canvasFieldTarget,
     fieldSectionsForPath,
     fieldSectionsForType,
     layerRoleAt,
@@ -371,13 +373,37 @@ describe('readField：字段值读取（未知路径不渲染、不告警的面�
 
 describe('画布级字段（未选中图层时的面板内容）', () => {
     it('宽/高两个整数数值字段，相对画布根解析', () => {
-        const keys = fieldKeys(CANVAS_FIELD_SECTIONS)
+        const canvasSection = CANVAS_FIELD_SECTIONS.filter((s) => s.title === '画布')
+        const keys = fieldKeys(canvasSection)
         expect(keys).toEqual(['width', 'height'])
-        for (const field of flatFields(CANVAS_FIELD_SECTIONS)) {
+        for (const field of flatFields(canvasSection)) {
             expect(field.control).toBe('number')
             expect(field.integer).toBe(true)
         }
         expect(readField({ width: 2400, height: 1500 }, ['width'])).toEqual({ ok: true, value: 2400 })
+    })
+
+    it('背景区段：背景色（nullable color）+ 背景图（imageSrc，非 data 字段无表达式态）', () => {
+        const bg = CANVAS_FIELD_SECTIONS.find((s) => s.title === '背景')!
+        expect(bg.fields.map((f) => f.key.join('.'))).toEqual(['background.color', 'background.image'])
+        const color = bg.fields[0]!
+        expect(color.control).toBe('color')
+        expect(color.nullable).toBe(true)
+        const image = bg.fields[1]!
+        expect(image.control).toBe('imageSrc')
+        // 背景静态（spec Q3）：非 data 字段，无取值方式段
+        expect(image.data).toBeUndefined()
+    })
+
+    it('canvasFieldTarget：background null 投影全空值对象（清空态字段可读、区段恒渲染）', () => {
+        expect(canvasFieldTarget(null)).toBeNull()
+        const empty = canvasFieldTarget({ width: 100, height: 80, background: null, layers: [] })
+        expect(readField(empty, ['background', 'color'])).toEqual({ ok: true, value: null })
+        expect(readField(empty, ['background', 'image'])).toEqual({ ok: true, value: null })
+        // 已设背景原样透出（不拷贝、不重整）
+        const set: Canvas = { width: 100, height: 80, background: { color: '#ffffff', image: null }, layers: [] }
+        expect(canvasFieldTarget(set)).toBe(set)
+        expect(readField(canvasFieldTarget(set), ['background', 'color'])).toEqual({ ok: true, value: '#ffffff' })
     })
 })
 

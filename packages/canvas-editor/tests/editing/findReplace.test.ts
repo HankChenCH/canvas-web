@@ -28,7 +28,7 @@ import {
     textLayer,
 } from '../support/fixtures'
 
-const doc = (layers: Canvas['layers']): Canvas => ({ width: 800, height: 600, layers })
+const doc = (layers: Canvas['layers']): Canvas => ({ width: 800, height: 600, background: null, layers })
 
 /** 命中列表投影成 [path, start, end] 便于断言 */
 const hitKey = ({ path, start, end }: FindTextHit): unknown[] => [[...path], start, end]

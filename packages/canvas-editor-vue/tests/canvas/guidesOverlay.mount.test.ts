@@ -37,6 +37,7 @@ function makeEditor(): EditorSession {
     editor.openDocument({
         width: 800,
         height: 600,
+        background: null,
         layers: [textLayer({ position: { x: 200, y: 100 } }), textLayer({ position: { x: 500, y: 300 } })],
     })
     return editor
@@ -155,7 +156,7 @@ describe('GuidesOverlay：参考线呈现（读 listGuides）', () => {
         editor.addGuide({ orientation: 'vertical', position: 300 })
         await wrapper.vm.$nextTick()
         expect(wrapper.find('[data-guide-line]').exists()).toBe(true)
-        editor.openDocument({ width: 400, height: 300, layers: [textLayer()] })
+        editor.openDocument({ width: 400, height: 300, background: null, layers: [textLayer()] })
         await wrapper.vm.$nextTick()
         expect(wrapper.find('[data-guide-line]').exists()).toBe(false)
         wrapper.unmount()

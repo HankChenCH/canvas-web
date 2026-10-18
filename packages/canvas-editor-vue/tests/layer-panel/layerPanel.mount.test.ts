@@ -26,7 +26,7 @@ const nullScheduler: FrameScheduler = () => () => {}
 
 function makeEditor(layers: readonly Layer[]): EditorSession {
     const editor = new EditorSession({ scheduleFrame: nullScheduler })
-    editor.openDocument({ width: 800, height: 600, layers })
+    editor.openDocument({ width: 800, height: 600, background: null, layers })
     return editor
 }
 

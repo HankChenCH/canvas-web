@@ -32,7 +32,7 @@ const nullScheduler: FrameScheduler = () => () => {}
 
 const makeSession = (layers: Parameters<EditorSession['openDocument']>[0]['layers']) => {
     const session = new EditorSession({ scheduleFrame: nullScheduler })
-    session.openDocument({ width: 800, height: 600, layers })
+    session.openDocument({ width: 800, height: 600, background: null, layers })
     return session
 }
 
@@ -72,6 +72,7 @@ describe('buildLayerOutline：面板大纲（面板顶部 = 视觉最上层 = �
         const doc = {
             width: 800,
             height: 600,
+            background: null,
             layers: [
                 textLayer({ priority: 30, text: '底' }),
                 textLayer({ priority: 20, text: '中' }),
@@ -90,7 +91,7 @@ describe('buildLayerOutline：面板大纲（面板顶部 = 视觉最上层 = �
     })
 
     it('表格展开三层嵌套：行/格保持数组序（行0在视觉顶部），格内容为叶', () => {
-        const doc = { width: 800, height: 600, layers: [tableDoc()] }
+        const doc = { width: 800, height: 600, background: null, layers: [tableDoc()] }
         const outline = buildLayerOutline(doc)
         expect(outline).toHaveLength(1)
         const table = outline[0]!
@@ -117,13 +118,14 @@ describe('buildLayerOutline：面板大纲（面板顶部 = 视觉最上层 = �
     })
 
     it('空画布输出空大纲', () => {
-        expect(buildLayerOutline({ width: 100, height: 100, layers: [] })).toEqual([])
+        expect(buildLayerOutline({ width: 100, height: 100, background: null, layers: [] })).toEqual([])
     })
 
     it('节点携带文档 name 原文（工单 09 显示层投影）：未命名为空串', () => {
         const doc = {
             width: 800,
             height: 600,
+            background: null,
             layers: [
                 textLayer({ priority: 20, name: '' }),
                 textLayer({ priority: 10, name: '封面标题' }),
@@ -138,6 +140,7 @@ describe('buildLayerOutline：面板大纲（面板顶部 = 视觉最上层 = �
         const doc = {
             width: 800,
             height: 600,
+            background: null,
             layers: [
                 textLayer({ priority: 20 }),
                 textLayer({ priority: 10, visible: false }),
@@ -151,6 +154,7 @@ describe('buildLayerOutline：面板大纲（面板顶部 = 视觉最上层 = �
         const doc = {
             width: 800,
             height: 600,
+            background: null,
             layers: [
                 textLayer({ priority: 20 }),
                 textLayer({ priority: 10 }),
@@ -163,7 +167,7 @@ describe('buildLayerOutline：面板大纲（面板顶部 = 视觉最上层 = �
     })
 
     it('锁定投影按前缀判定贯穿子树（锁定根层 = 行/格/内容全携 locked），未锁兄弟树不受累', () => {
-        const doc = { width: 800, height: 600, layers: [tableDoc(), textLayer({ priority: 5 })] }
+        const doc = { width: 800, height: 600, background: null, layers: [tableDoc(), textLayer({ priority: 5 })] }
         // 面板序 = 数组逆序：[text（未锁）, table（锁定）]
         const [text, table] = buildLayerOutline(doc, [['layers', 0]])
         expect(text!.locked).toBe(false)
@@ -178,6 +182,7 @@ describe('expressionPrefix：表达式前置投影（layer-panel-expression-pref
         const doc = {
             width: 800,
             height: 600,
+            background: null,
             layers: [
                 textLayer({ priority: 40, expression: '编号 {{ certCode }} 姓名 {{ personProfile.name }} 尾' }),
                 imageLayer({ priority: 30, expression: '{{ row.avatar }}' }),
@@ -199,6 +204,7 @@ describe('expressionPrefix：表达式前置投影（layer-panel-expression-pref
         const doc = {
             width: 800,
             height: 600,
+            background: null,
             layers: [
                 textLayer({ priority: 30, expression: '没有标记' }),
                 textLayer({ priority: 20, expression: '{{row' }),
@@ -213,6 +219,7 @@ describe('expressionPrefix：表达式前置投影（layer-panel-expression-pref
         const doc = {
             width: 800,
             height: 600,
+            background: null,
             layers: [textLayer({ priority: 10, expression: '{{}} {{certCode}} 姓名 {{row' })],
         }
         const outline = buildLayerOutline(doc)
@@ -225,6 +232,7 @@ describe('expressionPrefix：表达式前置投影（layer-panel-expression-pref
         const doc = {
             width: 800,
             height: 600,
+            background: null,
             layers: [
                 textLayer({
                     priority: 10,
@@ -237,7 +245,7 @@ describe('expressionPrefix：表达式前置投影（layer-panel-expression-pref
     })
 
     it('未标记与非内容层恒空串：全角色节点照带字段（判据看层型 + 标记，不看 role）', () => {
-        const outline = buildLayerOutline({ width: 800, height: 600, layers: [tableDoc()] })
+        const outline = buildLayerOutline({ width: 800, height: 600, background: null, layers: [tableDoc()] })
         const flat: LayerOutlineNode[] = []
         const walk = (nodes: readonly LayerOutlineNode[]): void => {
             for (const node of nodes) {
@@ -254,6 +262,7 @@ describe('expressionPrefix：表达式前置投影（layer-panel-expression-pref
         const v1Outline = buildLayerOutline({
             width: 800,
             height: 600,
+            background: null,
             layers: [
                 tableLayer(
                     [
@@ -292,6 +301,7 @@ describe('createDefaultLayer：编辑器新增图层的缺省形态', () => {
             const roundTripped = decodeGraph(JSON.parse(JSON.stringify(encodeGraph({
                 width: 800,
                 height: 600,
+                background: null,
                 layers: [layer],
             }))))
             expect(roundTripped.layers[0]!.type).toBe(type)

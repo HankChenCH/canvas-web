@@ -27,7 +27,7 @@ const nullScheduler: FrameScheduler = () => () => {}
 
 const makeCycleSession = (layers: readonly Layer[]): EditorSession => {
     const session = new EditorSession({ scheduleFrame: nullScheduler })
-    session.openDocument({ width: 800, height: 600, layers: [...layers] })
+    session.openDocument({ width: 800, height: 600, background: null, layers: [...layers] })
     return session
 }
 

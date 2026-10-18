@@ -40,7 +40,7 @@ vi.stubGlobal('ResizeObserver', ResizeObserverStub)
 
 function makeEditor(): EditorSession {
     const editor = new EditorSession({ scheduleFrame: nullScheduler })
-    editor.openDocument({ width: 800, height: 600, layers: [textLayer({ priority: 10 })] })
+    editor.openDocument({ width: 800, height: 600, background: null, layers: [textLayer({ priority: 10 })] })
     return editor
 }
 

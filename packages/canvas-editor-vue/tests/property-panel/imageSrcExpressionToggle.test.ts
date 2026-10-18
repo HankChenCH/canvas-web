@@ -71,6 +71,7 @@ function mountPanel(schema: unknown | null) {
     editor.openDocument({
         width: 800,
         height: 600,
+        background: null,
         layers: [imageLayer({ src: LEGACY_URL }) as Layer],
     })
     editor.setSelection(['layers', 0])
@@ -128,6 +129,7 @@ describe('ImageSrcField 表达式切换旅程（静态 URL 起笔）', () => {
         editor.openDocument({
             width: 800,
             height: 600,
+            background: null,
             layers: [imageLayer({ src: LEGACY_URL, expression: LEGACY_URL }) as Layer],
         })
         editor.setSelection(['layers', 0])
@@ -162,6 +164,7 @@ describe('ImageSrcField 表达式切换旅程（静态 URL 起笔）', () => {
         editor.openDocument({
             width: 800,
             height: 600,
+            background: null,
             layers: [imageLayer({ src: LEGACY_URL, expression: LEGACY_URL }) as Layer],
         })
         editor.setSelection(['layers', 0])
@@ -186,6 +189,7 @@ describe('ImageSrcField 表达式切换旅程（静态 URL 起笔）', () => {
         editor.openDocument({
             width: 800,
             height: 600,
+            background: null,
             layers: [imageLayer({ src: '{{cover}}' }) as Layer],
         })
         editor.setSelection(['layers', 0])
@@ -205,7 +209,7 @@ describe('ImageSrcField 表达式切换旅程（静态 URL 起笔）', () => {
 
     it('新建图片层（src=null）+ 已绑声明：空值切表达式不标红（未选择态，用户反馈①）', async () => {
         const editor = new EditorSession({ scheduleFrame: nullScheduler })
-        editor.openDocument({ width: 800, height: 600, layers: [imageLayer() as Layer] })
+        editor.openDocument({ width: 800, height: 600, background: null, layers: [imageLayer() as Layer] })
         editor.setSelection(['layers', 0])
         editor.setDataSourceSchema(RAW_SCHEMA)
         const wrapper = mount(PropertyPanel, { props: { editor }, attachTo: document.body })
@@ -242,7 +246,7 @@ describe('ImageSrcField 表达式切换旅程（静态 URL 起笔）', () => {
 
     it('空值切表达式 + 未绑声明：不标红但给绑定门弱提示（菜单缺席的原因说明）', async () => {
         const editor = new EditorSession({ scheduleFrame: nullScheduler })
-        editor.openDocument({ width: 800, height: 600, layers: [imageLayer() as Layer] })
+        editor.openDocument({ width: 800, height: 600, background: null, layers: [imageLayer() as Layer] })
         editor.setSelection(['layers', 0])
         const wrapper = mount(PropertyPanel, { props: { editor }, attachTo: document.body })
         wrappers.push(wrapper)
@@ -258,7 +262,7 @@ describe('ImageSrcField 表达式切换旅程（静态 URL 起笔）', () => {
 
     it('对照（文本层）：空文本切表达式不标红——片段扫描对空串零诊断，与资源门不对称', async () => {
         const editor = new EditorSession({ scheduleFrame: nullScheduler })
-        editor.openDocument({ width: 800, height: 600, layers: [emptyTextLayer()] })
+        editor.openDocument({ width: 800, height: 600, background: null, layers: [emptyTextLayer()] })
         editor.setSelection(['layers', 0])
         editor.setDataSourceSchema(RAW_SCHEMA)
         const wrapper = mount(PropertyPanel, { props: { editor }, attachTo: document.body })

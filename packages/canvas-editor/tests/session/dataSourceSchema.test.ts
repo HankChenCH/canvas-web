@@ -42,7 +42,7 @@ const sampleSchema = {
     },
 }
 
-const doc = (): Canvas => ({ width: 100, height: 80, layers: [] })
+const doc = (): Canvas => ({ width: 100, height: 80, background: null, layers: [] })
 
 /** 手动帧调度器：捕获回调不入队执行，观察「是否调度过帧」 */
 function manualScheduler(): FrameScheduler & { pending: () => boolean } {

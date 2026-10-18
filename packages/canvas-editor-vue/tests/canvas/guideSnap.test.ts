@@ -21,6 +21,7 @@ function makeEditor(): EditorSession {
     editor.openDocument({
         width: 800,
         height: 600,
+        background: null,
         layers: [textLayer({ position: { x: 200, y: 100 } })],
     })
     return editor

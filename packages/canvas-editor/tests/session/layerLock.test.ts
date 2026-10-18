@@ -23,7 +23,7 @@ const nullScheduler: FrameScheduler = () => () => {}
 
 const makeSession = (layers: Parameters<EditorSession['openDocument']>[0]['layers']) => {
     const session = new EditorSession({ scheduleFrame: nullScheduler })
-    session.openDocument({ width: 800, height: 600, layers })
+    session.openDocument({ width: 800, height: 600, background: null, layers })
     return session
 }
 
@@ -60,16 +60,16 @@ describe('EditorUi.lockedPaths 分支（store 直测）', () => {
 
     it('openDocument 重置（锁定是文档内容防护，跨文档路径悬空会误锁他人——guides 同门）', () => {
         const store = new EditorStore()
-        store.openDocument({ width: 100, height: 80, layers: [] })
+        store.openDocument({ width: 100, height: 80, background: null, layers: [] })
         store.setLockedPaths([['layers', 0], ['layers', 1]])
 
-        store.openDocument({ width: 100, height: 80, layers: [] })
+        store.openDocument({ width: 100, height: 80, background: null, layers: [] })
         expect(store.ui.lockedPaths).toEqual([])
     })
 
     it('不进历史：加锁/解锁零 undo 步（红线 3 同门）', () => {
         const store = new EditorStore()
-        store.openDocument({ width: 100, height: 80, layers: [] })
+        store.openDocument({ width: 100, height: 80, background: null, layers: [] })
         store.setLockedPaths([['layers', 0]])
         store.setLockedPaths([])
         expect(store.history).toHaveLength(0)

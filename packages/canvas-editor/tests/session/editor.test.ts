@@ -48,6 +48,7 @@ function manualScheduler(): FrameScheduler & { flush: () => void; pending: () =>
 const doc = (width = 2400, height = 1500): Canvas => ({
     width,
     height,
+    background: null,
     layers: [
         {
             type: 'TextLayer',
@@ -346,6 +347,7 @@ describe('前移/后移（bringForward/sendBackward）：面板序 ±1 的 z 序
     const threeLayers = (): Canvas => ({
         width: 800,
         height: 600,
+        background: null,
         layers: [
             textLayer({ priority: 30, text: '底' }),
             textLayer({ priority: 20, text: '中' }),
@@ -390,7 +392,7 @@ describe('前移/后移（bringForward/sendBackward）：面板序 ±1 的 z 序
 
     it('仅根层：行/格/无选择/无文档空转（无历史步）', () => {
         const { session } = makeSession()
-        session.openDocument({ width: 800, height: 600, layers: [textLayer({ priority: 10, text: '甲' })] })
+        session.openDocument({ width: 800, height: 600, background: null, layers: [textLayer({ priority: 10, text: '甲' })] })
         const prioritiesBefore = session.store.doc!.layers.map((layer) => layer.priority)
         session.setSelection(['layers', 0, 'rows', 0])
         expect(session.bringForward()).toBe(false)
@@ -411,6 +413,7 @@ describe('前移/后移（bringForward/sendBackward）：面板序 ±1 的 z 序
         session.openDocument({
             width: 800,
             height: 600,
+            background: null,
             layers: [
                 textLayer({ priority: 40, text: '丁' }),
                 textLayer({ priority: 30, text: '丙' }),
@@ -435,6 +438,7 @@ describe('前移/后移（bringForward/sendBackward）：面板序 ±1 的 z 序
         session.openDocument({
             width: 800,
             height: 600,
+            background: null,
             layers: [
                 textLayer({ priority: 10, text: '甲' }),
                 textLayer({ priority: 10, text: '乙' }),
@@ -607,6 +611,7 @@ describe('layerBoxAt 生效面（autowidth-content-injection 工单 03）：宽�
         session.openDocument({
             width: 800,
             height: 600,
+            background: null,
             layers: [textLayer({ shape: { width: 0, autoWidth: true, autoHeight: true } })],
         })
 

@@ -32,6 +32,7 @@ const makePairSession = (): EditorSession => {
     session.openDocument({
         width: 800,
         height: 600,
+        background: null,
         layers: [
             textLayer({ priority: 20, position: { anchor: 'top-left', x: 100, y: 100 } }),
             textLayer({ priority: 10, position: { anchor: 'top-left', x: 95, y: 0 } }),

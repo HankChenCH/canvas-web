@@ -47,7 +47,7 @@ const nullScheduler: FrameScheduler = () => () => {}
 
 function makeEditor(layers: Canvas['layers']): EditorSession {
     const editor = new EditorSession({ scheduleFrame: nullScheduler })
-    editor.openDocument({ width: 800, height: 600, layers })
+    editor.openDocument({ width: 800, height: 600, background: null, layers })
     // 画布视口尺寸（工具条翻转/钳制边界，诊断条锚随工具条）：真实装配里由
     // CanvasSurface 呈现环境同步
     editor.setSurfaceSize(800, 600)

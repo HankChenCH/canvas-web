@@ -124,7 +124,7 @@ const wrappers: { unmount(): void }[] = []
 
 function makeEditor(layers: Parameters<EditorSession['openDocument']>[0]['layers']): EditorSession {
     const editor = new EditorSession({ scheduleFrame: nullScheduler })
-    editor.openDocument({ width: 800, height: 600, layers })
+    editor.openDocument({ width: 800, height: 600, background: null, layers })
     // 画布视口尺寸（翻转/钳制边界）：真实装配里由 CanvasSurface 呈现环境同步
     editor.setSurfaceSize(800, 600)
     return editor
@@ -468,6 +468,7 @@ describe('豁免集：textarea + 整条工具条（表面组件指针分流用�
         surfaceEditor.openDocument({
             width: 800,
             height: 600,
+            background: null,
             layers: [
                 textLayer({ position: { anchor: 'top-left', x: 65, y: 0 }, priority: 20 }),
                 textLayer({ position: { anchor: 'top-left', x: 40, y: 30 }, priority: 10 }),

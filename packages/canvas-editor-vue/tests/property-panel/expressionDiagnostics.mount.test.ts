@@ -20,7 +20,7 @@ const wrappers: VueWrapper[] = []
 
 function makeEditor(layers: Parameters<EditorSession['openDocument']>[0]['layers']): EditorSession {
     const editor = new EditorSession({ scheduleFrame: nullScheduler })
-    editor.openDocument({ width: 800, height: 600, layers })
+    editor.openDocument({ width: 800, height: 600, background: null, layers })
     return editor
 }
 

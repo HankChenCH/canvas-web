@@ -29,6 +29,7 @@ import {
 
 import {
     CANVAS_FIELD_SECTIONS,
+    EMPTY_CANVAS_BACKGROUND,
     fieldSectionsForPath,
     type FieldDef,
     type FieldSection,
@@ -290,9 +291,30 @@ export function usePropertyPanel(editor: EditorSession): PropertyPanelBinding {
 
     function commitCanvasProp(field: FieldDef, value: unknown, final: boolean): void {
         const key = field.key[0]
+        if (key === 'background') {
+            commitCanvasBackground(field, value, final)
+            return
+        }
         if ((key !== 'width' && key !== 'height') || typeof value !== 'number') return
         const mergeKey = `canvas:${key}`
         editor.updateCanvasProp(key, value, { mergeKey })
+        if (final) editor.store.closeMerge(mergeKey)
+    }
+
+    /**
+     * 背景分量提交折算回整对象（canvas-background 工单 04，内核背景键收口）：面板
+     * 字段键 ['background', color|image]，读取现值折算后整体提交——内核一次 transact
+     * 即一步历史；空串/null 值归 null 分量（两分量皆空 = 清背景，内核归一门同门）。
+     * mergeKey 按分量（跨分量互不合并，色/图各自 live 会话独立收口）。
+     */
+    function commitCanvasBackground(field: FieldDef, value: unknown, final: boolean): void {
+        const part = field.key[1]
+        if (part !== 'color' && part !== 'image') return
+        const current = canvas.value?.background ?? EMPTY_CANVAS_BACKGROUND
+        const normalized = typeof value === 'string' && value !== '' ? value : null
+        const next = { ...current, [part]: normalized }
+        const mergeKey = `canvas:background.${part}`
+        editor.updateCanvasProp('background', next, { mergeKey })
         if (final) editor.store.closeMerge(mergeKey)
     }
 

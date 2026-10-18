@@ -32,6 +32,7 @@ function makeEditor(): EditorSession {
     editor.openDocument({
         width: 800,
         height: 600,
+        background: null,
         layers: [
             textLayer({ text: '2026 春季', position: { x: 100 } }),
             textLayer({ text: '春季班', position: { x: 300 } }),

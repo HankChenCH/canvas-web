@@ -30,7 +30,7 @@ function manualScheduler(): FrameScheduler & { flush: () => void } {
 
 const makeSession = (layers: Canvas['layers']) => {
     const session = new EditorSession({ scheduleFrame: nullScheduler })
-    session.openDocument({ width: 2400, height: 1500, layers })
+    session.openDocument({ width: 2400, height: 1500, background: null, layers })
     return session
 }
 
@@ -318,7 +318,7 @@ describe('store 变更 → 分层脏标：选择/悬停/拖动只脏覆盖层', 
         const session = new EditorSession({ scheduleFrame: scheduler })
         session.attachContentBackend(backend)
         session.setOverlayPainter(painter)
-        session.openDocument({ width: 100, height: 80, layers: baseDoc() })
+        session.openDocument({ width: 100, height: 80, background: null, layers: baseDoc() })
         scheduler.flush() // 组装期脏标先落一帧，与断言隔开
         begins = 0
         painter.mockClear()
@@ -350,7 +350,7 @@ describe('store 变更 → 分层脏标：选择/悬停/拖动只脏覆盖层', 
         const session = new EditorSession({ scheduleFrame: scheduler })
         session.attachContentBackend(backend)
         session.setOverlayPainter(painter)
-        session.openDocument({ width: 100, height: 80, layers: baseDoc() })
+        session.openDocument({ width: 100, height: 80, background: null, layers: baseDoc() })
         scheduler.flush()
         begins = 0
         painter.mockClear()

@@ -15,7 +15,7 @@ const nullScheduler: FrameScheduler = () => () => {}
 
 const openSession = (layers: Canvas['layers']): EditorSession => {
     const session = new EditorSession({ scheduleFrame: nullScheduler })
-    session.openDocument({ width: 800, height: 600, layers })
+    session.openDocument({ width: 800, height: 600, background: null, layers })
     return session
 }
 
@@ -27,7 +27,7 @@ describe('store.ui find 分支：会话态族', () => {
 
     it('setFind 按 {scope: ui, branch: find} 通知且不进历史；同值写入短路', () => {
         const store = new EditorStore()
-        store.openDocument({ width: 100, height: 80, layers: [] })
+        store.openDocument({ width: 100, height: 80, background: null, layers: [] })
         const listener = vi.fn()
         store.subscribe(listener)
 
@@ -42,10 +42,10 @@ describe('store.ui find 分支：会话态族', () => {
 
     it('openDocument 重置 find 会话（换文档带旧查询词开面板反而怪，会话态族同门）', () => {
         const store = new EditorStore()
-        store.openDocument({ width: 100, height: 80, layers: [] })
+        store.openDocument({ width: 100, height: 80, background: null, layers: [] })
         store.setFind({ open: true, query: '春', replacement: '秋', cursor: 3 })
 
-        store.openDocument({ width: 200, height: 160, layers: [] })
+        store.openDocument({ width: 200, height: 160, background: null, layers: [] })
         expect(store.ui.find).toEqual({ open: false, query: '', replacement: '', cursor: 0 })
     })
 })

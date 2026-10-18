@@ -20,7 +20,7 @@ const nullScheduler: FrameScheduler = () => () => {}
 
 const makeSession = (layers: Parameters<EditorSession['openDocument']>[0]['layers']) => {
     const session = new EditorSession({ scheduleFrame: nullScheduler })
-    session.openDocument({ width: 800, height: 600, layers })
+    session.openDocument({ width: 800, height: 600, background: null, layers })
     return session
 }
 

@@ -18,7 +18,7 @@ import { qrLayer, textLayer } from '../support/fixtures'
 
 const nullScheduler: FrameScheduler = () => () => {}
 
-const docWith = (...layers: Layer[]): Canvas => ({ width: 800, height: 600, layers })
+const docWith = (...layers: Layer[]): Canvas => ({ width: 800, height: 600, background: null, layers })
 
 const makeSession = (layers: Layer[]): EditorSession => {
     const session = new EditorSession({ scheduleFrame: nullScheduler })

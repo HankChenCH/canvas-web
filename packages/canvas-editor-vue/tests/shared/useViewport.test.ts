@@ -35,7 +35,7 @@ describe('useViewport（视口切片桥）', () => {
         editor.panBy(-5, 10)
         expect(slice!.value).toEqual({ x: 5, y: -10, zoom: 1 })
 
-        editor.openDocument({ width: 100, height: 80, layers: [] })
+        editor.openDocument({ width: 100, height: 80, background: null, layers: [] })
         expect(slice!.value).toEqual({ x: 5, y: -10, zoom: 1 })
         scope.stop()
     })

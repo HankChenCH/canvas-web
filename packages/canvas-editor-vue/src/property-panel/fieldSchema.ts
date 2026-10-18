@@ -18,6 +18,8 @@ import {
     VERTICAL_ALIGNS,
     isImageContentUndrawn,
     isTemplateSubtreePath,
+    type Canvas,
+    type CanvasBackground,
     type Layer,
     type LayerPath,
     type LayerType,
@@ -378,7 +380,12 @@ export function fieldSectionsForPath(path: LayerPath, layer: Layer): readonly Fi
     return result
 }
 
-/** 画布级字段组（未选中图层时）：宽/高 */
+/**
+ * 画布级字段组（未选中图层时）：宽/高 + 背景区段（canvas-background 工单 04）。
+ * 背景字段键相对画布根（['background', color|image]），提交由面板折算回整对象
+ * 一步事务（usePropertyPanel）；背景静态（spec Q3）——imageSrc 不带 data 标记，
+ * 无取值方式段、无表达式态，上传缝在静态态展开全形态。
+ */
 export const CANVAS_FIELD_SECTIONS: readonly FieldSection[] = [
     {
         title: '画布',
@@ -387,7 +394,27 @@ export const CANVAS_FIELD_SECTIONS: readonly FieldSection[] = [
             { key: ['height'], label: '高', control: 'number', integer: true, min: 1 },
         ],
     },
+    {
+        title: '背景',
+        fields: [
+            { key: ['background', 'color'], label: '背景色', control: 'color', nullable: true },
+            { key: ['background', 'image'], label: '背景图', control: 'imageSrc' },
+        ],
+    },
 ]
+
+/**
+ * 画布级读取视图（canvas-background 工单 04）：background null（未设/清空态）投影
+ * 为全空值对象——背景字段否则被 readField 的 ok:false 过滤掉，清空后区段即消失、
+ * 无法再设置。已设背景原样透出（不拷贝不重整）；未打开文档 null。
+ */
+export function canvasFieldTarget(canvas: Canvas | null): Canvas | null {
+    if (canvas === null) return null
+    return canvas.background === null ? { ...canvas, background: EMPTY_CANVAS_BACKGROUND } : canvas
+}
+
+/** 全空背景值对象（读取投影与提交折算共用的一份底形；kernel 归一门会再收口） */
+export const EMPTY_CANVAS_BACKGROUND: CanvasBackground = { color: null, image: null }
 
 // ---- 字段值读取 ----
 

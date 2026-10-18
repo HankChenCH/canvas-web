@@ -71,7 +71,7 @@ function mockCtx() {
     } as unknown as CanvasRenderingContext2D & { ops: PaintOp[] }
 }
 
-const doc = (layers: Canvas['layers']): Canvas => ({ width: 800, height: 600, layers })
+const doc = (layers: Canvas['layers']): Canvas => ({ width: 800, height: 600, background: null, layers })
 
 const makeEditor = (layers: Canvas['layers']): EditorSession => {
     const editor = new EditorSession({ scheduleFrame: nullScheduler })

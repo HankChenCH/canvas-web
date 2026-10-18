@@ -125,13 +125,13 @@ describe('resizeSnapPoints：移动边求位点（吸附消费）', () => {
 
 describe('resizableAxesAt / resizeHandlesAt：角色可缩放面', () => {
     it('根层双轴可缩放，柄集合 = 全部八柄', () => {
-        const doc: Canvas = { width: 800, height: 600, layers: [imageLayer()] }
+        const doc: Canvas = { width: 800, height: 600, background: null, layers: [imageLayer()] }
         expect(resizableAxesAt(doc, ['layers', 0])).toEqual({ width: true, height: true })
         expect(resizeHandlesAt(doc, ['layers', 0])).toEqual([...RESIZE_HANDLES])
     })
 
     it('行只可纵向（宽强同步表宽）：n/s 两柄', () => {
-        const doc: Canvas = { width: 800, height: 600, layers: [tableLayer([rowLayer([])])] }
+        const doc: Canvas = { width: 800, height: 600, background: null, layers: [tableLayer([rowLayer([])])] }
         expect(resizableAxesAt(doc, ['layers', 0, 'rows', 0])).toEqual({ width: false, height: true })
         expect(resizeHandlesAt(doc, ['layers', 0, 'rows', 0])).toEqual(['n', 's'])
     })
@@ -140,6 +140,7 @@ describe('resizableAxesAt / resizeHandlesAt：角色可缩放面', () => {
         const doc: Canvas = {
             width: 800,
             height: 600,
+            background: null,
             layers: [tableLayer([rowLayer([cellLayer(null)])])],
         }
         expect(resizableAxesAt(doc, ['layers', 0, 'rows', 0, 'cells', 0])).toEqual({
@@ -153,6 +154,7 @@ describe('resizableAxesAt / resizeHandlesAt：角色可缩放面', () => {
         const doc: Canvas = {
             width: 800,
             height: 600,
+            background: null,
             layers: [tableLayer([rowLayer([cellLayer(textLayer())])])],
         }
         const contentPath = ['layers', 0, 'rows', 0, 'cells', 0, 'content'] as const
@@ -164,6 +166,7 @@ describe('resizableAxesAt / resizeHandlesAt：角色可缩放面', () => {
         const doc: Canvas = {
             width: 800,
             height: 600,
+            background: null,
             layers: [tableLayer([], { template: rowTemplateLayer([cellLayer(textLayer())]) })],
         }
         const templateContentPath = ['layers', 0, 'template', 'cells', 0, 'content'] as const
@@ -175,6 +178,7 @@ describe('resizableAxesAt / resizeHandlesAt：角色可缩放面', () => {
         const doc: Canvas = {
             width: 800,
             height: 600,
+            background: null,
             layers: [tableLayer([], { template: rowTemplateLayer([cellLayer(null)]) })],
         }
         expect(resizableAxesAt(doc, ['layers', 0, 'template'])).toEqual({ width: false, height: false })
@@ -182,7 +186,7 @@ describe('resizableAxesAt / resizeHandlesAt：角色可缩放面', () => {
     })
 
     it('路径不可解析：无轴无柄', () => {
-        const doc: Canvas = { width: 800, height: 600, layers: [imageLayer()] }
+        const doc: Canvas = { width: 800, height: 600, background: null, layers: [imageLayer()] }
         expect(resizableAxesAt(doc, ['layers', 9])).toEqual({ width: false, height: false })
         expect(resizeHandlesAt(doc, ['layers', 9])).toEqual([])
     })

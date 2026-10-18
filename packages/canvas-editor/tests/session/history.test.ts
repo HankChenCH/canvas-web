@@ -9,6 +9,7 @@ import { textLayer } from '../support/fixtures'
 const layerDoc = (): Canvas => ({
     width: 100,
     height: 80,
+    background: null,
     layers: [textLayer({ position: { anchor: 'top-left', x: 10, y: 10 } })],
 })
 

@@ -18,8 +18,8 @@ importers:
   packages/canvas-browser-renderer:
     dependencies:
       '@hankchen/canvas':
-        specifier: ^0.1.0
-        version: 0.1.0
+        specifier: ^0.2.0
+        version: 0.2.0
       qrcode:
         specifier: ^1.5.4
         version: 1.5.4
@@ -37,8 +37,8 @@ importers:
   packages/canvas-editor:
     dependencies:
       '@hankchen/canvas':
-        specifier: ^0.1.0
-        version: 0.1.0
+        specifier: ^0.2.0
+        version: 0.2.0
       '@hankchen/canvas-browser-renderer':
         specifier: workspace:*
         version: link:../canvas-browser-renderer
@@ -90,8 +90,8 @@ importers:
   playground:
     dependencies:
       '@hankchen/canvas':
-        specifier: ^0.1.0
-        version: 0.1.0
+        specifier: ^0.2.0
+        version: 0.2.0
       '@hankchen/canvas-browser-renderer':
         specifier: workspace:*
         version: link:../packages/canvas-browser-renderer
@@ -359,8 +359,8 @@ packages:
       '@noble/hashes':
         optional: true
 
-  '@hankchen/canvas@0.1.0':
-    resolution: {integrity: sha512-bPdyA1TcfptqE6yVExqsZZjh9qNQHT3g2M4ecHXMId8/ZQLizUmqUejkwurrTMk+0cY59CD+ubRdjNqM1Z1i4Q==}
+  '@hankchen/canvas@0.2.0':
+    resolution: {integrity: sha512-PwxWyDiOZcyHUIjAlHSm7r8n8zDu/2lnXxIT/J2GPcOltMLzc4clC2tcagk8XwcVSwSXKKPNqbVRkPFcFn9bAw==}
 
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
@@ -2168,7 +2168,7 @@ snapshots:
 
   '@exodus/bytes@1.16.0': {}
 
-  '@hankchen/canvas@0.1.0': {}
+  '@hankchen/canvas@0.2.0': {}
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:

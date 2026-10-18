@@ -40,7 +40,7 @@ const textLayer = (overrides: Record<string, unknown> = {}): Canvas['layers'][nu
 
 function makeEditor(layers: Canvas['layers']): EditorSession {
     const editor = new EditorSession({ scheduleFrame: nullScheduler })
-    editor.openDocument({ width: 800, height: 600, layers })
+    editor.openDocument({ width: 800, height: 600, background: null, layers })
     return editor
 }
 
@@ -137,7 +137,7 @@ describe('usePropertyPanel（面板订阅为 computed 切片）', () => {
         editor.setSelection(['layers', 1])
         expect(panel.selection.value).toEqual(['layers', 1])
 
-        editor.openDocument({ width: 400, height: 300, layers: [textLayer(), textLayer({ text: '新乙' })] })
+        editor.openDocument({ width: 400, height: 300, background: null, layers: [textLayer(), textLayer({ text: '新乙' })] })
         expect(panel.selection.value).toBeNull()
         expect(panel.layer.value).toBeNull()
         scope.stop()
@@ -246,6 +246,62 @@ describe('commit：面板唯一提交口（分派 updateSpec/updateData/updateCa
         const editor = makeEditor([textLayer()])
         const { scope, panel } = bind(editor)
         panel.commit({ key: ['bogus'], label: '?', control: 'number' }, 1, true)
+        expect(editor.store.history).toHaveLength(0)
+        scope.stop()
+    })
+
+    it('背景分量提交折算整对象一步事务（canvas-background 工单 04）：色/图互不覆盖', () => {
+        const editor = makeEditor([textLayer()])
+        const { scope, panel } = bind(editor)
+        const bgColor: FieldDef = { key: ['background', 'color'], label: '背景色', control: 'color', nullable: true }
+        const bgImage: FieldDef = { key: ['background', 'image'], label: '背景图', control: 'imageSrc' }
+
+        panel.commit(bgColor, '#ffffff', true)
+        expect(editor.store.doc!.background).toEqual({ color: '#ffffff', image: null })
+
+        panel.commit(bgImage, '/bg.png', true)
+        expect(editor.store.doc!.background).toEqual({ color: '#ffffff', image: '/bg.png' })
+        expect(editor.store.history).toHaveLength(2)
+        scope.stop()
+    })
+
+    it('背景分量 live 合步：同分量 mergeKey 合并，跨分量不并', () => {
+        const editor = makeEditor([textLayer()])
+        const { scope, panel } = bind(editor)
+        const bgColor: FieldDef = { key: ['background', 'color'], label: '背景色', control: 'color', nullable: true }
+        const bgImage: FieldDef = { key: ['background', 'image'], label: '背景图', control: 'imageSrc' }
+
+        panel.commit(bgColor, '#ffffff', false)
+        panel.commit(bgColor, '#fefefe', true)
+        expect(editor.store.history).toHaveLength(1)
+
+        panel.commit(bgImage, '/bg.png', true)
+        expect(editor.store.history).toHaveLength(2)
+        scope.stop()
+    })
+
+    it('背景清除：nullable color 清空（null）与空串引用都归 null 分量，两分量皆空 = 整体 null', () => {
+        const editor = makeEditor([textLayer()])
+        const { scope, panel } = bind(editor)
+        const bgColor: FieldDef = { key: ['background', 'color'], label: '背景色', control: 'color', nullable: true }
+        const bgImage: FieldDef = { key: ['background', 'image'], label: '背景图', control: 'imageSrc' }
+
+        panel.commit(bgColor, '#ffffff', true)
+        panel.commit(bgImage, '/bg.png', true)
+        panel.commit(bgColor, null, true)
+        expect(editor.store.doc!.background).toEqual({ color: null, image: '/bg.png' })
+
+        // imageSrc 清除按钮提交空串 → 归 null 分量 → 两分量皆空 → 背景整体 null
+        panel.commit(bgImage, '', true)
+        expect(editor.store.doc!.background).toBeNull()
+        expect(editor.store.history).toHaveLength(4)
+        scope.stop()
+    })
+
+    it('背景未知分量防御空转', () => {
+        const editor = makeEditor([textLayer()])
+        const { scope, panel } = bind(editor)
+        panel.commit({ key: ['background', 'bogus'], label: '?', control: 'text' }, 'x', true)
         expect(editor.store.history).toHaveLength(0)
         scope.stop()
     })

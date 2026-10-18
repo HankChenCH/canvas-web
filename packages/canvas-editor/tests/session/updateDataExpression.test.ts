@@ -17,6 +17,7 @@ function makeEditor(doc: Canvas): EditorSession {
 const docWith = (layers: Canvas['layers']): Canvas => ({
     width: 800,
     height: 600,
+    background: null,
     layers,
 })
 

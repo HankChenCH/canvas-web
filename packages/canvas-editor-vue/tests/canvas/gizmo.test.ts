@@ -63,7 +63,7 @@ const layer = (x: number) => ({
 })
 
 const session = new EditorSession({ scheduleFrame: nullScheduler })
-session.openDocument({ width: 2400, height: 1500, layers: [layer(100), layer(300)] })
+session.openDocument({ width: 2400, height: 1500, background: null, layers: [layer(100), layer(300)] })
 
 const args: OverlayPaintArgs = {
     viewport: { x: 10, y: 20, zoom: 2 },

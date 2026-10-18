@@ -248,7 +248,7 @@ function nestedTableDoc(): Canvas {
     const leafTable = tableLayer([], { rowsPath: 'sku', template: rowTemplateLayer([cellLayer(textLayer())]) })
     const innerTable = tableLayer([], { rowsPath: 'lines', template: rowTemplateLayer([cellLayer(leafTable)]) })
     const outerTable = tableLayer([], { rowsPath: 'order.items', template: rowTemplateLayer([cellLayer(innerTable)]) })
-    return { width: 800, height: 600, layers: [outerTable] }
+    return { width: 800, height: 600, background: null, layers: [outerTable] }
 }
 
 const NESTED_DOC = nestedTableDoc()
@@ -266,6 +266,7 @@ describe('resolveRowsPathStartSchema：起点三分流判别（D3）', () => {
         const v1Doc: Canvas = {
             width: 800,
             height: 600,
+            background: null,
             layers: [tableLayer([rowLayer([cellLayer(textLayer())])])],
         }
         expect(resolveRowsPathStartSchema(v1Doc, ['layers', 0], START_SCHEMA)).toBe(START_SCHEMA)
@@ -304,6 +305,7 @@ describe('resolveRowsPathStartSchema：起点三分流判别（D3）', () => {
         const templateTableDoc: Canvas = {
             width: 800,
             height: 600,
+            background: null,
             layers: [
                 tableLayer([], { rowsPath: 'order.items', template: rowTemplateLayer([cellLayer(textLayer())]) }),
             ],
@@ -320,7 +322,7 @@ describe('resolveRowsPathStartSchema：起点三分流判别（D3）', () => {
         const drifted = tableLayer([], { rowsPath: 'order.missing', template: rowTemplateLayer([cellLayer(textLayer())]) })
         expect(
             resolveRowsPathStartSchema(
-                { width: 800, height: 600, layers: [drifted] },
+                { width: 800, height: 600, background: null, layers: [drifted] },
                 ['layers', 0, 'template', 'cells', 0, 'content'],
                 START_SCHEMA,
             ),
@@ -328,7 +330,7 @@ describe('resolveRowsPathStartSchema：起点三分流判别（D3）', () => {
     })
 
     it('template 段途经层不是 TableLayer（形态漂移）→ null 不抛错', () => {
-        const doc: Canvas = { width: 800, height: 600, layers: [textLayer()] }
+        const doc: Canvas = { width: 800, height: 600, background: null, layers: [textLayer()] }
         expect(
             resolveRowsPathStartSchema(doc, ['layers', 0, 'template', 'cells', 0, 'content'], START_SCHEMA),
         ).toBeNull()

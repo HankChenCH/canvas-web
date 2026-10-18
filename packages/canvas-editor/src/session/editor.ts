@@ -18,6 +18,7 @@ import {
     viewPathToDocPath,
     withTemplatePreview,
     type Canvas,
+    type CanvasBackground,
     type HorizontalAlign,
     type Padding,
     type RenderBackend,
@@ -234,6 +235,25 @@ const NUDGE_COARSE_STEP_PX = 10
 
 /** 微调事务的合并键：含选中层路径（换层即换步）、方向无关（连按跨方向同串） */
 const nudgeMergeKey = (path: LayerPath): string => `nudge:${path.join(':')}`
+
+/**
+ * 背景整对象归一（canvas-background 工单 04，镜像 js-canvas decodeBackground）：
+ * 空串/空白串分量归 null；两分量皆空 = 清背景 null（领域值对象只在至少一分量
+ * 非空时存在——条件写键纪律在文档态的单端镜像，encode 侧整键不落由核心包收口）。
+ */
+function normalizeCanvasBackground(value: CanvasBackground | null): CanvasBackground | null {
+    if (value === null) return null
+    const trim = (raw: string | null): string | null => (typeof raw === 'string' && raw.trim() !== '' ? raw : null)
+    const color = trim(value.color)
+    const image = trim(value.image)
+    return color === null && image === null ? null : { color, image }
+}
+
+/** 背景结构相等（updateCanvasProp 空转判据）：分量逐对比较，双 null 恒等 */
+function sameCanvasBackground(a: CanvasBackground | null, b: CanvasBackground | null): boolean {
+    if (a === null || b === null) return a === b
+    return a.color === b.color && a.image === b.image
+}
 
 /** 查找游标钳位：派生命中列表内回落（末处/首处），空命中为 0（读侧收口） */
 function clampFindCursor(cursor: number, count: number): number {
@@ -1819,10 +1839,28 @@ export class EditorSession {
         this.store.setEditing({ ...editing, draftSeq: (editing.draftSeq ?? 0) + 1 })
     }
 
-    /** 更新画布级字段（未选中图层时面板的宽/高写入口）；键由类型收窄为 width/height */
-    updateCanvasProp(key: 'width' | 'height', value: number, options: TransactOptions = {}): void {
+    /**
+     * 更新画布级字段（未选中图层时面板的写入口）：width/height 数值；background
+     * 整对象一步事务（canvas-background 工单 04）——面板各分量提交折算回整对象，
+     * 归一经 normalizeCanvasBackground（空串分量归 null、两分量皆空 = 清背景 null，
+     * 镜像解码语义；条件写键归 encode）；结构相同的整对象空转（immer 引义换新
+     * 不产生历史步，数值键的零变更语义同门）。
+     */
+    updateCanvasProp(key: 'width' | 'height', value: number, options?: TransactOptions): void
+    updateCanvasProp(key: 'background', value: CanvasBackground | null, options?: TransactOptions): void
+    updateCanvasProp(key: 'width' | 'height' | 'background', value: number | CanvasBackground | null, options: TransactOptions = {}): void {
         this.store.transact((draft) => {
-            draft[key] = value
+            if (key === 'background') {
+                // 重载契约钉死键值配对；联合参数的键值联立收窄 TS 推不动，此处断言
+                const next = normalizeCanvasBackground(value as CanvasBackground | null)
+                // 手搭 Canvas 允许缺键（decode 恒产出 null 的合约管 wire 不管内存态）：
+                // undefined 与 null 同归「无背景」参与比较，零变更不落历史
+                const current = draft.background ?? null
+                if (sameCanvasBackground(current, next)) return
+                draft.background = next
+                return
+            }
+            draft[key] = value as number
         }, options)
     }
 

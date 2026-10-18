@@ -606,6 +606,26 @@ function markCleanBaseline(doc: ReturnType<typeof decodeGraph>, name: string): v
     computeDirty()
 }
 
+/**
+ * 新建空白文档（canvas-background 工单 04，宿主行为）：A4 竖版尺寸 + 预填
+ * #ffffff 画布背景——「新建即白纸」是宿主给的缺省，wire 缺省仍是透明不落键
+ * （spec Q5：预填不进核心包）；清空背景后保存的 graph 无 background 键（条件
+ * 写键由核心 encode 收口）。与「打开」同门：不弹确认（脏态提醒走 beforeunload）。
+ */
+function newBlankDocument(): void {
+    const doc: ReturnType<typeof decodeGraph> = {
+        width: 794,
+        height: 1123,
+        background: { color: '#ffffff', image: null },
+        layers: [],
+    }
+    editor.openDocument(doc)
+    markCleanBaseline(doc, 'untitled.graph.json')
+    materializer?.materialize(doc)
+    editor.fitToSurface()
+    docNote.value = '已新建空白文档（794×1123，预填白色画布背景；未保存标记复位）'
+}
+
 async function onOpenGraphFile(event: Event): Promise<void> {
     const inputEl = event.target as HTMLInputElement
     const file = inputEl.files?.[0]
@@ -842,7 +862,8 @@ onBeforeUnmount(() => {
              与 ⌘F 同缝。网格钮 margin-left:auto 弹性空隙推右端。隐藏文件入口
              input 收尾（display:none 不占弹性位）。 -->
         <section class="toolbar" aria-label="编辑器工具栏">
-            <!-- 文件组：打开 / 保存 / 上传图片（动作与禁用态维持现状） -->
+            <!-- 文件组：新建 / 打开 / 保存 / 上传图片（动作与禁用态维持现状） -->
+            <button type="button" data-new title="新建空白文档（A4 竖版，预填白色画布背景；脏态提醒走关闭页面前确认）" @click="newBlankDocument">新建</button>
             <button type="button" data-open title="打开 graph JSON（解码回编辑器）" @click="onOpenClick">打开</button>
             <button type="button" data-save title="保存 graph JSON（Ctrl/Cmd+S）" @click="saveGraph">保存</button>
             <button type="button" data-upload-image title="本机选图 → 上传（data URL 兜底）→ 新建图片图层（宿主未注入上传实现时禁用）" :disabled="!editor.canUpload" @click="onUploadImageClick">上传图片</button>

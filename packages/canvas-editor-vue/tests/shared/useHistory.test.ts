@@ -12,7 +12,7 @@ function makeEditor(): EditorSession {
     return new EditorSession({ scheduleFrame: nullScheduler })
 }
 
-const doc = (): Canvas => ({ width: 100, height: 80, layers: [] })
+const doc = (): Canvas => ({ width: 100, height: 80, background: null, layers: [] })
 
 const addLayer = (priority: number): DocRecipe => (draft) => {
         draft.layers.push({

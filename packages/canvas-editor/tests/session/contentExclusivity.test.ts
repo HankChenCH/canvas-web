@@ -26,6 +26,7 @@ function makeEditor(doc: Canvas): EditorSession {
 const singleTextDoc = (): Canvas => ({
     width: 400,
     height: 300,
+    background: null,
     layers: [textLayer({ priority: 10, position: { anchor: 'top-left', x: 40, y: 30 } })],
 })
 
@@ -34,6 +35,7 @@ const markedDoc = (): Canvas => {
     return {
         width: 400,
         height: 300,
+        background: null,
         layers: [textLayer({ priority: 10, text: expression, expression })],
     }
 }
@@ -116,6 +118,7 @@ describe('toggleDataMode：非会话期 = 正常模式切换（面板既有语�
         const editor = makeEditor({
             width: 400,
             height: 300,
+            background: null,
             layers: [
                 imageLayer({ priority: 30 }),
                 qrLayer({ priority: 20 }),
@@ -144,6 +147,7 @@ describe('toggleDataMode：非会话期 = 正常模式切换（面板既有语�
         const editor = makeEditor({
             width: 400,
             height: 300,
+            background: null,
             layers: [textLayer({ priority: 10 }), textLayer({ priority: 5, text: '乙' })],
         })
         editor.beginTextEdit(['layers', 0])
@@ -160,6 +164,7 @@ describe('toggleDataMode：非会话期 = 正常模式切换（面板既有语�
         const editor = makeEditor({
             width: 400,
             height: 300,
+            background: null,
             layers: [
                 imageLayer({ priority: 30, src: 'https://cdn.example.com/photo.jpg' }),
                 qrLayer({ priority: 20, value: '{{orderNo}}' }),
@@ -230,6 +235,7 @@ describe('草稿接管：旁门内容写命中编辑层（文档落库 + draftSe
         const editor = makeEditor({
             width: 400,
             height: 300,
+            background: null,
             layers: [textLayer({ priority: 10 }), textLayer({ priority: 5, text: '乙' })],
         })
         editor.beginTextEdit(['layers', 0])
@@ -242,6 +248,7 @@ describe('草稿接管：旁门内容写命中编辑层（文档落库 + draftSe
         const editor = makeEditor({
             width: 400,
             height: 300,
+            background: null,
             layers: [textLayer({ priority: 10, text: '证书甲姓名' }), textLayer({ priority: 5, text: '证书乙姓名' })],
         })
         editor.beginTextEdit(['layers', 0])
@@ -266,6 +273,7 @@ describe('草稿接管：旁门内容写命中编辑层（文档落库 + draftSe
         const editor = makeEditor({
             width: 400,
             height: 300,
+            background: null,
             layers: [textLayer({ priority: 10, text: '甲姓名甲' })],
         })
         editor.beginTextEdit(['layers', 0])
@@ -343,6 +351,7 @@ describe('提交去向按退出时会话标志现态裁决（活标志取代快�
         const editor = makeEditor({
             width: 400,
             height: 300,
+            background: null,
             layers: [textLayer({ priority: 10, text: '证书甲姓名' })],
         })
         editor.beginTextEdit(['layers', 0])
@@ -362,6 +371,7 @@ describe('提交去向按退出时会话标志现态裁决（活标志取代快�
         const editor = makeEditor({
             width: 400,
             height: 300,
+            background: null,
             layers: [textLayer({ priority: 10, text: '证书甲姓名' })],
         })
         editor.beginTextEdit(['layers', 0])
@@ -385,6 +395,7 @@ describe('提交去向按退出时会话标志现态裁决（活标志取代快�
         const editor = makeEditor({
             width: 400,
             height: 300,
+            background: null,
             layers: [textLayer({ priority: 10, text: expression, expression })],
         })
         editor.beginTextEdit(['layers', 0]) // 表达式会话

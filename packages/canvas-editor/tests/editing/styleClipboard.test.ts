@@ -35,7 +35,7 @@ const nullScheduler: FrameScheduler = () => () => {}
 
 const makeSession = (layers: readonly Layer[]) => {
     const session = new EditorSession({ scheduleFrame: nullScheduler })
-    session.openDocument({ width: 800, height: 600, layers: [...layers] })
+    session.openDocument({ width: 800, height: 600, background: null, layers: [...layers] })
     return session
 }
 
@@ -345,7 +345,7 @@ describe('copyStyle / pasteStyle：会话私有槽与粘贴事务', () => {
     it('openDocument 不清空样式槽：跨文档粘贴样式合法（图层剪贴板同门）', () => {
         const session = makeSession([styledText()])
         expect(session.copyStyle(['layers', 0])).toBe(true)
-        session.openDocument({ width: 400, height: 300, layers: [textLayer({ priority: 1 })] })
+        session.openDocument({ width: 400, height: 300, background: null, layers: [textLayer({ priority: 1 })] })
         expect(session.canPasteStyle).toBe(false) // 槽保留但选择随换文档重置
         session.setSelection(['layers', 0])
         expect(session.canPasteStyle).toBe(true)

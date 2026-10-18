@@ -31,7 +31,7 @@ const makeSession = (
     height = 600,
 ) => {
     const session = new EditorSession({ scheduleFrame: nullScheduler })
-    session.openDocument({ width, height, layers })
+    session.openDocument({ width, height, background: null, layers })
     return session
 }
 

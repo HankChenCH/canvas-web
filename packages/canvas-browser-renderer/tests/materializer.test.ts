@@ -83,6 +83,60 @@ function imageDoc(srcs: string[]): CanvasDoc {
     })
 }
 
+describe('Materializer：画布背景图引用收集（canvas-background 工单 04）', () => {
+    it('背景图随 materialize 装载并回写后端（图层树之外的第二收集源）', async () => {
+        const { backend } = fakeBackend()
+        const setImage = vi.spyOn(backend, 'setImage')
+        const { loaders, calls } = stubLoaders(async () => ({ width: 8, height: 8 }))
+        const m = new Materializer(backend, { loaders })
+
+        const doc = decodeGraph({
+            canvas: { width: 100, height: 100, background: { image: '/bg.png' } },
+            layers: [],
+        })
+        m.materialize(doc)
+
+        expect(m.state[imageResourceKey('/bg.png')]).toEqual({ status: 'pending' })
+        await flush()
+
+        expect(m.state[imageResourceKey('/bg.png')]).toEqual({ status: 'done' })
+        expect(setImage).toHaveBeenCalledWith('/bg.png', { width: 8, height: 8 })
+        expect(calls.map(({ kind, ref }) => `${kind}:${ref}`)).toEqual(['loadImage:/bg.png'])
+    })
+
+    it('背景色不产生资源条目；背景与图层同引用去重只装载一次', async () => {
+        const { backend } = fakeBackend()
+        const { loaders, calls } = stubLoaders(async () => ({ width: 8, height: 8 }))
+        const m = new Materializer(backend, { loaders })
+
+        const doc = decodeGraph({
+            canvas: { width: 100, height: 100, background: { color: '#ffffff', image: '/bg.png' } },
+            layers: [{ type: 'ImageLayer', spec: { shape: { width: 10, height: 10 } }, data: { value: '/bg.png' } }],
+        })
+        m.materialize(doc)
+        await flush()
+
+        expect(Object.keys(m.state)).toEqual([imageResourceKey('/bg.png')])
+        expect(calls).toHaveLength(1)
+    })
+
+    it('清背景/换图后旧键剪除（快照语义对背景同样适用）', async () => {
+        const { backend } = fakeBackend()
+        const { loaders } = stubLoaders(async () => ({ width: 8, height: 8 }))
+        const m = new Materializer(backend, { loaders })
+
+        m.materialize(decodeGraph({
+            canvas: { width: 100, height: 100, background: { image: '/bg.png' } },
+            layers: [],
+        }))
+        await flush()
+        m.materialize(decodeGraph({ canvas: { width: 100, height: 100 }, layers: [] }))
+        await flush()
+
+        expect(m.state).toEqual({})
+    })
+})
+
 describe('Materializer：三类物化状态机 pending → done/failed', () => {
     it('图片/字体/QR 各经 pending 到 done，并按各自键回写后端', async () => {
         const { backend } = fakeBackend()

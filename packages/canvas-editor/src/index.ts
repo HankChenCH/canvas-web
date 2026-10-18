@@ -32,6 +32,7 @@ export {
 } from '@hankchen/canvas'
 export type {
     Canvas,
+    CanvasBackground,
     Layer,
     LayerBox,
     TableLayer,

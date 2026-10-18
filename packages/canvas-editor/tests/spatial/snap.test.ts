@@ -36,6 +36,7 @@ const box = (x: number, y: number, width = 100, height = 50): LayerBox => ({
 const docWith = (...layers: ReturnType<typeof textLayer>[]): Canvas => ({
     width: 800,
     height: 600,
+    background: null,
     layers,
 })
 

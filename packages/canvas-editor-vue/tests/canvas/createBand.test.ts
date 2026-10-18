@@ -69,7 +69,7 @@ function mockCtx() {
 /** 每例独立会话（手势会话态有互斥残留，不复用共享实例） */
 function newSession(): EditorSession {
     const session = new EditorSession({ scheduleFrame: nullScheduler })
-    session.openDocument({ width: 2400, height: 1500, layers: [] })
+    session.openDocument({ width: 2400, height: 1500, background: null, layers: [] })
     return session
 }
 

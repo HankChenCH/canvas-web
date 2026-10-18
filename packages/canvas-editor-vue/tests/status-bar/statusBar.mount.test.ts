@@ -23,7 +23,7 @@ const nullScheduler: FrameScheduler = () => () => {}
 
 function makeEditor(): EditorSession {
     const editor = new EditorSession({ scheduleFrame: nullScheduler })
-    editor.openDocument({ width: 800, height: 600, layers: [textLayer({ priority: 10 })] })
+    editor.openDocument({ width: 800, height: 600, background: null, layers: [textLayer({ priority: 10 })] })
     return editor
 }
 
@@ -81,7 +81,7 @@ describe('StatusBar：选中图层路径', () => {
         const wrapper = mountBar(editor)
         expect(wrapper.find('[data-selection]').text()).toBe('图层 0')
 
-        editor.openDocument({ width: 800, height: 600, layers: [textLayer({ priority: 10 })] })
+        editor.openDocument({ width: 800, height: 600, background: null, layers: [textLayer({ priority: 10 })] })
         await wrapper.vm.$nextTick()
         expect(wrapper.find('[data-selection]').text()).toBe('未选中图层')
         wrapper.unmount()
@@ -125,6 +125,7 @@ describe('StatusBar：坐标尺寸段（组件内部计算）', () => {
         editor.openDocument({
             width: 800,
             height: 600,
+            background: null,
             layers: [textLayer({ position: { anchor: 'bottom-right', x: 120.4, y: 80.6 } })],
         })
         const wrapper = mountBar(editor)
@@ -157,7 +158,7 @@ describe('StatusBar：坐标尺寸段（组件内部计算）', () => {
         const wrapper = mountBar(editor)
         expect(wrapper.find('[data-geometry]').exists()).toBe(true)
 
-        editor.openDocument({ width: 800, height: 600, layers: [textLayer({ priority: 10 })] })
+        editor.openDocument({ width: 800, height: 600, background: null, layers: [textLayer({ priority: 10 })] })
         await wrapper.vm.$nextTick()
         expect(wrapper.find('[data-geometry]').exists()).toBe(false)
         wrapper.unmount()

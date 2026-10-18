@@ -9,7 +9,7 @@ const nullScheduler: FrameScheduler = () => () => {}
 
 function makeEditor(layers: readonly Layer[]): EditorSession {
     const editor = new EditorSession({ scheduleFrame: nullScheduler })
-    editor.openDocument({ width: 800, height: 600, layers })
+    editor.openDocument({ width: 800, height: 600, background: null, layers })
     return editor
 }
 
@@ -100,6 +100,7 @@ describe('useLayerPanel（图层面板切片桥）', () => {
         editor.openDocument({
             width: 400,
             height: 300,
+            background: null,
             layers: [textLayer(30, '新甲'), textLayer(20, '新乙'), textLayer(10, '新丙')],
         })
         expect(binding!.outline.value.every((node) => !node.locked)).toBe(true)

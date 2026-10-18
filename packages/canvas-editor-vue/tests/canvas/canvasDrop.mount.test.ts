@@ -106,7 +106,7 @@ function dragEvent(type: 'dragover' | 'drop' | 'dragleave', files: readonly File
 
 function mountSurface(uploadHandler?: UploadHandler) {
     const editor = new EditorSession({ scheduleFrame: nullScheduler, uploadHandler })
-    editor.openDocument({ width: 800, height: 600, layers: [] })
+    editor.openDocument({ width: 800, height: 600, background: null, layers: [] })
     const hostEl = document.createElement('div')
     document.body.appendChild(hostEl)
     const wrapper = mount(CanvasSurface, { props: { editor }, attachTo: hostEl })
@@ -218,6 +218,7 @@ describe('drop：canUpload=false 降级', () => {
         surface.editor.openDocument({
             width: 800,
             height: 600,
+            background: null,
             layers: [
                 {
                     type: 'TextLayer',
@@ -262,6 +263,7 @@ describe('drop：编辑态先提交', () => {
         surface.editor.openDocument({
             width: 800,
             height: 600,
+            background: null,
             layers: [
                 {
                     type: 'TextLayer',

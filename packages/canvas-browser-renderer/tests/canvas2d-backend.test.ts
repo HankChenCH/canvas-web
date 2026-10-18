@@ -335,6 +335,43 @@ describe('drawImage：cover 绘制编排', () => {
             { call: 'drawImage', args: ['__image__', 33, 0, 133, 100, 5, 6, 120, 90] },
         ])
     })
+
+    it('renderCanvas 画布背景铺装（canvas-background 工单 04，核心 0.2.0 接线锚点）：先色后图、垫在图层之前', () => {
+        const { ops, ctx } = fakeCtx()
+        const backend = new Canvas2DBackend(ctx)
+        backend.setImage('/bg.png', { width: 200, height: 100 })
+
+        const doc = decodeGraph({
+            canvas: { width: 100, height: 80, background: { color: '#ffffff', image: '/bg.png' } },
+            layers: [
+                { type: 'ImageLayer', spec: { shape: { width: 10, height: 10, backgroundColor: '#112233' }, position: { position: 'top-left', x: 0, y: 0 } }, data: { value: '/fg.png' } },
+            ],
+        })
+        renderCanvas(doc, backend)
+
+        const bgFill = ops.findIndex((o) => o.call === 'fillRect' && JSON.stringify(o.args) === '[0,0,100,80]')
+        const bgDraw = ops.findIndex((o) => o.call === 'drawImage')
+        const layerFill = ops.findIndex((o) => o.call === 'fillRect' && JSON.stringify(o.args) === '[0,0,10,10]')
+        // 序：清屏 → 背景色（整幅画布矩形）→ 背景图（整幅 cover）→ 图层盒
+        expect(bgFill).toBeGreaterThan(0)
+        expect(bgDraw).toBeGreaterThan(bgFill)
+        expect(layerFill).toBeGreaterThan(bgDraw)
+        // 背景图 cover 到整幅画布（200×100 源 → 100×80 目标，目标盒 (0,0,100,80)）
+        expect(ops[bgDraw]!.args.slice(5)).toEqual([0, 0, 100, 80])
+    })
+
+    it('renderCanvas 无背景：无整幅填充（画布初始透明保留，存量行为零回归）', () => {
+        const { ops, ctx } = fakeCtx()
+        const backend = new Canvas2DBackend(ctx)
+
+        const doc = decodeGraph({
+            canvas: { width: 100, height: 80 },
+            layers: [],
+        })
+        renderCanvas(doc, backend)
+
+        expect(ops.some((o) => o.call === 'fillRect' || o.call === 'drawImage')).toBe(false)
+    })
 })
 
 /** 点位取样：假 ctx 内建最小软件光栅（fillRect + drawImage 最近邻采样），渲染整图后逐点取色 */

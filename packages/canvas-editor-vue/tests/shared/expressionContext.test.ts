@@ -72,6 +72,7 @@ const SCHEMA = schemaOf(RAW_PAYLOAD_SCHEMA)
 const TEMPLATE_DOC: Canvas = {
     width: 800,
     height: 600,
+    background: null,
     layers: [textLayer({ text: '{{orderNo}}', expression: '{{orderNo}}' }), createTemplateTable({ rowsPath: 'order.items' })],
 }
 
@@ -98,6 +99,7 @@ describe('expressionFieldContext：根/行上下文判定（spec §1 生效面�
         const v1Doc: Canvas = {
             width: 800,
             height: 600,
+            background: null,
             layers: [tableLayer([rowLayer([cellLayer(textLayer())])])],
         }
         const context = expressionFieldContext(SCHEMA, v1Doc, V1_CONTENT_PATH)
@@ -128,7 +130,7 @@ describe('expressionFieldContext：根/行上下文判定（spec §1 生效面�
         const outerTable = createTemplateTable({ rowsPath: 'order.items' })
         // 领域只读面：模板格内容换嵌套表，经铸造收窄后写新建对象的数组位（fixture 造数，非文档编辑路径）
         ;(outerTable.template as unknown as { cells: unknown[] }).cells = [cellLayer(innerTable)]
-        const nestedDoc: Canvas = { width: 800, height: 600, layers: [outerTable] }
+        const nestedDoc: Canvas = { width: 800, height: 600, background: null, layers: [outerTable] }
         const context = expressionFieldContext(
             SCHEMA,
             nestedDoc,
