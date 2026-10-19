@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest'
 
 import corpusJson from '../../../../canvas-semantics/corpus/expression-scan/v1.0/scan.json'
+import surfaceJson from '../../../../support-surface.json'
 import { expressionFragmentAtCursor, scanExpressionFragments } from '../../src/shared/expressionScan'
 import { expressionPartsToFixtureShape, rebuildTemplateFromParts } from '../support/expressionParts'
 
@@ -42,11 +43,23 @@ interface CorpusDocument {
 // runner 钉定的契约版本串，与语料 meta.contract 双写互检
 const SCAN_CONTRACT = 'expression-scan v1.0'
 
+// 支持面声明（互检补边，GOVERNANCE §消费端 pin）：本仓消费的契约 ↔ 仓根
+// support-surface.json 钉住的版本。三边分工——常量↔语料在下方钉定断言、
+// 声明↔目录在 canvasctl 三互检，此处拦「pin/常量升级而声明漏重签」。
+const SURFACE_DECLARATION = surfaceJson as { contracts: { id: string; version: string }[] }
+const DECLARED_CONTRACTS = Object.fromEntries(
+    SURFACE_DECLARATION.contracts.map((c) => [c.id, `${c.id} ${c.version}`]),
+)
+
 const corpus = corpusJson as CorpusDocument
 
 describe('expression-scan v1.0 共享语料', () => {
     it('契约版本钉定（双写互检）', () => {
         expect(corpus.meta.contract).toBe(SCAN_CONTRACT)
+    })
+
+    it('支持面声明与 runner 常量一致（双向）', () => {
+        expect(DECLARED_CONTRACTS).toEqual({ 'expression-scan': SCAN_CONTRACT })
     })
 
     it.each(corpus.cases.map((c) => [c.name, c] as const))('%s', (_name, corpusCase) => {
