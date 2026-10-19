@@ -5,7 +5,8 @@ import { describe, expect, it } from 'vitest'
 import corpusJson from '../../../../canvas-semantics/corpus/expression-scan/v1.0/scan.json'
 import surfaceJson from '../../../../support-surface.json'
 import { expressionFragmentAtCursor, scanExpressionFragments } from '../../src/shared/expressionScan'
-import { expressionPartsToFixtureShape, rebuildTemplateFromParts } from '../support/expressionParts'
+import type { CorpusPart } from '../support/expressionParts'
+import { expressionPartsToCorpusShape, rebuildTemplateFromParts } from '../support/expressionParts'
 
 /**
  * 表达式片段扫描共享语料 runner（contract: expression-scan v1.0，工单 07 消费翻转）：
@@ -19,14 +20,6 @@ import { expressionPartsToFixtureShape, rebuildTemplateFromParts } from '../supp
  * - 重建恒等：parts 拼回 == 原模板串（切分完整性）；
  * - 光标判定是编辑器侧语义（语料无光标概念），不入语料面，由 expressionScan 单测覆盖。
  */
-
-interface CorpusPart {
-    kind: 'literal' | 'fragment' | 'open'
-    text?: string
-    raw?: string
-    expr?: string
-    error?: string | null
-}
 
 interface CorpusCase {
     name: string
@@ -66,7 +59,7 @@ describe('expression-scan v1.0 共享语料', () => {
         const scan = scanExpressionFragments(corpusCase.template)
 
         // 切分内容逐字段一致（含错误信号）
-        expect(expressionPartsToFixtureShape(scan.parts)).toEqual(corpusCase.expect.parts)
+        expect(expressionPartsToCorpusShape(scan.parts)).toEqual(corpusCase.expect.parts)
 
         // 重建恒等：切分拼回 == 原模板串（空字面省略下仍须无缝）
         expect(rebuildTemplateFromParts(scan.parts)).toBe(corpusCase.template)

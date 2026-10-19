@@ -5,7 +5,7 @@
  */
 import type { ExpressionScanPart } from '../../src/shared/expressionScan'
 
-export interface FixtureShapePart {
+export interface CorpusPart {
     kind: 'literal' | 'fragment' | 'open'
     text?: string
     raw?: string
@@ -14,7 +14,7 @@ export interface FixtureShapePart {
 }
 
 /** TS 切分 → 语料 part 形态（与语料 scan.json 的 part 字段一一对应） */
-export function expressionPartsToFixtureShape(parts: readonly ExpressionScanPart[]): FixtureShapePart[] {
+export function expressionPartsToCorpusShape(parts: readonly ExpressionScanPart[]): CorpusPart[] {
     return parts.map((part) => {
         if (part.kind === 'literal') return { kind: 'literal', text: part.text }
         if (part.kind === 'open') return { kind: 'open', text: part.text, expr: part.expr }

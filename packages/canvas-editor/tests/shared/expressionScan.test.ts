@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { expressionFragmentAtCursor, scanExpressionFragments } from '../../src/shared/expressionScan'
-import { expressionPartsToFixtureShape, rebuildTemplateFromParts } from '../support/expressionParts'
+import { expressionPartsToCorpusShape, rebuildTemplateFromParts } from '../support/expressionParts'
 
 /**
  * 片段扫描纯函数：语义逐条对齐 php-canvas-next InterpolationEvaluator::evaluate
@@ -10,7 +10,7 @@ import { expressionPartsToFixtureShape, rebuildTemplateFromParts } from '../supp
  */
 describe('scanExpressionFragments', () => {
     /** 切分内容快照（略去位置）：literal=text，fragment=raw/expr/error，open=text/expr */
-    const outline = expressionPartsToFixtureShape
+    const outline = expressionPartsToCorpusShape
 
     describe('字面直通', () => {
         it('空串无片段', () => {
@@ -266,7 +266,7 @@ describe('expressionFragmentAtCursor', () => {
 
 describe('调用片段（expression-type-methods 工单 12，spec §1.2 ⑤⑨）', () => {
     it('合法调用片段 error = null：结构面识别、名单面不校验（未知函数不标红）', () => {
-        expect(expressionPartsToFixtureShape(scanExpressionFragments("发证日：{{ date(row.issueDate, 'YYYY年MM月DD日') }}").parts)).toEqual([
+        expect(expressionPartsToCorpusShape(scanExpressionFragments("发证日：{{ date(row.issueDate, 'YYYY年MM月DD日') }}").parts)).toEqual([
             { kind: 'literal', text: '发证日：' },
             { kind: 'fragment', raw: " date(row.issueDate, 'YYYY年MM月DD日') ", expr: "date(row.issueDate, 'YYYY年MM月DD日')", error: null },
         ])
@@ -286,7 +286,7 @@ describe('调用片段（expression-type-methods 工单 12，spec §1.2 ⑤⑨�
     })
 
     it('⑤ 首个 }} 收口、扫描器引号不感知：串内 }} 截断片段（片段内禁 }} 字面）', () => {
-        expect(expressionPartsToFixtureShape(scanExpressionFragments("{{date(row.x, 'a}}b')}}").parts)).toEqual([
+        expect(expressionPartsToCorpusShape(scanExpressionFragments("{{date(row.x, 'a}}b')}}").parts)).toEqual([
             { kind: 'fragment', raw: "date(row.x, 'a", expr: "date(row.x, 'a", error: 'expression_syntax_error' },
             { kind: 'literal', text: "b')}}" },
         ])
