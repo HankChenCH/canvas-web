@@ -178,11 +178,16 @@ describe('适配字段（image-fit 工单 05，ADR 0023）', () => {
         }
     })
 
-    it('fit 字段描述：select 控件、cover/contain 值域 + 中文选项、静态声明无表达式态', () => {
+    it('fit 字段描述：select 控件、四档值域 + 中文选项、静态声明无表达式态（ADR 0024）', () => {
         const fit = flatFields(fieldSectionsForType('ImageLayer')).find((f) => f.key[0] === 'fit')!
         expect(fit.control).toBe('select')
-        expect(fit.domain).toEqual(['cover', 'contain'])
-        expect(fit.optionLabels).toEqual({ cover: '铺满裁切', contain: '完整显示' })
+        expect(fit.domain).toEqual(['cover', 'contain', 'fill', 'tile'])
+        expect(fit.optionLabels).toEqual({
+            cover: '铺满裁切',
+            contain: '完整显示',
+            fill: '拉伸铺满',
+            tile: '平铺',
+        })
         // 静态声明：不带 data/resource 标记——无取值方式段，提交走 updateSpec
         expect(fit.data).toBeUndefined()
         expect(fit.resource).toBeUndefined()

@@ -39,7 +39,7 @@
         "typecheck": "tsc --noEmit -p tsconfig.json"
     },
     "dependencies": {
-        "@hankchen/canvas": "^0.3.0",
+        "@hankchen/canvas": "^2.0.0",
         "@hankchen/canvas-browser-renderer": "workspace:*",
         "immer": "^11.1.18"
     },

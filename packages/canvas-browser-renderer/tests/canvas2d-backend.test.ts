@@ -306,33 +306,55 @@ describe('drawText：对齐锚点落笔 + 基线经 TextMetrics 消化', () => {
     })
 })
 
-describe('drawImage：cover 绘制编排', () => {
-    it('宽或高 ≤0 跳过（PHP drawImage 同门）', () => {
+describe('drawImage：双矩形 blit 直映射（ADR 0024）', () => {
+    it('dstRect 宽或高 ≤0 跳过（PHP drawImage 同门）', () => {
         const { ops, ctx } = fakeCtx()
         const backend = new Canvas2DBackend(ctx)
         backend.setImage('a.png', { width: 20, height: 10 })
+        const src = { x: 0, y: 0, width: 20, height: 10 }
 
-        backend.drawImage('a.png', 0, 0, 0, 10)
-        backend.drawImage('a.png', 0, 0, 10, 0)
-        backend.drawImage('a.png', 0, 0, -5, 10)
+        backend.drawImage('a.png', src, { x: 0, y: 0, width: 0, height: 10 })
+        backend.drawImage('a.png', src, { x: 0, y: 0, width: 10, height: 0 })
+        backend.drawImage('a.png', src, { x: 0, y: 0, width: -5, height: 10 })
         expect(ops).toEqual([])
     })
 
     it('未注册的 src 不绘制（只画盒的占位语义；物化在工单 04）', () => {
         const { ops, ctx } = fakeCtx()
-        new Canvas2DBackend(ctx).drawImage('missing.png', 0, 0, 40, 20)
+        new Canvas2DBackend(ctx).drawImage(
+            'missing.png',
+            { x: 0, y: 0, width: 40, height: 20 },
+            { x: 0, y: 0, width: 40, height: 20 },
+        )
         expect(ops).toEqual([])
     })
 
-    it('注册后按源图尺寸算 cover 窗：八参 drawImage（源窗 + 目标盒）', () => {
+    it('整图哨兵（srcRect 零宽高）按注册图片实际尺寸取整图：原生九参直映射', () => {
+        const { ops, ctx } = fakeCtx()
+        const backend = new Canvas2DBackend(ctx)
+        backend.setImage('a.png', { width: 200, height: 100 })
+
+        // fill 退化与 QR 整图 blit 借零哨兵表达；尺寸解析归后端（PHP drawImage 同门）
+        backend.drawImage('a.png', { x: 0, y: 0, width: 0, height: 0 }, { x: 5, y: 6, width: 120, height: 90 })
+
+        expect(ops).toEqual([
+            { call: 'drawImage', args: ['__image__', 0, 0, 200, 100, 5, 6, 120, 90] },
+        ])
+    })
+
+    it('显式 srcRect 原样直映射：原语零 fit 语义、零几何（四档 fit 全在核心分派层算定）', () => {
         const { ops, ctx } = fakeCtx()
         const backend = new Canvas2DBackend(ctx)
         backend.setImage('wide.png', { width: 200, height: 100 })
 
-        backend.drawImage('wide.png', 5, 6, 120, 90)
+        // cover 裁窗（核心 coverSourceRect 算定）原样透传，本端不做任何再计算
+        backend.drawImage(
+            'wide.png',
+            { x: 33, y: 0, width: 133, height: 100 },
+            { x: 5, y: 6, width: 120, height: 90 },
+        )
 
         expect(ops).toEqual([
-            // 窗 133×100 @ (33, 0)（见 cover.test.ts 同款值）
             { call: 'drawImage', args: ['__image__', 33, 0, 133, 100, 5, 6, 120, 90] },
         ])
     })
@@ -375,7 +397,7 @@ describe('drawImage：cover 绘制编排', () => {
     })
 })
 
-describe('imageIntrinsicSize：contain 度量能力口（image-fit 工单 05，ADR 0023）', () => {
+describe('imageIntrinsicSize：全 fit 前置度量能力口（ADR 0024）', () => {
     it('已注册图片返回尺寸；HTMLImageElement 形态优先 naturalWidth/naturalHeight', () => {
         const backend = new Canvas2DBackend(fakeCtx().ctx)
         backend.setImage('a.png', { width: 200, height: 100 })
@@ -385,7 +407,7 @@ describe('imageIntrinsicSize：contain 度量能力口（image-fit 工单 05，A
         expect(backend.imageIntrinsicSize!('nat.png')).toEqual({ width: 640, height: 480 })
     })
 
-    it('未注册/非法尺寸（≤0）返回 null：渲染臂按 cover 降级（getimagesize 失败同门）', () => {
+    it('未注册/非法尺寸（≤0）返回 null：渲染臂统一退化 fill 形态（整图拉伸，PHP getimagesize 失败同门结局）', () => {
         const backend = new Canvas2DBackend(fakeCtx().ctx)
         backend.setImage('zero.png', { width: 0, height: 0 })
 
@@ -491,6 +513,22 @@ describe('点位取样断言（背景色、cover 中缝）', () => {
         for (let y = 0; y < height; y++) {
             for (let x = 0; x < width; x++) {
                 const [r, g, b] = x < width / 2 ? left : right
+                const i = (y * width + x) * 4
+                data[i] = r
+                data[i + 1] = g
+                data[i + 2] = b
+                data[i + 3] = 255
+            }
+        }
+        return { width, height, data }
+    }
+
+    /** 四象限源图：左上/右上/左下/右下四色（fill 拉伸与 tile 大图中部的区分度源） */
+    function quadrantImage(width: number, height: number, tl: RGB, tr: RGB, bl: RGB, br: RGB) {
+        const data = new Uint8ClampedArray(width * height * 4)
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                const [r, g, b] = y < height / 2 ? (x < width / 2 ? tl : tr) : (x < width / 2 ? bl : br)
                 const i = (y * width + x) * 4
                 data[i] = r
                 data[i + 1] = g
@@ -637,6 +675,117 @@ describe('点位取样断言（背景色、cover 中缝）', () => {
         expect(getPixel(28, 34)).toEqual([0, 0, 255])
         expect(getPixel(29, 34)).toEqual([0, 255, 0])
         expect(getPixel(45, 34)).toEqual([0, 255, 0])
+    })
+
+    /** fit 点位共用 scaffold：60×40 画布、全周 padding 10（内容盒 40×20）、单图片层 */
+    function renderFitLayer(
+        layer: {
+            fit: string
+            align?: { horizontal: string; vertical: string }
+            backgroundColor: string
+        },
+        image: { src: string; bitmap: { width: number; height: number; data: Uint8ClampedArray } },
+    ) {
+        const surface = makeSurfaceCtx()
+        const backend = new Canvas2DBackend(surface.ctx)
+        backend.setImage(image.src, image.bitmap)
+        renderCanvas(
+            decodeGraph({
+                canvas: { width: 60, height: 40 },
+                layers: [{
+                    type: 'ImageLayer',
+                    spec: {
+                        shape: {
+                            width: 60,
+                            height: 40,
+                            padding: { top: 10, bottom: 10, left: 10, right: 10 },
+                            backgroundColor: layer.backgroundColor,
+                        },
+                        ...(layer.align ? { align: layer.align } : {}),
+                        fit: layer.fit,
+                    },
+                    data: { value: image.src },
+                }],
+            }),
+            backend,
+        )
+        return surface.getPixel
+    }
+
+    it('fill 拉伸：整图非等比拉伸进内容盒，四象限全可见（cover 裁上下，用以区分）', () => {
+        // 源图 20×20（1:1）进内容盒 40×20（2:1）：fill 整图拉伸（水平 2×、垂直 1×），
+        // 象限边界落内容盒中线 x=30 / y=20；cover 会裁上下只露中段横带
+        const getPixel = renderFitLayer(
+            { fit: 'fill', backgroundColor: '#000000' },
+            { src: 'fill.png', bitmap: quadrantImage(20, 20, [0, 0, 255], [0, 255, 0], [255, 255, 255], [255, 0, 0]) },
+        )
+
+        // 四象限全可见（与核心臂同门：整图 srcRect → 内容盒 dstRect）
+        expect(getPixel(15, 15)).toEqual([0, 0, 255]) // 左上蓝
+        expect(getPixel(45, 15)).toEqual([0, 255, 0]) // 右上绿
+        expect(getPixel(15, 25)).toEqual([255, 255, 255]) // 左下白
+        expect(getPixel(45, 25)).toEqual([255, 0, 0]) // 右下红
+        // 源图竖缝（x=10/20）拉伸到目标 x=30：中线左蓝右绿
+        expect(getPixel(29, 15)).toEqual([0, 0, 255])
+        expect(getPixel(30, 15)).toEqual([0, 255, 0])
+    })
+
+    it('tile 网格：单元内在尺寸 1:1 自 padding 角锚定向右下重复，接缝落单元倍数线', () => {
+        // tile 20×10 进内容盒 40×20 + left/top 对齐：恰 2×2 整网格，首块锚定 (10,10)，
+        // 接缝 x=30 / y=20
+        const getPixel = renderFitLayer(
+            { fit: 'tile', align: { horizontal: 'left', vertical: 'top' }, backgroundColor: '#ff00ff' },
+            { src: 'tile.png', bitmap: twoToneImage(20, 10, [0, 0, 255], [0, 255, 0]) },
+        )
+
+        // 每块左半蓝右半绿：行 1 两块 + 行 2 两块
+        expect(getPixel(15, 15)).toEqual([0, 0, 255])
+        expect(getPixel(25, 15)).toEqual([0, 255, 0])
+        expect(getPixel(35, 15)).toEqual([0, 0, 255])
+        expect(getPixel(45, 15)).toEqual([0, 255, 0])
+        expect(getPixel(15, 25)).toEqual([0, 0, 255])
+        expect(getPixel(45, 25)).toEqual([0, 255, 0])
+        // 块间接缝 x=30：左块右缘绿 → 右块左缘蓝（相邻不重叠不漏隙）
+        expect(getPixel(29, 15)).toEqual([0, 255, 0])
+        expect(getPixel(30, 15)).toEqual([0, 0, 255])
+    })
+
+    it('tile 截断：末行末列半块止于内容盒边缘，盒外零绘制露背景色', () => {
+        // tile 16×9 进内容盒 40×20：列 x=10,26 整 + x=42 截 8 宽；行 y=10,19 整 + y=28 截 2 高
+        const getPixel = renderFitLayer(
+            { fit: 'tile', align: { horizontal: 'left', vertical: 'top' }, backgroundColor: '#ff00ff' },
+            { src: 'tile.png', bitmap: twoToneImage(16, 9, [0, 0, 255], [0, 255, 0]) },
+        )
+
+        // 完整块 + 末列截断块（可见子矩形取源左半 → 蓝）
+        expect(getPixel(15, 12)).toEqual([0, 0, 255])
+        expect(getPixel(43, 12)).toEqual([0, 0, 255])
+        expect(getPixel(49, 12)).toEqual([0, 0, 255])
+        // 末行截断块（可见子矩形取源顶部 → y∈[28,30)）
+        expect(getPixel(15, 29)).toEqual([0, 0, 255])
+        // 盒外（右/下 padding 区）零绘制：露图层背景色
+        expect(getPixel(50, 12)).toEqual([255, 0, 255])
+        expect(getPixel(15, 30)).toEqual([255, 0, 255])
+    })
+
+    it('tile 锚定 center：大图锚点为负露出图片中部（网格 ∩ 内容盒单块）', () => {
+        // 源图 80×40 大于内容盒 40×20，center 对齐 → 锚点 (-10, 0)，可见块 =
+        // 源图中部 [20,60)×[10,30) 1:1 映射进内容盒（语义与 contain/cover 裁窗同门）
+        const getPixel = renderFitLayer(
+            { fit: 'tile', align: { horizontal: 'center', vertical: 'center' }, backgroundColor: '#ff00ff' },
+            { src: 'big.png', bitmap: quadrantImage(80, 40, [0, 0, 255], [0, 255, 0], [255, 255, 255], [255, 0, 0]) },
+        )
+
+        // 内容盒四象限对应源图中部四象限（源象限边界 x=40/y=20 → 盒 x=30/y=20）
+        expect(getPixel(15, 15)).toEqual([0, 0, 255])
+        expect(getPixel(45, 15)).toEqual([0, 255, 0])
+        expect(getPixel(15, 25)).toEqual([255, 255, 255])
+        expect(getPixel(45, 25)).toEqual([255, 0, 0])
+        // 中缝：竖缝 x=30（上横带内左蓝右绿）、横缝 y=20（左竖带内上蓝下白）
+        expect(getPixel(29, 15)).toEqual([0, 0, 255])
+        expect(getPixel(30, 15)).toEqual([0, 255, 0])
+        expect(getPixel(25, 19)).toEqual([0, 0, 255])
+        expect(getPixel(25, 20)).toEqual([255, 255, 255])
     })
 
     /** 一次渲染一个独立取样面（缓冲不清屏，避免跨渲染残影污染取样） */

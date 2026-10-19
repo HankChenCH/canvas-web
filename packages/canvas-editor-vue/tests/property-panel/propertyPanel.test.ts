@@ -914,7 +914,7 @@ describe('imageSrc 控件面板接线（图片资源地址上传形态）', () =
     })
 })
 
-describe('适配字段（image-fit 工单 05，ADR 0023）：二选一可写可回显，提交/撤销走既有事务', () => {
+describe('适配字段（image-fit 工单 05，ADR 0024 四档）：可写可回显，提交/撤销走既有事务', () => {
     const imageLayer = (overrides: Record<string, unknown> = {}): Layer =>
         ({ ...textLayer(), type: 'ImageLayer', src: '/a.png', expression: null, ...overrides } as Layer)
 
@@ -927,7 +927,7 @@ describe('适配字段（image-fit 工单 05，ADR 0023）：二选一可写可�
         return { editor, wrapper }
     }
 
-    it('缺省回显铺满裁切：wire 无 fit 键的层经投影读 cover，选项为中文文案', async () => {
+    it('缺省回显铺满裁切：wire 无 fit 键的层经投影读 cover，选项为中文文案（四档，ADR 0024）', async () => {
         const { editor, wrapper } = await mountWithEditor([imageLayer()])
         expect(editor.store.doc!.layers[0]!.type === 'ImageLayer' && editor.store.doc!.layers[0]!.fit).toBeUndefined()
 
@@ -935,7 +935,7 @@ describe('适配字段（image-fit 工单 05，ADR 0023）：二选一可写可�
         const select = wrapper.find('select')
         expect(select.exists()).toBe(true)
         expect((select.element as HTMLSelectElement).value).toBe('cover')
-        expect(select.findAll('option').map((o) => o.text())).toEqual(['铺满裁切', '完整显示'])
+        expect(select.findAll('option').map((o) => o.text())).toEqual(['铺满裁切', '完整显示', '拉伸铺满', '平铺'])
         wrapper.unmount()
     })
 
@@ -965,5 +965,17 @@ describe('适配字段（image-fit 工单 05，ADR 0023）：二选一可写可�
         const layer = editor.store.doc!.layers[0]!
         expect(layer.type === 'ImageLayer' && layer.fit).toBe('cover')
         wrapper.unmount()
+    })
+
+    it('切「拉伸铺满/平铺」（ADR 0024 新档）：同走 updateSpec 一步历史', async () => {
+        for (const wire of ['fill', 'tile'] as const) {
+            const { editor, wrapper } = await mountWithEditor([imageLayer()])
+
+            await wrapper.find('select').setValue(wire)
+            const layer = editor.store.doc!.layers[0]!
+            expect(layer.type === 'ImageLayer' && layer.fit).toBe(wire)
+            expect(editor.store.history).toHaveLength(1)
+            wrapper.unmount()
+        }
     })
 })

@@ -4,19 +4,20 @@
  * Canvas2D 五原语后端。按包红线整体不开 DOM lib，仅本文件局部引入
  * CanvasRenderingContext2D 类型（AGENTS.md 红线 2）。
  *
- * 内容绘制语义（工单 03）：
- * - drawImage：cover 等比缩放居中裁切（cover.ts），宽或高 ≤0 跳过（PHP 同门）；
+ * 内容绘制语义（ADR 0024）：
+ * - drawImage：双矩形 blit 直映射——srcRect → dstRect 原生九参 ctx.drawImage，
+ *   原语零 fit 语义、零内在尺寸读取，四档 fit（cover/contain/fill/tile）的几何
+ *   全在核心渲染臂算定（本包零 fit 几何，cover.ts 已退役上移核心）；
  *   图片源经 setImage 预载回写（远程物化在工单 04），未注册的 src 只画盒不绘制；
  * - drawText：布局层只给纯对齐锚点，基线差由本端以 TextMetrics 消化（ADR-0003 同款——
  *   PHP 的 GD 基线魔数 round(fontSize*0.1) 不移植）；字体经 fonts.ts 的判定与注册缝。
  *
- * 可选能力口（image-fit 工单 05）：imageIntrinsicSize 供源图内在尺寸，渲染契约臂
- * 据此算 contain 收缩矩形（cover.ts containRect 是其图层无关几何镜像）——后端绘制
- * 面零改动，五原语契约冻结（ADR 0023）。
+ * 可选能力口（ADR 0023 引入、ADR 0024 扩全 fit 前置）：imageIntrinsicSize 供源图
+ * 内在尺寸，核心渲染臂据此算 cover 裁窗 / fill 整图 / contain 收缩 / tile 单元——
+ * 查询口非绘制原语，五原语契约冻结。
  */
-import type { Border, BorderSide, RenderBackend, TextDrawOptions } from '@hankchen/canvas'
+import type { BlitRect, Border, BorderSide, RenderBackend, TextDrawOptions } from '@hankchen/canvas'
 
-import { coverCrop } from './cover'
 import { builtinFontShorthand, isBuiltinFontRef } from './fonts'
 
 /** 可绘制图片源：浏览器图片元素/位图，或结构等价的测试替身（须给得出宽高） */
@@ -134,37 +135,44 @@ export class Canvas2DBackend implements RenderBackend, ViewportAwareBackend {
         if (border.right) this.strokeLine(x + width, y, x + width, y + height, border.right)
     }
 
-    /** cover 裁切至 width×height 后放置于 (x, y)；宽或高 ≤0 跳过（PHP drawImage 同门） */
-    drawImage(src: string, x: number, y: number, width: number, height: number): void {
-        if (width <= 0 || height <= 0) return
+    /**
+     * 双矩形 blit 直映射（ADR 0024）：srcRect → dstRect 原生九参 ctx.drawImage——
+     * 原语零 fit 语义、零几何计算，四档 fit 的源窗/目标矩形全由核心渲染臂算定。
+     * srcRect 零宽高哨兵 = 整图（按注册图片实际尺寸取整，fill 退化与 QR 整图 blit
+     * 借它表达，PHP drawImage 同门）；dstRect 宽或高 ≤0 跳过；未注册/尺寸不可用的
+     * src 静默不画（JS 坏图 drawImage 静默不画的现状 parity）
+     */
+    drawImage(src: string, srcRect: BlitRect, dstRect: BlitRect): void {
+        if (dstRect.width <= 0 || dstRect.height <= 0) return
 
         const image = this.images.get(src)
-        if (!image) return // 未物化/未加载：只画盒的占位语义（工单 04 补失败态）
+        if (!image) return // 未物化/未加载：只画盒的占位语义
 
         const srcW = naturalWidth(image)
         const srcH = naturalHeight(image)
         if (srcW <= 0 || srcH <= 0) return
 
-        const crop = coverCrop(srcW, srcH, width, height)
+        const whole = srcRect.width <= 0 || srcRect.height <= 0
         this.ctx.drawImage(
             image as CanvasImageSource,
-            crop.sx,
-            crop.sy,
-            crop.sw,
-            crop.sh,
-            x,
-            y,
-            width,
-            height,
+            whole ? 0 : srcRect.x,
+            whole ? 0 : srcRect.y,
+            whole ? srcW : srcRect.width,
+            whole ? srcH : srcRect.height,
+            dstRect.x,
+            dstRect.y,
+            dstRect.width,
+            dstRect.height,
         )
     }
 
     /**
-     * 源图内在尺寸度量（渲染契约可选能力口，image-fit 工单 05）：contain 计划按
-     * 此收缩目标矩形，查询键与 drawImage 同一 src 引用、同一次物化回写的 images
-     * 表（预览与导出 forkWith 共享，零参数穿透）。尺寸取 naturalWidth/Height
-     * 优先（与 drawImage 同门）；未注册/非法尺寸返回 null，渲染臂按 cover 降级
-     * （PHP getimagesize 失败同门）。查询口非绘制原语，五原语契约冻结不动
+     * 源图内在尺寸度量（渲染契约可选能力口）：ADR 0024 起为全 fit 前置——cover 裁窗 /
+     * fill 整图 / contain 收缩 / tile 单元的分派几何全部依赖内在比例。查询键与
+     * drawImage 同一 src 引用、同一次物化回写的 images 表（预览与导出 forkWith 共享，
+     * 零参数穿透）。尺寸取 naturalWidth/Height 优先（与 drawImage 同门）；未注册/
+     * 非法尺寸返回 null，渲染臂统一退化 fill 形态（整图拉伸进目标矩形；PHP
+     * getimagesize 失败同门结局）。查询口非绘制原语，五原语契约冻结不动
      */
     imageIntrinsicSize(src: string): { width: number; height: number } | null {
         const image = this.images.get(src)

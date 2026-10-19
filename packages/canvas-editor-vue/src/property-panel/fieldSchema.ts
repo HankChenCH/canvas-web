@@ -241,29 +241,37 @@ const TEXT_SECTION: FieldSection = {
 }
 
 /**
- * 适配模式取值（image-fit 工单 05，ADR 0023）：镜像 js-canvas 的 IMAGE_FIT_*
- * 常量——内核 barrel 零 diff 红线不转出（editor-vue 禁直连 canvas），字面串对齐
- * wire 契约；v1 已知值仅 contain，未知值渲染面降级 cover（白名单在核心渲染臂）
+ * 适配模式取值（image-fit 工单 05，ADR 0023 起 contain、ADR 0024 扩四档）：镜像
+ * js-canvas 的 IMAGE_FIT_* 常量——内核 barrel 零 diff 红线不转出（editor-vue 禁直连
+ * canvas），字面串对齐 wire 契约；白名单分派在核心渲染臂，未知值渲染面降级 cover
  */
 const IMAGE_FIT_COVER = 'cover'
 const IMAGE_FIT_CONTAIN = 'contain'
+const IMAGE_FIT_FILL = 'fill'
+const IMAGE_FIT_TILE = 'tile'
 
 const IMAGE_SECTION: FieldSection = {
     title: '图片',
     // 上传控件（缩略图回显 + 上传 + 紧凑路径行）；静态值语义不变——data 门提交
     // 走 updateData（字面接管），引用形态（data URL/宿主存储）归 uploadHandler
     //
-    // 「适配」（ADR 0023，image-fit 工单 05）：静态声明二选一——铺满裁切（cover，
-    // 缺省）/完整显示（contain）；不带 data/resource 标记（无表达式态），提交走
-    // updateSpec 权威写。缺省态 wire 无键，读侧经 layerFieldTarget 投影回显 cover
+    // 「适配」（ADR 0024）：静态声明四选一——铺满裁切（cover，缺省）/完整显示
+    // （contain）/拉伸铺满（fill）/平铺（tile）；不带 data/resource 标记（无表达式
+    // 态），提交走 updateSpec 权威写。缺省态 wire 无键，读侧经 layerFieldTarget
+    // 投影回显 cover
     fields: [
         { key: ['src'], label: '资源地址', control: 'imageSrc', data: true, resource: true },
         {
             key: ['fit'],
             label: '适配',
             control: 'select',
-            domain: [IMAGE_FIT_COVER, IMAGE_FIT_CONTAIN],
-            optionLabels: { [IMAGE_FIT_COVER]: '铺满裁切', [IMAGE_FIT_CONTAIN]: '完整显示' },
+            domain: [IMAGE_FIT_COVER, IMAGE_FIT_CONTAIN, IMAGE_FIT_FILL, IMAGE_FIT_TILE],
+            optionLabels: {
+                [IMAGE_FIT_COVER]: '铺满裁切',
+                [IMAGE_FIT_CONTAIN]: '完整显示',
+                [IMAGE_FIT_FILL]: '拉伸铺满',
+                [IMAGE_FIT_TILE]: '平铺',
+            },
         },
     ],
 }

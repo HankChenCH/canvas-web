@@ -40,8 +40,11 @@ function recordingBackend(): RenderBackend & { calls: string[] } {
             if (bgColor === null && !bordered) return
             calls.push(`rect:${x},${y},${width},${height},${bgColor ?? ''}`)
         },
-        drawImage(src, x, y, width, height): void {
-            calls.push(`image:${src}:${x},${y},${width},${height}`)
+        drawImage(src, srcRect, dstRect): void {
+            calls.push(
+                `image:${src}:${srcRect.x},${srcRect.y},${srcRect.width},${srcRect.height}` +
+                    `->${dstRect.x},${dstRect.y},${dstRect.width},${dstRect.height}`,
+            )
         },
         drawText(line, x, y): void {
             calls.push(`text:${line}:${x},${y}`)
