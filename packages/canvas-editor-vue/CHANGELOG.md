@@ -2,6 +2,11 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## 2.0.0 - 2026-10-19
+
+- 图片属性面板「适配」选择扩四档：铺满裁切（cover，缺省）/完整显示（contain）/拉伸铺满（fill）/平铺（tile）（ADR 0024，image-fit 工票 05）；静态声明无表达式态不变，`layerFieldTarget` 缺省投影 cover 回显不变
+- 核心契约代际对齐：依赖链升 canvas-web v2 / `@hankchen/canvas` `^2.0.0`；版本随 canvas-web v2 代际
+
 ## 0.1.3 - 2026-10-09
 
 - 修正 0.1.2 的 external 策略：`@lucide/vue` 回归内嵌（无响应式状态的图标组件；external 化在 pnpm 严格隔离下宿主无法解析）。仅 `vue` 保持 external。
