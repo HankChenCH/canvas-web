@@ -23,7 +23,7 @@ pnpm --filter playground dev
   src 按 `session → spatial/editing/shared` 分层（下层禁引上层，depcruise `editor-*-isolation` 锁定）；只保留根 barrel 单出口。详见包内 `AGENTS.md`。
 - `packages/canvas-editor-vue/` — Vue 3 薄绑定（npm `@hankchen/canvas-editor-vue`）。src 按领域分域：`canvas / property-panel / layer-panel / status-bar / shared`（域间禁横引、跨域只经 shared，depcruise `editor-vue-*-isolation` 锁定）；宿主可按域子路径引用（`./canvas` 等）。详见包内 `AGENTS.md`。
 - `playground/` — 目验壳（不发布，无单测；验证走 `pnpm --filter playground dev` + `build`）。
-- `canvas-semantics/` — **submodule**：语料仓 `canvas-semantics`（表达式扫描语义权威，工票 07 起 pin 消费），`packages/canvas-editor` 的扫描 fixture runner 直接读其 `corpus/`，镜像副本已删除；语义升级 = 一次可审的 submodule 指针移动。支持面声明 = 仓根 `support-surface.json`（编辑器画像，仅 expression-scan scan 模块）。
+- `canvas-semantics/` — **submodule**：语料仓 `canvas-semantics`（表达式扫描语义权威，工票 07 起 pin 消费），`packages/canvas-editor` 的扫描 fixture runner 直接读其 `corpus/`，镜像副本已删除；语义升级 = 一次可审的 submodule 指针移动。支持面声明 = 仓根 `support-surface.json`（编辑器画像，仅 expression-scan scan 模块；CI 以语料仓内 canvasctl `validate --surface` 三互检，工票 08）。
 - `.dependency-cruiser.cjs` — 依赖红线；`scripts/check-guardrails.sh` — 红线自验金丝雀。
 
 核心文档模型包 `@hankchen/canvas` 不在本仓：住在核心仓 [js-canvas](https://github.com/HankChenCH/js-canvas)（无 DOM 世界），经 npm 依赖接入；wire 契约改动在彼仓做（与 PHP/Go 同步）。

@@ -24,6 +24,18 @@ jobs:
                   node-version-file: .nvmrc
                   cache: pnpm
 
+            # Go 供支持面声明三互检用（canvasctl 随语料 submodule pin 消费，
+            # 工具版本 = 语料版本；版本读 submodule 的 go.mod）
+            - uses: actions/setup-go@v5
+              with:
+                  go-version-file: canvas-semantics/go.mod
+
+            # 支持面声明三互检（SUPPORT-SURFACE §5.2）：校验本仓声明形状/注册表/版本
+            # 与 pin 的语料一致
+            - name: 支持面声明三互检
+              working-directory: canvas-semantics
+              run: go run ./canvasctl validate --surface ../support-surface.json .
+
             - name: 安装依赖
               run: pnpm install --frozen-lockfile
 
