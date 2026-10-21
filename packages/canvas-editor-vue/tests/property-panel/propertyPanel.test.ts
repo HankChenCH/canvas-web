@@ -621,21 +621,20 @@ describe('对齐分段图标按钮组（layer-panel-ux 工单 05：两排分段�
     it('选中态渲染跟随文档值：提交后高亮迁移，undo 回归到旧值高亮', async () => {
         const { editor, wrapper } = await mountWithSelection([textLayer()])
         const segments = () => wrapper.findAll('.cn-align')[1]!.findAll('.cn-align__option')
-        const activeTitle = () =>
-            segments()
-                .find((s) => s.classes().includes('cn-align__option--active'))
-                ?.attributes('title')
-        expect(activeTitle()).toBe('垂直：顶对齐')
+        // 高亮段以域序下标断值（top/center/bottom）——原生 title 已随 edit-toolbar-declutter
+        // 工票 04 移除（悬停文案收口 Tooltip，高亮断言不必经提示通道）
+        const activeIndex = () => segments().findIndex((s) => s.classes().includes('cn-align__option--active'))
+        expect(activeIndex()).toBe(0) // 顶
 
         await segments()[2]!.trigger('click') // 垂直 → 底
         await wrapper.vm.$nextTick()
         expect(editor.store.doc!.layers[0]!.type === 'TextLayer' && editor.store.doc!.layers[0]!.align.vertical).toBe('bottom')
-        expect(activeTitle()).toBe('垂直：底对齐')
+        expect(activeIndex()).toBe(2)
 
         editor.undo() // 回归：撤销一步，文档与高亮同步复原
         await wrapper.vm.$nextTick()
         expect(editor.store.doc!.layers[0]!.type === 'TextLayer' && editor.store.doc!.layers[0]!.align.vertical).toBe('top')
-        expect(activeTitle()).toBe('垂直：顶对齐')
+        expect(activeIndex()).toBe(0)
         wrapper.unmount()
     })
 })
