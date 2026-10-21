@@ -22,7 +22,10 @@
  * 叶子终点缺省 / rowsPath 数组终点，可激活/可下钻判定矩阵归模型）+ `{{}}` 拆装
  * 纯函数 resourceTemplate + 弹层视口定位纯函数 popupPosition（resource-expression-
  * single-ref 工单 05/06：资源内容字段的作者面 = 纯菜单点选，垂直翻转/钳制定位
- * 两浮层与选择器菜单共用）。
+ * 两浮层与选择器菜单共用）与悬停提示 Tooltip（edit-toolbar-declutter 工票 01：
+ * 包裹任意控件的延迟气泡——悬停/键盘聚焦出泡、离开/失焦/按下即隐，pointerdown
+ * 隐藏挂 wrapper capture 段，aria-describedby 接线与暗色令牌自带；零消费方
+ * 交付，消费在工票 03/04）。
  * 这是唯一允许被各域引用的层——域间横向 import 被依赖红线
  * （editor-vue-*-isolation）禁止，跨域消费一律收口到这里。
  * 下拉底座（editor-top-toolbar 工单 02 起入出口）：composable 与基础条目类型。
@@ -33,6 +36,7 @@
  */
 export { default as HelpDialog } from './HelpDialog.vue'
 export { default as DropdownMenu } from './DropdownMenu.vue'
+export { default as Tooltip } from './Tooltip.vue'
 export {
     useDropdownMenu,
     type DropdownMenuController,
