@@ -78,6 +78,9 @@ function fakeCtx(metrics: {
         beginPath: () => record('beginPath'),
         moveTo: (...args: unknown[]) => record('moveTo', ...args),
         lineTo: (...args: unknown[]) => record('lineTo', ...args),
+        ellipse: (...args: unknown[]) => record('ellipse', ...args),
+        fill: () => record('fill'),
+        clip: () => record('clip'),
         stroke: () => record('stroke'),
         save: () => record('save'),
         restore: () => record('restore'),
@@ -306,33 +309,55 @@ describe('drawText：对齐锚点落笔 + 基线经 TextMetrics 消化', () => {
     })
 })
 
-describe('drawImage：cover 绘制编排', () => {
-    it('宽或高 ≤0 跳过（PHP drawImage 同门）', () => {
+describe('drawImage：双矩形 blit 直映射（ADR 0024）', () => {
+    it('dstRect 宽或高 ≤0 跳过（PHP drawImage 同门）', () => {
         const { ops, ctx } = fakeCtx()
         const backend = new Canvas2DBackend(ctx)
         backend.setImage('a.png', { width: 20, height: 10 })
+        const src = { x: 0, y: 0, width: 20, height: 10 }
 
-        backend.drawImage('a.png', 0, 0, 0, 10)
-        backend.drawImage('a.png', 0, 0, 10, 0)
-        backend.drawImage('a.png', 0, 0, -5, 10)
+        backend.drawImage('a.png', src, { x: 0, y: 0, width: 0, height: 10 })
+        backend.drawImage('a.png', src, { x: 0, y: 0, width: 10, height: 0 })
+        backend.drawImage('a.png', src, { x: 0, y: 0, width: -5, height: 10 })
         expect(ops).toEqual([])
     })
 
     it('未注册的 src 不绘制（只画盒的占位语义；物化在工单 04）', () => {
         const { ops, ctx } = fakeCtx()
-        new Canvas2DBackend(ctx).drawImage('missing.png', 0, 0, 40, 20)
+        new Canvas2DBackend(ctx).drawImage(
+            'missing.png',
+            { x: 0, y: 0, width: 40, height: 20 },
+            { x: 0, y: 0, width: 40, height: 20 },
+        )
         expect(ops).toEqual([])
     })
 
-    it('注册后按源图尺寸算 cover 窗：八参 drawImage（源窗 + 目标盒）', () => {
+    it('整图哨兵（srcRect 零宽高）按注册图片实际尺寸取整图：原生九参直映射', () => {
+        const { ops, ctx } = fakeCtx()
+        const backend = new Canvas2DBackend(ctx)
+        backend.setImage('a.png', { width: 200, height: 100 })
+
+        // fill 退化与 QR 整图 blit 借零哨兵表达；尺寸解析归后端（PHP drawImage 同门）
+        backend.drawImage('a.png', { x: 0, y: 0, width: 0, height: 0 }, { x: 5, y: 6, width: 120, height: 90 })
+
+        expect(ops).toEqual([
+            { call: 'drawImage', args: ['__image__', 0, 0, 200, 100, 5, 6, 120, 90] },
+        ])
+    })
+
+    it('显式 srcRect 原样直映射：原语零 fit 语义、零几何（四档 fit 全在核心分派层算定）', () => {
         const { ops, ctx } = fakeCtx()
         const backend = new Canvas2DBackend(ctx)
         backend.setImage('wide.png', { width: 200, height: 100 })
 
-        backend.drawImage('wide.png', 5, 6, 120, 90)
+        // cover 裁窗（核心 coverSourceRect 算定）原样透传，本端不做任何再计算
+        backend.drawImage(
+            'wide.png',
+            { x: 33, y: 0, width: 133, height: 100 },
+            { x: 5, y: 6, width: 120, height: 90 },
+        )
 
         expect(ops).toEqual([
-            // 窗 133×100 @ (33, 0)（见 cover.test.ts 同款值）
             { call: 'drawImage', args: ['__image__', 33, 0, 133, 100, 5, 6, 120, 90] },
         ])
     })
@@ -375,7 +400,7 @@ describe('drawImage：cover 绘制编排', () => {
     })
 })
 
-describe('imageIntrinsicSize：contain 度量能力口（image-fit 工单 05，ADR 0023）', () => {
+describe('imageIntrinsicSize：全 fit 前置度量能力口（ADR 0024）', () => {
     it('已注册图片返回尺寸；HTMLImageElement 形态优先 naturalWidth/naturalHeight', () => {
         const backend = new Canvas2DBackend(fakeCtx().ctx)
         backend.setImage('a.png', { width: 200, height: 100 })
@@ -385,7 +410,7 @@ describe('imageIntrinsicSize：contain 度量能力口（image-fit 工单 05，A
         expect(backend.imageIntrinsicSize!('nat.png')).toEqual({ width: 640, height: 480 })
     })
 
-    it('未注册/非法尺寸（≤0）返回 null：渲染臂按 cover 降级（getimagesize 失败同门）', () => {
+    it('未注册/非法尺寸（≤0）返回 null：渲染臂统一退化 fill 形态（整图拉伸，PHP getimagesize 失败同门结局）', () => {
         const backend = new Canvas2DBackend(fakeCtx().ctx)
         backend.setImage('zero.png', { width: 0, height: 0 })
 
@@ -491,6 +516,22 @@ describe('点位取样断言（背景色、cover 中缝）', () => {
         for (let y = 0; y < height; y++) {
             for (let x = 0; x < width; x++) {
                 const [r, g, b] = x < width / 2 ? left : right
+                const i = (y * width + x) * 4
+                data[i] = r
+                data[i + 1] = g
+                data[i + 2] = b
+                data[i + 3] = 255
+            }
+        }
+        return { width, height, data }
+    }
+
+    /** 四象限源图：左上/右上/左下/右下四色（fill 拉伸与 tile 大图中部的区分度源） */
+    function quadrantImage(width: number, height: number, tl: RGB, tr: RGB, bl: RGB, br: RGB) {
+        const data = new Uint8ClampedArray(width * height * 4)
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                const [r, g, b] = y < height / 2 ? (x < width / 2 ? tl : tr) : (x < width / 2 ? bl : br)
                 const i = (y * width + x) * 4
                 data[i] = r
                 data[i + 1] = g
@@ -639,6 +680,117 @@ describe('点位取样断言（背景色、cover 中缝）', () => {
         expect(getPixel(45, 34)).toEqual([0, 255, 0])
     })
 
+    /** fit 点位共用 scaffold：60×40 画布、全周 padding 10（内容盒 40×20）、单图片层 */
+    function renderFitLayer(
+        layer: {
+            fit: string
+            align?: { horizontal: string; vertical: string }
+            backgroundColor: string
+        },
+        image: { src: string; bitmap: { width: number; height: number; data: Uint8ClampedArray } },
+    ) {
+        const surface = makeSurfaceCtx()
+        const backend = new Canvas2DBackend(surface.ctx)
+        backend.setImage(image.src, image.bitmap)
+        renderCanvas(
+            decodeGraph({
+                canvas: { width: 60, height: 40 },
+                layers: [{
+                    type: 'ImageLayer',
+                    spec: {
+                        shape: {
+                            width: 60,
+                            height: 40,
+                            padding: { top: 10, bottom: 10, left: 10, right: 10 },
+                            backgroundColor: layer.backgroundColor,
+                        },
+                        ...(layer.align ? { align: layer.align } : {}),
+                        fit: layer.fit,
+                    },
+                    data: { value: image.src },
+                }],
+            }),
+            backend,
+        )
+        return surface.getPixel
+    }
+
+    it('fill 拉伸：整图非等比拉伸进内容盒，四象限全可见（cover 裁上下，用以区分）', () => {
+        // 源图 20×20（1:1）进内容盒 40×20（2:1）：fill 整图拉伸（水平 2×、垂直 1×），
+        // 象限边界落内容盒中线 x=30 / y=20；cover 会裁上下只露中段横带
+        const getPixel = renderFitLayer(
+            { fit: 'fill', backgroundColor: '#000000' },
+            { src: 'fill.png', bitmap: quadrantImage(20, 20, [0, 0, 255], [0, 255, 0], [255, 255, 255], [255, 0, 0]) },
+        )
+
+        // 四象限全可见（与核心臂同门：整图 srcRect → 内容盒 dstRect）
+        expect(getPixel(15, 15)).toEqual([0, 0, 255]) // 左上蓝
+        expect(getPixel(45, 15)).toEqual([0, 255, 0]) // 右上绿
+        expect(getPixel(15, 25)).toEqual([255, 255, 255]) // 左下白
+        expect(getPixel(45, 25)).toEqual([255, 0, 0]) // 右下红
+        // 源图竖缝（x=10/20）拉伸到目标 x=30：中线左蓝右绿
+        expect(getPixel(29, 15)).toEqual([0, 0, 255])
+        expect(getPixel(30, 15)).toEqual([0, 255, 0])
+    })
+
+    it('tile 网格：单元内在尺寸 1:1 自 padding 角锚定向右下重复，接缝落单元倍数线', () => {
+        // tile 20×10 进内容盒 40×20 + left/top 对齐：恰 2×2 整网格，首块锚定 (10,10)，
+        // 接缝 x=30 / y=20
+        const getPixel = renderFitLayer(
+            { fit: 'tile', align: { horizontal: 'left', vertical: 'top' }, backgroundColor: '#ff00ff' },
+            { src: 'tile.png', bitmap: twoToneImage(20, 10, [0, 0, 255], [0, 255, 0]) },
+        )
+
+        // 每块左半蓝右半绿：行 1 两块 + 行 2 两块
+        expect(getPixel(15, 15)).toEqual([0, 0, 255])
+        expect(getPixel(25, 15)).toEqual([0, 255, 0])
+        expect(getPixel(35, 15)).toEqual([0, 0, 255])
+        expect(getPixel(45, 15)).toEqual([0, 255, 0])
+        expect(getPixel(15, 25)).toEqual([0, 0, 255])
+        expect(getPixel(45, 25)).toEqual([0, 255, 0])
+        // 块间接缝 x=30：左块右缘绿 → 右块左缘蓝（相邻不重叠不漏隙）
+        expect(getPixel(29, 15)).toEqual([0, 255, 0])
+        expect(getPixel(30, 15)).toEqual([0, 0, 255])
+    })
+
+    it('tile 截断：末行末列半块止于内容盒边缘，盒外零绘制露背景色', () => {
+        // tile 16×9 进内容盒 40×20：列 x=10,26 整 + x=42 截 8 宽；行 y=10,19 整 + y=28 截 2 高
+        const getPixel = renderFitLayer(
+            { fit: 'tile', align: { horizontal: 'left', vertical: 'top' }, backgroundColor: '#ff00ff' },
+            { src: 'tile.png', bitmap: twoToneImage(16, 9, [0, 0, 255], [0, 255, 0]) },
+        )
+
+        // 完整块 + 末列截断块（可见子矩形取源左半 → 蓝）
+        expect(getPixel(15, 12)).toEqual([0, 0, 255])
+        expect(getPixel(43, 12)).toEqual([0, 0, 255])
+        expect(getPixel(49, 12)).toEqual([0, 0, 255])
+        // 末行截断块（可见子矩形取源顶部 → y∈[28,30)）
+        expect(getPixel(15, 29)).toEqual([0, 0, 255])
+        // 盒外（右/下 padding 区）零绘制：露图层背景色
+        expect(getPixel(50, 12)).toEqual([255, 0, 255])
+        expect(getPixel(15, 30)).toEqual([255, 0, 255])
+    })
+
+    it('tile 锚定 center：大图锚点为负露出图片中部（网格 ∩ 内容盒单块）', () => {
+        // 源图 80×40 大于内容盒 40×20，center 对齐 → 锚点 (-10, 0)，可见块 =
+        // 源图中部 [20,60)×[10,30) 1:1 映射进内容盒（语义与 contain/cover 裁窗同门）
+        const getPixel = renderFitLayer(
+            { fit: 'tile', align: { horizontal: 'center', vertical: 'center' }, backgroundColor: '#ff00ff' },
+            { src: 'big.png', bitmap: quadrantImage(80, 40, [0, 0, 255], [0, 255, 0], [255, 255, 255], [255, 0, 0]) },
+        )
+
+        // 内容盒四象限对应源图中部四象限（源象限边界 x=40/y=20 → 盒 x=30/y=20）
+        expect(getPixel(15, 15)).toEqual([0, 0, 255])
+        expect(getPixel(45, 15)).toEqual([0, 255, 0])
+        expect(getPixel(15, 25)).toEqual([255, 255, 255])
+        expect(getPixel(45, 25)).toEqual([255, 0, 0])
+        // 中缝：竖缝 x=30（上横带内左蓝右绿）、横缝 y=20（左竖带内上蓝下白）
+        expect(getPixel(29, 15)).toEqual([0, 0, 255])
+        expect(getPixel(30, 15)).toEqual([0, 255, 0])
+        expect(getPixel(25, 19)).toEqual([0, 0, 255])
+        expect(getPixel(25, 20)).toEqual([255, 255, 255])
+    })
+
     /** 一次渲染一个独立取样面（缓冲不清屏，避免跨渲染残影污染取样） */
     function renderStack(layers: readonly unknown[]) {
         const surface = makeSurfaceCtx()
@@ -756,4 +908,492 @@ describe('点位取样断言（背景色、cover 中缝）', () => {
         }
         return { width, height, data }
     }
+})
+
+describe('drawEllipse：椭圆绘制原语（ADR 0026 形状能力口，fill 与 stroke 一体）', () => {
+    it('fill+stroke 一体：ellipse 路径一次表达背景填充与圆周描边', () => {
+        const { ops, ctx } = fakeCtx()
+        new Canvas2DBackend(ctx).drawEllipse(10, 20, 100, 50, '#ff0000', { width: 2, color: '#0000ff' })
+
+        expect(ops).toEqual([
+            { call: 'beginPath', args: [] },
+            // 内切椭圆：圆心 = 矩形中点，半径 = 半宽/半高
+            { call: 'ellipse', args: [60, 45, 50, 25, 0, 0, Math.PI * 2] },
+            { call: 'fillStyle', args: ['#ff0000'] },
+            { call: 'fill', args: [] },
+            { call: 'strokeStyle', args: ['#0000ff'] },
+            { call: 'lineWidth', args: [2] },
+            { call: 'stroke', args: [] },
+        ])
+    })
+
+    it('fill null/空串跳过填充、仅描边（环步形态）；stroke null 仅填充', () => {
+        const strokeOnly = (() => {
+            const { ops, ctx } = fakeCtx()
+            new Canvas2DBackend(ctx).drawEllipse(0, 0, 40, 40, null, { width: 3, color: '#0f0' })
+            return ops
+        })()
+        expect(strokeOnly).toEqual([
+            { call: 'beginPath', args: [] },
+            { call: 'ellipse', args: [20, 20, 20, 20, 0, 0, Math.PI * 2] },
+            { call: 'strokeStyle', args: ['#0f0'] },
+            { call: 'lineWidth', args: [3] },
+            { call: 'stroke', args: [] },
+        ])
+
+        for (const fill of [null, '']) {
+            const { ops, ctx } = fakeCtx()
+            new Canvas2DBackend(ctx).drawEllipse(0, 0, 40, 40, fill, null)
+            expect(ops).toEqual([
+                { call: 'beginPath', args: [] },
+                { call: 'ellipse', args: [20, 20, 20, 20, 0, 0, Math.PI * 2] },
+            ])
+        }
+    })
+
+    it('非正宽高零副作用（ctx.ellipse 负半径抛 IndexSizeError，防线归后端）', () => {
+        const { ops, ctx } = fakeCtx()
+        const backend = new Canvas2DBackend(ctx)
+        backend.drawEllipse(0, 0, 0, 10, '#fff', { width: 1, color: '#000' })
+        backend.drawEllipse(0, 0, 10, -1, '#fff', null)
+        expect(ops).toEqual([])
+    })
+})
+
+describe('drawImageMasked：掩码 blit 原语（ADR 0026 形状能力口，drawImage 的掩码形态）', () => {
+    const srcRect = { x: 0, y: 0, width: 20, height: 10 }
+    const dstRect = { x: 5, y: 6, width: 40, height: 30 }
+    const maskRect = { x: 10, y: 11, width: 20, height: 20 }
+
+    it('双矩形 blit 语义一致 + 椭圆裁剪合成：save→内切椭圆→clip→drawImage 九参→restore', () => {
+        const { ops, ctx } = fakeCtx()
+        const backend = new Canvas2DBackend(ctx)
+        backend.setImage('a.png', { width: 200, height: 100 })
+
+        backend.drawImageMasked('a.png', srcRect, dstRect, maskRect)
+
+        expect(ops).toEqual([
+            { call: 'save', args: [] },
+            { call: 'beginPath', args: [] },
+            // 掩码 = maskRect 外接矩形的内切椭圆（分派层传正方形即圆）
+            { call: 'ellipse', args: [20, 21, 10, 10, 0, 0, Math.PI * 2] },
+            { call: 'clip', args: [] },
+            { call: 'drawImage', args: ['__image__', 0, 0, 20, 10, 5, 6, 40, 30] },
+            { call: 'restore', args: [] },
+        ])
+    })
+
+    it('dstRect ≤0 / 未注册 src / 非正掩码矩形：零副作用（drawImage 同门守卫提前收口）', () => {
+        const { ops, ctx } = fakeCtx()
+        const backend = new Canvas2DBackend(ctx)
+        backend.setImage('a.png', { width: 200, height: 100 })
+
+        backend.drawImageMasked('a.png', srcRect, { x: 0, y: 0, width: 0, height: 10 }, maskRect)
+        backend.drawImageMasked('missing.png', srcRect, dstRect, maskRect)
+        backend.drawImageMasked('a.png', srcRect, dstRect, { x: 0, y: 0, width: 0, height: 20 })
+        backend.drawImageMasked('a.png', srcRect, dstRect, { x: 0, y: 0, width: 20, height: -1 })
+        expect(ops).toEqual([])
+    })
+
+    it('整图哨兵语义与 drawImage 一致：srcRect 零宽高按注册图片取整图', () => {
+        const { ops, ctx } = fakeCtx()
+        const backend = new Canvas2DBackend(ctx)
+        backend.setImage('a.png', { width: 200, height: 100 })
+
+        backend.drawImageMasked('a.png', { x: 0, y: 0, width: 0, height: 0 }, dstRect, maskRect)
+
+        expect(ops.filter((op) => op.call === 'drawImage')).toEqual([
+            { call: 'drawImage', args: ['__image__', 0, 0, 200, 100, 5, 6, 40, 30] },
+        ])
+    })
+})
+
+describe('renderCanvas 圆形档接线（核心臂分派 × 本端两原语，js-canvas render/clip 同门）', () => {
+    it('clip=circle 三步调用序：椭圆背景填充 → 遮罩 blit → 椭圆周描边；矩形盒 rect/image 不参与', () => {
+        const { ops, ctx } = fakeCtx()
+        const backend = new Canvas2DBackend(ctx)
+        backend.setImage('a.png', { width: 40, height: 40 })
+
+        const doc = decodeGraph({
+            canvas: { width: 100, height: 100 },
+            layers: [{
+                type: 'ImageLayer',
+                spec: {
+                    shape: {
+                        width: 100,
+                        height: 100,
+                        backgroundColor: '#ffffff',
+                        border: {
+                            top: { width: 6, color: '#ff0000' },
+                            right: { width: 6, color: '#ff0000' },
+                            bottom: { width: 6, color: '#ff0000' },
+                            left: { width: 6, color: '#ff0000' },
+                        },
+                    },
+                    clip: 'circle',
+                },
+                data: { value: 'a.png' },
+            }],
+        })
+        renderCanvas(doc, backend)
+
+        expect(ops.map((op) => op.call)).toEqual([
+            'setTransform', 'clearRect',
+            'beginPath', 'ellipse', 'fillStyle', 'fill',
+            'save', 'beginPath', 'ellipse', 'clip', 'drawImage', 'restore',
+            'beginPath', 'ellipse', 'strokeStyle', 'lineWidth', 'stroke',
+        ])
+        // 描边椭圆与背景椭圆同一内切圆矩形
+        const ellipses = ops.filter((op) => op.call === 'ellipse')
+        expect(ellipses[0]).toEqual({ call: 'ellipse', args: [50, 50, 50, 50, 0, 0, Math.PI * 2] })
+        expect(ellipses[1]).toEqual(ellipses[0])
+        expect(ellipses[2]).toEqual(ellipses[0])
+        // 掩码 blit 的源窗/目标盒照 fit 几何（cover：40×40 方图进方盒零裁切）
+        expect(ops.find((op) => op.call === 'drawImage')).toEqual({
+            call: 'drawImage',
+            args: ['__image__', 0, 0, 40, 40, 0, 0, 100, 100],
+        })
+    })
+
+    it('forkWith 后代仍形状能力（导出路径 renderCanvas(doc, forkWith(ctx)) 同原语，工票 13 接线不动）', () => {
+        const { ctx } = fakeCtx()
+        const source = new Canvas2DBackend(ctx)
+        const fork = source.forkWith(fakeCtx().ctx)
+        expect(typeof fork.drawEllipse).toBe('function')
+        expect(typeof fork.drawImageMasked).toBe('function')
+    })
+})
+
+
+/**
+ * 圆形档像素取样（ADR 0026，PHP ImageClipRenderingTest 同矩阵，assertPixelSame
+ * 无黄金文件）：完整圆形框——背景色填进内切圆、内容按 fit 绘出后遮罩进圆、
+ * 边框沿圆周描成环；四角透明露下层、padding 区留白、非方盒恒正圆留透明边；
+ * circle × fit 正交组合；未知 clip 值降级矩形。采样点距圆缘 ≥2px 留过渡带余量。
+ */
+describe('圆形档像素取样（PHP ImageClipRenderingTest 同矩阵）', () => {
+    type RGB = [number, number, number]
+
+    interface PathEllipse {
+        cx: number
+        cy: number
+        rx: number
+        ry: number
+    }
+
+    function parseColor(css: string): RGB {
+        const hex = css.startsWith('#') ? css.slice(1) : ''
+        const full = hex.length === 3 ? hex.split('').map((c) => c + c).join('') : hex
+        return [
+            parseInt(full.slice(0, 2), 16),
+            parseInt(full.slice(2, 4), 16),
+            parseInt(full.slice(4, 6), 16),
+        ]
+    }
+
+    /**
+     * 带 path/clip 模型的取样面：drawEllipse 走 fill/stroke 光栅、掩码 blit 走
+     * clip 合成（椭圆内才落笔），缓冲不清屏（下层先画垫底、上层圆外不落笔即露出）
+     */
+    function clipSurfaceCtx(width = 100, height = 100) {
+        const buf = new Uint8ClampedArray(width * height * 3)
+        const setPx = (x: number, y: number, [r, g, b]: RGB) => {
+            const px = Math.floor(x)
+            const py = Math.floor(y)
+            if (px < 0 || px >= width || py < 0 || py >= height) return
+            const i = (py * width + px) * 3
+            buf[i] = r
+            buf[i + 1] = g
+            buf[i + 2] = b
+        }
+
+        const state = { fillStyle: '#000000', strokeStyle: '#000000', lineWidth: 1 }
+        let path: PathEllipse[] = []
+        let clipStack: readonly PathEllipse[] = []
+        const savedStacks: (readonly PathEllipse[])[] = []
+
+        // 像素中心采样判定；描边带对圆（rx=ry）取欧氏距离精确成立
+        const inEllipse = (e: PathEllipse, x: number, y: number): boolean => {
+            const dx = (x + 0.5 - e.cx) / e.rx
+            const dy = (y + 0.5 - e.cy) / e.ry
+            return dx * dx + dy * dy <= 1
+        }
+        const inClip = (x: number, y: number): boolean => clipStack.every((e) => inEllipse(e, x, y))
+
+        const ctx = {
+            canvas: { width, height },
+            set fillStyle(v: string) { state.fillStyle = v },
+            set strokeStyle(v: string) { state.strokeStyle = v },
+            set lineWidth(v: number) { state.lineWidth = v },
+            setTransform: () => {},
+            clearRect: () => {},
+            fillRect(x: number, y: number, w: number, h: number) {
+                const c = parseColor(state.fillStyle)
+                for (let dy = 0; dy < h; dy++) {
+                    for (let dx = 0; dx < w; dx++) setPx(x + dx, y + dy, c)
+                }
+            },
+            beginPath() {
+                path = []
+            },
+            ellipse(cx: number, cy: number, rx: number, ry: number) {
+                path.push({ cx, cy, rx, ry })
+            },
+            fill() {
+                const c = parseColor(state.fillStyle)
+                for (let y = 0; y < height; y++) {
+                    for (let x = 0; x < width; x++) {
+                        if (path.some((e) => inEllipse(e, x, y))) setPx(x, y, c)
+                    }
+                }
+            },
+            stroke() {
+                const c = parseColor(state.strokeStyle)
+                const half = state.lineWidth / 2
+                for (let y = 0; y < height; y++) {
+                    for (let x = 0; x < width; x++) {
+                        for (const e of path) {
+                            const dx = (x + 0.5 - e.cx) / e.rx
+                            const dy = (y + 0.5 - e.cy) / e.ry
+                            const t = Math.sqrt(dx * dx + dy * dy)
+                            // 归一化距离带折算最小半径：圆（rx=ry，描边测试唯一形态）下即欧氏距离带
+                            if (Math.abs(t - 1) * Math.min(e.rx, e.ry) <= half) {
+                                setPx(x, y, c)
+                                break
+                            }
+                        }
+                    }
+                }
+            },
+            clip() {
+                clipStack = [...clipStack, ...path]
+            },
+            save() {
+                savedStacks.push(clipStack)
+            },
+            restore() {
+                clipStack = savedStacks.pop() ?? []
+            },
+            drawImage(
+                img: { width: number; height: number; data: Uint8ClampedArray },
+                sx: number, sy: number, sw: number, sh: number,
+                dx: number, dy: number, dw: number, dh: number,
+            ) {
+                for (let py = 0; py < dh; py++) {
+                    const sY = sy + Math.floor((py * sh) / dh)
+                    for (let px = 0; px < dw; px++) {
+                        const x = dx + px
+                        const y = dy + py
+                        if (!inClip(x, y)) continue
+                        const sX = sx + Math.floor((px * sw) / dw)
+                        const si = (sY * img.width + sX) * 4
+                        setPx(x, y, [img.data[si]!, img.data[si + 1]!, img.data[si + 2]!])
+                    }
+                }
+            },
+        }
+        return {
+            ctx: ctx as unknown as CanvasRenderingContext2D,
+            getPixel: (x: number, y: number): RGB => {
+                const i = (y * width + x) * 3
+                return [buf[i]!, buf[i + 1]!, buf[i + 2]!]
+            },
+        }
+    }
+
+    /** 上下两色带源图（PHP bandPng 同款：遮罩采样源） */
+    function bandImage(width: number, height: number, top: RGB, bottom: RGB) {
+        const data = new Uint8ClampedArray(width * height * 4)
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                const [r, g, b] = y < height / 2 ? top : bottom
+                const i = (y * width + x) * 4
+                data[i] = r
+                data[i + 1] = g
+                data[i + 2] = b
+                data[i + 3] = 255
+            }
+        }
+        return { width, height, data }
+    }
+
+    function solidImage(width: number, height: number, [r, g, b]: RGB) {
+        const data = new Uint8ClampedArray(width * height * 4)
+        for (let i = 0; i < width * height; i++) {
+            data[i * 4] = r
+            data[i * 4 + 1] = g
+            data[i * 4 + 2] = b
+            data[i * 4 + 3] = 255
+        }
+        return { width, height, data }
+    }
+
+    function borderAll(width: number, color: string) {
+        return { top: { width, color }, right: { width, color }, bottom: { width, color }, left: { width, color } }
+    }
+
+    /** 一次渲染一个独立取样面；layers 为 decodeGraph 节点（priority 大者垫底） */
+    function renderDoc(layers: readonly unknown[], images: Readonly<Record<string, ReturnType<typeof solidImage>>>) {
+        const surface = clipSurfaceCtx()
+        const backend = new Canvas2DBackend(surface.ctx)
+        for (const [src, bitmap] of Object.entries(images)) backend.setImage(src, bitmap)
+        renderCanvas(decodeGraph({ canvas: { width: 100, height: 100 }, layers: [...layers] }), backend)
+        return surface.getPixel
+    }
+
+    it('背景填进内切圆：四角透明露下层，圆心与四向内点为背景色', () => {
+        const getPixel = renderDoc([
+            { type: 'ImageLayer', priority: 10, spec: { shape: { width: 100, height: 100, backgroundColor: '#ff0000' } } },
+            { type: 'ImageLayer', priority: 1, spec: { shape: { width: 100, height: 100, backgroundColor: '#00ff00' }, clip: 'circle' } },
+        ], {})
+
+        expect(getPixel(2, 2)).toEqual([255, 0, 0])
+        expect(getPixel(97, 2)).toEqual([255, 0, 0])
+        expect(getPixel(2, 97)).toEqual([255, 0, 0])
+        expect(getPixel(97, 97)).toEqual([255, 0, 0])
+        expect(getPixel(50, 50)).toEqual([0, 255, 0])
+        // 圆内四向中点（r=50，采样点距缘 ≥14px 留过渡带余量）
+        expect(getPixel(15, 50)).toEqual([0, 255, 0])
+        expect(getPixel(85, 50)).toEqual([0, 255, 0])
+        expect(getPixel(50, 15)).toEqual([0, 255, 0])
+        expect(getPixel(50, 85)).toEqual([0, 255, 0])
+    })
+
+    it('非方盒 100×50 恒正圆：左右留透明边、不变形为椭圆', () => {
+        const surface = clipSurfaceCtx(100, 50)
+        const backend = new Canvas2DBackend(surface.ctx)
+        renderCanvas(decodeGraph({
+            canvas: { width: 100, height: 50 },
+            layers: [
+                { type: 'ImageLayer', priority: 10, spec: { shape: { width: 100, height: 50, backgroundColor: '#ff0000' } } },
+                { type: 'ImageLayer', priority: 1, spec: { shape: { width: 100, height: 50, backgroundColor: '#ffff00' }, clip: 'circle' } },
+            ],
+        }), backend)
+
+        expect(surface.getPixel(50, 25)).toEqual([255, 255, 0])
+        expect(surface.getPixel(32, 25)).toEqual([255, 255, 0])
+        expect(surface.getPixel(50, 10)).toEqual([255, 255, 0])
+        expect(surface.getPixel(10, 25)).toEqual([255, 0, 0])
+        expect(surface.getPixel(90, 25)).toEqual([255, 0, 0])
+        expect(surface.getPixel(2, 2)).toEqual([255, 0, 0])
+    })
+
+    it('cover 遮罩进圆：圆内露图（上红下蓝）、圆外露下层', () => {
+        const getPixel = renderDoc([
+            { type: 'ImageLayer', priority: 10, spec: { shape: { width: 100, height: 100, backgroundColor: '#00ff00' } } },
+            { type: 'ImageLayer', priority: 1, spec: { shape: { width: 100, height: 100 }, clip: 'circle' }, data: { value: 'band.png' } },
+        ], { 'band.png': bandImage(100, 100, [255, 0, 0], [0, 0, 255]) })
+
+        expect(getPixel(50, 25)).toEqual([255, 0, 0])
+        expect(getPixel(50, 75)).toEqual([0, 0, 255])
+        expect(getPixel(2, 2)).toEqual([0, 255, 0])
+        expect(getPixel(97, 97)).toEqual([0, 255, 0])
+    })
+
+    it('环带描边：padding 12 + border 8 蓝，环带为描边色、环内露图、环外露下层（padding 即环外留白）', () => {
+        // 内切圆 side 76 center (50,50) r=38，Canvas2D 描边居中带 [34,42]，采样半径 36
+        const getPixel = renderDoc([
+            { type: 'ImageLayer', priority: 10, spec: { shape: { width: 100, height: 100, backgroundColor: '#ff0000' } } },
+            {
+                type: 'ImageLayer',
+                priority: 1,
+                spec: {
+                    shape: {
+                        width: 100,
+                        height: 100,
+                        padding: { top: 12, bottom: 12, left: 12, right: 12 },
+                        backgroundColor: '#ffffff',
+                        border: borderAll(8, '#0000ff'),
+                    },
+                    clip: 'circle',
+                },
+                data: { value: 'img.png' },
+            },
+        ], { 'img.png': solidImage(40, 40, [18, 52, 86]) })
+
+        expect(getPixel(14, 50)).toEqual([0, 0, 255])
+        expect(getPixel(86, 50)).toEqual([0, 0, 255])
+        expect(getPixel(50, 14)).toEqual([0, 0, 255])
+        expect(getPixel(50, 86)).toEqual([0, 0, 255])
+        // 环内被图覆盖：圆心 = 源图色（先背景填充后内容绘出，图遮住同圆的背景填充）
+        expect(getPixel(50, 50)).toEqual([18, 52, 86])
+        expect(getPixel(2, 2)).toEqual([255, 0, 0])
+        expect(getPixel(50, 5)).toEqual([255, 0, 0])
+    })
+
+    it('fill 拉伸再裁：整图非等比拉伸进内容盒后遮罩进内切圆', () => {
+        const surface = clipSurfaceCtx(100, 50)
+        const backend = new Canvas2DBackend(surface.ctx)
+        backend.setImage('img.png', solidImage(40, 40, [255, 0, 0]))
+        renderCanvas(decodeGraph({
+            canvas: { width: 100, height: 50 },
+            layers: [
+                { type: 'ImageLayer', priority: 10, spec: { shape: { width: 100, height: 50, backgroundColor: '#00ff00' } } },
+                { type: 'ImageLayer', priority: 1, spec: { shape: { width: 100, height: 50 }, fit: 'fill', clip: 'circle' }, data: { value: 'img.png' } },
+            ],
+        }), backend)
+
+        expect(surface.getPixel(50, 25)).toEqual([255, 0, 0])
+        expect(surface.getPixel(35, 25)).toEqual([255, 0, 0])
+        expect(surface.getPixel(10, 25)).toEqual([0, 255, 0])
+    })
+
+    it('contain 空隙在圆内仍透明：收缩矩形外的圆内区与圆外都露下层', () => {
+        const getPixel = renderDoc([
+            { type: 'ImageLayer', priority: 10, spec: { shape: { width: 100, height: 100, backgroundColor: '#00ff00' } } },
+            { type: 'ImageLayer', priority: 1, spec: { shape: { width: 100, height: 100 }, fit: 'contain', clip: 'circle' }, data: { value: 'band.png' } },
+        ], { 'band.png': bandImage(40, 10, [255, 0, 0], [0, 0, 255]) })
+
+        expect(getPixel(30, 40)).toEqual([255, 0, 0])
+        expect(getPixel(30, 55)).toEqual([0, 0, 255])
+        // 圆内（dist 40 < 50）但收缩矩形上方：透明露下层
+        expect(getPixel(50, 10)).toEqual([0, 255, 0])
+        expect(getPixel(2, 2)).toEqual([0, 255, 0])
+    })
+
+    it('tile 块出圆被遮：圆内块区露图、圆内锚点未覆盖区与圆外露下层', () => {
+        const getPixel = renderDoc([
+            { type: 'ImageLayer', priority: 10, spec: { shape: { width: 100, height: 100, backgroundColor: '#00ff00' } } },
+            { type: 'ImageLayer', priority: 1, spec: { shape: { width: 100, height: 100 }, fit: 'tile', clip: 'circle' }, data: { value: 'img.png' } },
+        ], { 'img.png': solidImage(40, 40, [255, 0, 0]) })
+
+        // 40×40 单元 center 锚定 (30,30)，可见块铺满 [30,100)²
+        expect(getPixel(35, 35)).toEqual([255, 0, 0])
+        expect(getPixel(50, 50)).toEqual([255, 0, 0])
+        expect(getPixel(15, 50)).toEqual([0, 255, 0])
+        expect(getPixel(5, 5)).toEqual([0, 255, 0])
+    })
+
+    it('未知 clip 值降级矩形：整盒铺图无遮罩、四角是图', () => {
+        const getPixel = renderDoc(
+            [{ type: 'ImageLayer', priority: 1, spec: { shape: { width: 100, height: 100 }, clip: 'star' }, data: { value: 'band.png' } }],
+            { 'band.png': bandImage(100, 100, [255, 0, 0], [0, 0, 255]) },
+        )
+
+        expect(getPixel(2, 2)).toEqual([255, 0, 0])
+        expect(getPixel(97, 97)).toEqual([0, 0, 255])
+        expect(getPixel(50, 25)).toEqual([255, 0, 0])
+    })
+
+    it('导出路径取样腿：forkWith 复制物化注册后渲染同一文档，圆形档在导出面呈现', () => {
+        // exportPreviewPng 的接线即 renderCanvas(doc, sourceBackend.forkWith(ctx))——
+        // 本腿以第二取样面扮演导出画布，证明物化回写与形状能力都随 fork 承载
+        const previewSurface = clipSurfaceCtx()
+        const source = new Canvas2DBackend(previewSurface.ctx)
+        source.setImage('band.png', bandImage(100, 100, [255, 0, 0], [0, 0, 255]))
+
+        const exportSurface = clipSurfaceCtx()
+        const doc = decodeGraph({
+            canvas: { width: 100, height: 100 },
+            layers: [
+                { type: 'ImageLayer', priority: 10, spec: { shape: { width: 100, height: 100, backgroundColor: '#00ff00' } } },
+                { type: 'ImageLayer', priority: 1, spec: { shape: { width: 100, height: 100 }, clip: 'circle' }, data: { value: 'band.png' } },
+            ],
+        })
+        renderCanvas(doc, source.forkWith(exportSurface.ctx))
+
+        expect(exportSurface.getPixel(50, 25)).toEqual([255, 0, 0])
+        expect(exportSurface.getPixel(50, 75)).toEqual([0, 0, 255])
+        expect(exportSurface.getPixel(2, 2)).toEqual([0, 255, 0])
+    })
 })

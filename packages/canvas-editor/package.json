@@ -1,6 +1,6 @@
 {
     "name": "@hankchen/canvas-editor",
-    "version": "0.9.0",
+    "version": "2.1.0",
     "license": "MIT",
     "description": "headless 编辑器内核：observable store、immer patches 双栈历史、工具状态机、选择/视口/命中/吸附/物化状态机/剪贴板——仅依赖 immer",
     "type": "module",
@@ -39,7 +39,7 @@
         "typecheck": "tsc --noEmit -p tsconfig.json"
     },
     "dependencies": {
-        "@hankchen/canvas": "^0.3.0",
+        "@hankchen/canvas": "^2.1.0",
         "@hankchen/canvas-browser-renderer": "workspace:*",
         "immer": "^11.1.18"
     },

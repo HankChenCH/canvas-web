@@ -14,7 +14,6 @@ export {
     type PreviewViewportTransform,
     type ViewportAwareBackend,
 } from './canvas2d-backend'
-export { coverCrop, type CropWindow } from './cover'
 export {
     builtinFontShorthand,
     canvasFontCssFamily,

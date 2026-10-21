@@ -241,29 +241,60 @@ const TEXT_SECTION: FieldSection = {
 }
 
 /**
- * 适配模式取值（image-fit 工单 05，ADR 0023）：镜像 js-canvas 的 IMAGE_FIT_*
- * 常量——内核 barrel 零 diff 红线不转出（editor-vue 禁直连 canvas），字面串对齐
- * wire 契约；v1 已知值仅 contain，未知值渲染面降级 cover（白名单在核心渲染臂）
+ * 适配模式取值（image-fit 工单 05，ADR 0023 起 contain、ADR 0024 扩四档）：镜像
+ * js-canvas 的 IMAGE_FIT_* 常量——内核 barrel 零 diff 红线不转出（editor-vue 禁直连
+ * canvas），字面串对齐 wire 契约；白名单分派在核心渲染臂，未知值渲染面降级 cover
  */
 const IMAGE_FIT_COVER = 'cover'
 const IMAGE_FIT_CONTAIN = 'contain'
+const IMAGE_FIT_FILL = 'fill'
+const IMAGE_FIT_TILE = 'tile'
+
+/**
+ * 裁剪形状取值（image-clip-shape 工票 05，ADR 0026 二档）：镜像 js-canvas 的
+ * IMAGE_CLIP_* 常量（fit 同款形态——内核 barrel 不转出，字面串对齐 wire 契约）；
+ * 白名单分派在核心渲染臂，未知值渲染面降级矩形
+ */
+const IMAGE_CLIP_RECT = 'rect'
+const IMAGE_CLIP_CIRCLE = 'circle'
 
 const IMAGE_SECTION: FieldSection = {
     title: '图片',
     // 上传控件（缩略图回显 + 上传 + 紧凑路径行）；静态值语义不变——data 门提交
     // 走 updateData（字面接管），引用形态（data URL/宿主存储）归 uploadHandler
     //
-    // 「适配」（ADR 0023，image-fit 工单 05）：静态声明二选一——铺满裁切（cover，
-    // 缺省）/完整显示（contain）；不带 data/resource 标记（无表达式态），提交走
-    // updateSpec 权威写。缺省态 wire 无键，读侧经 layerFieldTarget 投影回显 cover
+    // 「适配」（ADR 0024）：静态声明四选一——铺满裁切（cover，缺省）/完整显示
+    // （contain）/拉伸铺满（fill）/平铺（tile）；不带 data/resource 标记（无表达式
+    // 态），提交走 updateSpec 权威写。缺省态 wire 无键，读侧经 layerFieldTarget
+    // 投影回显 cover
+    //
+    // 「裁剪形状」（ADR 0026）：矩形（缺省，不裁）/圆形（完整圆形框——背景填进
+    // 内切圆、内容按适配绘出后遮罩进圆、边框沿圆周描环）；同不带表达式态，缺省态
+    // 读侧经 layerFieldTarget 投影回显 rect（fit 缺省投影同门）。仅图片层渲染 =
+    // IMAGE 区段注册面（其他 type 无此组），无需 visibleWhen
     fields: [
         { key: ['src'], label: '资源地址', control: 'imageSrc', data: true, resource: true },
         {
             key: ['fit'],
             label: '适配',
             control: 'select',
-            domain: [IMAGE_FIT_COVER, IMAGE_FIT_CONTAIN],
-            optionLabels: { [IMAGE_FIT_COVER]: '铺满裁切', [IMAGE_FIT_CONTAIN]: '完整显示' },
+            domain: [IMAGE_FIT_COVER, IMAGE_FIT_CONTAIN, IMAGE_FIT_FILL, IMAGE_FIT_TILE],
+            optionLabels: {
+                [IMAGE_FIT_COVER]: '铺满裁切',
+                [IMAGE_FIT_CONTAIN]: '完整显示',
+                [IMAGE_FIT_FILL]: '拉伸铺满',
+                [IMAGE_FIT_TILE]: '平铺',
+            },
+        },
+        {
+            key: ['clip'],
+            label: '裁剪形状',
+            control: 'select',
+            domain: [IMAGE_CLIP_RECT, IMAGE_CLIP_CIRCLE],
+            optionLabels: {
+                [IMAGE_CLIP_RECT]: '矩形',
+                [IMAGE_CLIP_CIRCLE]: '圆形',
+            },
         },
     ],
 }
@@ -445,12 +476,18 @@ export const EMPTY_CANVAS_BACKGROUND: CanvasBackground = { color: null, image: n
 /**
  * 图层级读取视图（image-fit 工单 05，canvasFieldTarget 同门）：ImageLayer 的 fit
  * 缺省态（wire 无键 = cover）投影为 cover——适配字段否则被 readField 的 ok:false
- * 过滤掉，选中任一未声明的图片层「适配」行即消失。已声明（含未知值）与非图片层
- * 原样透传（不拷贝不重整）；投影只作用读侧，提交仍走 updateSpec 直写文档
+ * 过滤掉，选中任一未声明的图片层「适配」行即消失；裁剪形状同门（image-clip-shape
+ * 工票 05，ADR 0026）：clip 缺省态（wire 无键 = rect）投影为 rect 回显。已声明
+ * （含未知值）与非图片层原样透传（不拷贝不重整）；投影只作用读侧，提交仍走
+ * updateSpec 直写文档（显式 rect/cover 落领域值，wire 归一不落键归核心 encode）
  */
 export function layerFieldTarget(layer: Layer): Layer {
-    if (layer.type === 'ImageLayer' && layer.fit === undefined) {
-        return { ...layer, fit: 'cover' }
+    if (layer.type === 'ImageLayer' && (layer.fit === undefined || layer.clip === undefined)) {
+        return {
+            ...layer,
+            ...(layer.fit === undefined ? { fit: 'cover' } : {}),
+            ...(layer.clip === undefined ? { clip: 'rect' } : {}),
+        }
     }
     return layer
 }
