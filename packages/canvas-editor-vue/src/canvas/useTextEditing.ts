@@ -451,10 +451,13 @@ export function useTextEditing(editor: EditorSession, hosts: TextEditingHosts): 
 
     // 窗口捕获阶段的指针桥：编辑中在画布外按下（属性面板/工具栏/页面其他处）
     // → 豁免紧随的 blur 提交，pointerup 恢复（按下未成焦点的场景也复位）。
-    // 工具条目标（工单 04）：字体下拉/字号输入/拾色器等输入件会真实夺焦（按钮
-    // 类由根拦 pointerdown 不夺焦），其引发的 textarea blur 与「点面板」同门
-    // 豁免——否则点开下拉/聚焦输入框即触发延迟提交、会话当场退出。画布内点按
-    // 不在此处理——表面组件的 pointerdown 显式走 commitNow。
+    // 工具条目标（工单 04；工票 03 触发钮同门）：字体下拉/字号输入/拾色器与三枚
+    // 下拉触发钮等输入件 @pointerdown.stop 会真实夺焦（自动换行等纯按钮由根拦
+    // pointerdown 不夺焦），其引发的 textarea blur 与「点面板」同门豁免——否则点
+    // 开下拉/聚焦输入框即触发延迟提交、会话当场退出（触发钮若走按钮类 root.prevent
+    // 路径，click→开菜单→焦点入菜单在 pointerup 复位之后，blur 越过豁免窗即退会
+    // 话——spec 决策 5 的时序约束）。画布内点按不在此处理——表面组件的
+    // pointerdown 显式走 commitNow。
     const onWindowPointerDown = (e: PointerEvent) => {
         if (editing.value === null) return
         const toolbar = hosts.getToolbar?.() ?? null

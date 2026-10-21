@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 /**
  * 编辑浮层工具条 + 表达式补全画布接线集成测试（canvas-web-edit-overlay-toolbar
- * 工单 03/04；前身 contentPill.mount.test.ts——内容类型切换浮层原地演进为工具条首段）。
+ * 工单 03/04；edit-toolbar-declutter 工票 03 下拉化——前身 contentPill.mount.test.ts，
+ * 内容类型 pill 与对齐两段三键分别换装为下拉，七段折六段）。
  *
- * 全链路（真实候选源 = 内核枚举器，非桩）：工具条随编辑会话开合（七段单行，选中态
+ * 全链路（真实候选源 = 内核枚举器，非桩）：工具条随编辑会话开合（六段单行，选中态
  * 不显示）；切换仅翻会话标志（零文档变更零历史步、textarea 实况保持）；屏幕恒定
  * 定位换算（图层框上缘中点的屏幕折算锚点、无 scale 变换——尺寸恒定可读可点，锚点
  * 随相机/缩放跟随；上缘放不下翻框下缘、水平钳制画布视口）；豁免集两目标（textarea +
@@ -11,11 +12,14 @@
  * 接受（监听次序钉住）；补全绑定 enabled 随会话模式翻转与候选源同源；锚点 scale
  * 折算消费（zoom 传入 measureCursorAnchor）。
  *
- * 工单 04（五组样式控件）：字体下拉｜字号步进｜字色拾色｜水平对齐三键｜垂直对齐
- * 三键｜自动换行开关——面板同门权威写（updateSpec + `sel:path:key` mergeKey），
- * 编辑框实时跟随；连续操作合并一步历史（步进 nudge 同门开放键、拾色拖动 input
- * 合并 change 收口）；字号读数恒场景值；新层样式槽随权威写捕获；表格格内容会话
- * 同等适用；工具条输入件夺焦引发 blur 被豁免（会话保持）。
+ * 工票 03（下拉化 + Tooltip 化）：内容类型下拉（触发钮 = 当前态文字 + ▾，菜单两条
+ * 纯文字项当前项打勾）与对齐两下拉（触发钮 = 当前值图标 + ▾，菜单项 = 图标 + 文字
+ * + 当前项打勾）的交互全走「点触发钮开菜单 → 点菜单项」两步；aria-pressed 断言改
+ * aria-checked（触发钮改 aria-expanded）；触发钮归输入件同门（@pointerdown.stop
+ * 放行夺焦——夺焦 blur 落豁免窗、会话保持；「pointerdown 不夺焦」断言迁到自动换
+ * 行钮）。写入门语义零变化：面板同门权威写（updateSpec + `sel:path:key`
+ * mergeKey）、步进合并、拾色 input/change 收口、字体注入缝、双入口并步、新层样式
+ * 槽、表格格内容会话同等适用。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, shallowRef } from 'vue'
@@ -78,7 +82,8 @@ if (typeof HTMLElement.prototype.setPointerCapture !== 'function') {
  * 工具条屏幕恒定尺寸桩：jsdom 无布局（offsetWidth/Height 恒 0），翻转/钳制/水平
  * 居中的换算断言需要确定尺寸——原型 getter 按根类名返回桩值（精确 token 匹配，
  * 其余元素照旧 0；本文件环境隔离，不外泄）。实现经 offsetWidth/offsetHeight 实测
- * （真实浏览器由 ResizeObserver 跟随），桩值即替身。
+ * （真实浏览器由 ResizeObserver 跟随），桩值即替身。真实条变窄（工票 03 六段）
+ * 不影响桩断言，RO 跟随是运行时行为。
  */
 const TOOLBAR_SIZE = { width: 240, height: 28 }
 for (const prop of ['offsetWidth', 'offsetHeight'] as const) {
@@ -168,16 +173,33 @@ async function type(wrapper: OverlayWrapper, value: string, cursor: number): Pro
 
 const toolbar = (wrapper: OverlayWrapper) => wrapper.find('[data-edit-toolbar]')
 const pill = (wrapper: OverlayWrapper) => wrapper.find('[data-content-pill]')
-const pillButton = (wrapper: OverlayWrapper, kind: 'static' | 'expression') =>
-    wrapper.find(`[data-pill-${kind}]`)
+/** 内容类型触发钮（下拉化形态；data-content-pill 钩子留在段上，触发钮经 a11y 属性定位） */
+const contentTrigger = (wrapper: OverlayWrapper) => wrapper.find('[data-content-pill] [aria-haspopup="menu"]')
 const popupOpen = (): boolean => document.body.querySelector('.cn-completion') !== null
 const optionSegments = (): string[] =>
     Array.from(document.body.querySelectorAll('.cn-completion__option')).map(
         (option) => option.querySelector('.cn-completion__segment')?.textContent ?? '',
     )
 
-async function clickPill(wrapper: OverlayWrapper, kind: 'static' | 'expression'): Promise<void> {
-    await pillButton(wrapper, kind).trigger('click')
+/**
+ * 开一个下拉菜单（真实指针手势的四拍）：触发钮是输入件同门（@pointerdown.stop
+ * 放行夺焦），pointerdown 先经窗口捕获桥置 blur 豁免 → click 开菜单、焦点入菜单
+ * （夺焦 blur 落在豁免窗，会话保持）→ 宏任务排干微任务链等焦点落定 → pointerup
+ * 复位豁免窗。缺 pointerdown 时焦点入菜单引发的 textarea blur 会走延迟提交、
+ * 会话当场退出（正是工票 03 时序约束的测试面）。
+ */
+async function openMenu(trigger: DOMWrapper<Element>): Promise<void> {
+    await trigger.trigger('pointerdown')
+    await trigger.trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await trigger.trigger('pointerup')
+    await nextTick()
+}
+
+/** 内容类型两步交互：点触发钮开菜单 → 点菜单项 */
+async function pickContentType(wrapper: OverlayWrapper, kind: 'static' | 'expression'): Promise<void> {
+    await openMenu(contentTrigger(wrapper))
+    await wrapper.find(`[data-pill-${kind}]`).trigger('click')
     await nextTick()
 }
 
@@ -190,7 +212,7 @@ beforeEach(() => {
     vi.mocked(measureCursorAnchor).mockClear()
 })
 
-describe('工具条骨架随编辑会话开合（此时仅内容类型一段）', () => {
+describe('工具条骨架随编辑会话开合（六段单行，工票 03 下拉化形态）', () => {
     it('非编辑态不渲染工具条', () => {
         const editor = makeEditor([textLayer()])
         const wrapper = mountOverlay(editor)
@@ -209,7 +231,7 @@ describe('工具条骨架随编辑会话开合（此时仅内容类型一段）'
         expect(toolbar(wrapper).exists()).toBe(false)
     })
 
-    it('字面层进入编辑：工具条挂载且静态项激活（骨架期仅内容类型一段）；提交退出随 textarea 同卸载', async () => {
+    it('字面层进入编辑：工具条挂载且内容类型触发钮显示当前态（静态 + ▾）；提交退出随 textarea 同卸载', async () => {
         const editor = makeEditor([textLayer()])
         const wrapper = mountOverlay(editor)
 
@@ -218,11 +240,14 @@ describe('工具条骨架随编辑会话开合（此时仅内容类型一段）'
         expect(toolbar(wrapper).exists()).toBe(true)
         expect(toolbar(wrapper).attributes('role')).toBe('toolbar')
         expect(pill(wrapper).exists()).toBe(true)
-        // 工单 04 起七段单行（段数断言见「五组样式段」describe）
-        expect(toolbar(wrapper).element.children).toHaveLength(7)
+        // 工票 03 起六段单行（段数断言见「六段单行」用例）
+        expect(toolbar(wrapper).element.children).toHaveLength(6)
         expect(wrapper.find('textarea').exists()).toBe(true)
-        expect(pillButton(wrapper, 'static').attributes('aria-pressed')).toBe('true')
-        expect(pillButton(wrapper, 'expression').attributes('aria-pressed')).toBe('false')
+        // 触发钮 = 当前态文字 + ▾，a11y 两属性（aria-haspopup + :aria-expanded）
+        const trigger = contentTrigger(wrapper)
+        expect(trigger.attributes('aria-haspopup')).toBe('menu')
+        expect(trigger.attributes('aria-expanded')).toBe('false')
+        expect(trigger.text()).toContain('静态')
 
         // 提交退出（串未变化零历史）：工具条与 textarea 同生共死
         await wrapper.find('textarea').trigger('keydown', { key: 'Escape' })
@@ -232,51 +257,62 @@ describe('工具条骨架随编辑会话开合（此时仅内容类型一段）'
         expect(wrapper.find('textarea').exists()).toBe(false)
     })
 
-    it('标记层进入编辑：表达式项激活（进入瞬间锚定，激活态 = 提交去向权威视图）', async () => {
+    it('标记层进入编辑：触发钮显示表达式（进入瞬间锚定，触发钮文字 = 提交去向权威视图）', async () => {
         const editor = makeEditor([textLayer({ text: '{{orderNo}}', expression: '{{orderNo}}' })])
         const wrapper = mountOverlay(editor)
 
         await beginEditing(wrapper, ['layers', 0])
 
         expect(editor.store.ui.editing).toEqual({ path: ['layers', 0], expression: true })
-        expect(pillButton(wrapper, 'expression').attributes('aria-pressed')).toBe('true')
-        expect(pillButton(wrapper, 'static').attributes('aria-pressed')).toBe('false')
+        expect(contentTrigger(wrapper).text()).toContain('表达式')
     })
 
-    it('字面层进入编辑：工具条七段单行（工单 04 五组样式段续接内容类型段）', async () => {
+    it('字面层进入编辑：工具条六段单行（工票 03：对齐两下拉同组，根段 7→6）', async () => {
         const editor = makeEditor([textLayer()])
         const wrapper = mountOverlay(editor)
 
         await beginEditing(wrapper, ['layers', 0])
 
-        // 七段左→右：内容类型｜字体｜字号步进｜字色｜水平对齐三键｜垂直对齐三键｜自动换行
+        // 六段左→右：内容类型｜字体｜字号步进｜字色｜对齐组（两下拉）｜自动换行
         const root = toolbar(wrapper).element
-        expect(root.children).toHaveLength(7)
+        expect(root.children).toHaveLength(6)
         expect(wrapper.find('[data-content-pill]').element).toBe(root.children[0])
         expect(wrapper.find('[data-toolbar-font]').exists()).toBe(true)
         expect(wrapper.find('[data-toolbar-font-size]').exists()).toBe(true)
         expect(wrapper.find('[data-toolbar-font-size-dec]').exists()).toBe(true)
         expect(wrapper.find('[data-toolbar-font-size-inc]').exists()).toBe(true)
         expect(wrapper.find('[data-toolbar-font-color]').exists()).toBe(true)
-        expect(wrapper.find('[data-toolbar-align-horizontal]').exists()).toBe(true)
-        expect(wrapper.find('[data-toolbar-align-vertical]').exists()).toBe(true)
         expect(wrapper.find('[data-toolbar-autowrap]').exists()).toBe(true)
-        // 对齐为两段三键（各三键），非九宫格
-        expect(wrapper.findAll('[data-toolbar-align-horizontal] button')).toHaveLength(3)
-        expect(wrapper.findAll('[data-toolbar-align-vertical] button')).toHaveLength(3)
+        // 对齐轴钩子挂触发钮（语义从「段」改挂「轴触发钮」，spec 决策 7）
+        expect(wrapper.find('[data-toolbar-align-horizontal]').attributes('aria-haspopup')).toBe('menu')
+        expect(wrapper.find('[data-toolbar-align-vertical]').attributes('aria-haspopup')).toBe('menu')
+        // 菜单收起时菜单项不在场（data-align-* 钩子挂菜单项，随开随现）
+        expect(wrapper.find('[data-align-h="left"]').exists()).toBe(false)
+        expect(wrapper.find('[data-pill-static]').exists()).toBe(false)
     })
 
-    it('对齐现值高亮（aria-pressed）与自动换行开关随文档现值', async () => {
+    it('对齐触发钮开菜单：当前值 aria-checked 打勾、aria-expanded 随开合；自动换行开关 aria-pressed 随文档现值', async () => {
         const editor = makeEditor([
             textLayer({ align: { horizontal: 'center', vertical: 'bottom' }, autowrap: true }),
         ])
         const wrapper = mountOverlay(editor)
         await beginEditing(wrapper, ['layers', 0])
 
-        expect(wrapper.find('[data-align-h="center"]').attributes('aria-pressed')).toBe('true')
-        expect(wrapper.find('[data-align-h="left"]').attributes('aria-pressed')).toBe('false')
-        expect(wrapper.find('[data-align-v="bottom"]').attributes('aria-pressed')).toBe('true')
-        expect(wrapper.find('[data-align-v="top"]').attributes('aria-pressed')).toBe('false')
+        const hTrigger = wrapper.find('[data-toolbar-align-horizontal]')
+        expect(hTrigger.attributes('aria-expanded')).toBe('false')
+        await openMenu(hTrigger)
+        expect(hTrigger.attributes('aria-expanded')).toBe('true')
+        expect(wrapper.find('[data-align-h="center"]').attributes('aria-checked')).toBe('true')
+        expect(wrapper.find('[data-align-h="left"]').attributes('aria-checked')).toBe('false')
+
+        // 收起再开垂直轴
+        await hTrigger.trigger('click')
+        await nextTick()
+        expect(hTrigger.attributes('aria-expanded')).toBe('false')
+        await openMenu(wrapper.find('[data-toolbar-align-vertical]'))
+        expect(wrapper.find('[data-align-v="bottom"]').attributes('aria-checked')).toBe('true')
+        expect(wrapper.find('[data-align-v="top"]').attributes('aria-checked')).toBe('false')
+
         expect(wrapper.find('[data-toolbar-autowrap]').attributes('aria-pressed')).toBe('true')
     })
 })
@@ -289,18 +325,24 @@ describe('内容类型段切换：仅翻会话标志（零文档变更零历史�
         const textarea = wrapper.find('textarea')
         textarea.element.value = '草稿{{'
 
-        await clickPill(wrapper, 'expression')
+        await pickContentType(wrapper, 'expression')
 
         expect(editor.store.ui.editing).toEqual({ path: ['layers', 0], expression: true })
         expect(editor.store.history).toHaveLength(0)
         const layer = editor.store.doc!.layers[0]!
         expect(layer.type === 'TextLayer' && layer.text).toBe('你好画布')
         expect(layer.type === 'TextLayer' && layer.expression).toBeNull()
-        expect(pillButton(wrapper, 'expression').attributes('aria-pressed')).toBe('true')
+        expect(contentTrigger(wrapper).text()).toContain('表达式')
         expect(textarea.element.value).toBe('草稿{{')
 
+        // 开菜单看当前项打勾：表达式项 aria-checked=true
+        await openMenu(contentTrigger(wrapper))
+        expect(wrapper.find('[data-pill-expression]').attributes('aria-checked')).toBe('true')
+        expect(wrapper.find('[data-pill-static]').attributes('aria-checked')).toBe('false')
+
         // 切回静态：同一会话内往返，仍零历史步
-        await clickPill(wrapper, 'static')
+        await wrapper.find('[data-pill-static]').trigger('click')
+        await nextTick()
         expect(editor.store.ui.editing).toEqual({ path: ['layers', 0], expression: false })
         expect(editor.store.history).toHaveLength(0)
     })
@@ -310,13 +352,13 @@ describe('内容类型段切换：仅翻会话标志（零文档变更零历史�
         const wrapper = mountOverlay(editor)
         await beginEditing(wrapper, ['layers', 0])
 
-        await clickPill(wrapper, 'static')
+        await pickContentType(wrapper, 'static')
 
         expect(editor.store.ui.editing).toEqual({ path: ['layers', 0], expression: false })
         expect(editor.store.history).toHaveLength(0)
         const layer = editor.store.doc!.layers[0]!
         expect(layer.type === 'TextLayer' && layer.expression).toBe('{{orderNo}}')
-        expect(pillButton(wrapper, 'static').attributes('aria-pressed')).toBe('true')
+        expect(contentTrigger(wrapper).text()).toContain('静态')
     })
 
     it('切换后的激活态即提交去向：表达式会话提交含合法片段串保持标记', async () => {
@@ -324,7 +366,7 @@ describe('内容类型段切换：仅翻会话标志（零文档变更零历史�
         const wrapper = mountOverlay(editor)
         await beginEditing(wrapper, ['layers', 0])
 
-        await clickPill(wrapper, 'expression')
+        await pickContentType(wrapper, 'expression')
         const textarea = wrapper.find('textarea')
         textarea.element.value = '{{orderNo}}'
         await textarea.trigger('keydown', { key: 'Enter', ctrlKey: true })
@@ -449,20 +491,23 @@ describe('翻转与水平钳制：上缘放不下翻框下缘，水平钳画布�
 })
 
 describe('豁免集：textarea + 整条工具条（表面组件指针分流用）', () => {
-    it('ownsEventTarget 覆盖 textarea 与工具条内目标，外部元素除外', async () => {
+    it('ownsEventTarget 覆盖 textarea、触发钮与开菜单后的菜单项，外部元素除外', async () => {
         const editor = makeEditor([textLayer()])
         const wrapper = mountOverlay(editor)
         await beginEditing(wrapper, ['layers', 0])
 
         expect(wrapper.vm.ownsEventTarget(wrapper.find('textarea').element)).toBe(true)
         expect(wrapper.vm.ownsEventTarget(toolbar(wrapper).element)).toBe(true)
-        expect(wrapper.vm.ownsEventTarget(pillButton(wrapper, 'expression').element)).toBe(true)
+        expect(wrapper.vm.ownsEventTarget(contentTrigger(wrapper).element)).toBe(true)
+        // 开菜单后菜单项仍在工具条 DOM 子树内（fixed 定位不改变包含关系）
+        await openMenu(contentTrigger(wrapper))
+        expect(wrapper.vm.ownsEventTarget(wrapper.find('[data-pill-expression]').element)).toBe(true)
         const outside = document.createElement('div')
         document.body.appendChild(outside)
         expect(wrapper.vm.ownsEventTarget(outside)).toBe(false)
     })
 
-    it('表面组件 pointerdown 命中工具条：不提交（commitNow）、不点选（selectAt）、会话保持', async () => {
+    it('表面组件 pointerdown 命中工具条（自动换行钮）：不夺焦（defaultPrevented）、不提交（commitNow）、不点选（selectAt）、会话保持', async () => {
         // 编辑层上方再放一层：豁免失效时 pointerdown 会提交并顺路点选上方层
         const surfaceEditor = new EditorSession({ scheduleFrame: nullScheduler })
         surfaceEditor.openDocument({
@@ -485,7 +530,9 @@ describe('豁免集：textarea + 整条工具条（表面组件指针分流用�
         await nextTick()
         surfaceEditor.setSelection(['layers', 1])
 
-        const button = surface.find('[data-pill-static]')
+        // 「pointerdown 不夺焦（defaultPrevented）」断言迁到纯按钮（自动换行开关
+        // ——按钮类走根拦 pointerdown 路径；触发钮是输入件同门，见输入件夺焦 describe）
+        const button = surface.find('[data-toolbar-autowrap]')
         expect(button.exists()).toBe(true)
         const event = new MouseEvent('pointerdown', {
             bubbles: true,
@@ -503,29 +550,32 @@ describe('豁免集：textarea + 整条工具条（表面组件指针分流用�
     })
 })
 
-// ---- 工单 04：五组样式控件（面板同门权威写 + 实时联动） ----
+// ---- 五组样式控件（面板同门权威写 + 实时联动；对齐两步交互） ----
 
 describe('样式段权威写：面板同门（updateSpec + sel:path:key mergeKey）', () => {
-    it('水平/垂直对齐三键：点按写 align、textarea 实时跟随、一次点击收口一步；已选中再点零历史', async () => {
+    it('水平/垂直对齐下拉：点菜单项写 align、textarea 实时跟随、一次变更收口一步；重复选当前值零历史', async () => {
         const editor = makeEditor([textLayer()])
         const wrapper = mountOverlay(editor)
         const textarea = await beginEditing(wrapper, ['layers', 0])
 
+        await openMenu(wrapper.find('[data-toolbar-align-horizontal]'))
         await wrapper.find('[data-align-h="center"]').trigger('click')
         await nextTick()
         let layer = editor.store.doc!.layers[0]!
         expect(layer.type === 'TextLayer' && layer.align.horizontal).toBe('center')
         expect(textarea.element.style.textAlign).toBe('center')
         expect(editor.store.history).toHaveLength(1)
-        expect(editor.store.history[0]!.mergeKey).toBeNull() // 一次点击 = change 收口一步
+        expect(editor.store.history[0]!.mergeKey).toBeNull() // 一次变更 = 收口一步
 
+        await openMenu(wrapper.find('[data-toolbar-align-vertical]'))
         await wrapper.find('[data-align-v="bottom"]').trigger('click')
         await nextTick()
         layer = editor.store.doc!.layers[0]!
         expect(layer.type === 'TextLayer' && layer.align.vertical).toBe('bottom')
         expect(editor.store.history).toHaveLength(2)
 
-        // 已选中分段再点：不上报（免冗余历史步，AlignField 同门）
+        // 重复选当前值（开菜单 → 点当前项）：不上报（免冗余历史步，AlignField 同门）
+        await openMenu(wrapper.find('[data-toolbar-align-horizontal]'))
         await wrapper.find('[data-align-h="center"]').trigger('click')
         expect(editor.store.history).toHaveLength(2)
     })
@@ -752,12 +802,13 @@ describe('表格格内容文本会话同等适用（工具条与写入路径）'
         expect(toolbar(wrapper).exists()).toBe(true)
         expect(wrapper.find('[data-toolbar-font-size]').exists()).toBe(true)
 
+        await openMenu(wrapper.find('[data-toolbar-align-horizontal]'))
         await wrapper.find('[data-align-h="center"]').trigger('click')
         await nextTick()
         const content = resolveLayer(editor.store.doc!, contentPath)
         expect(content !== null && content.type === 'TextLayer' && content.align.horizontal).toBe('center')
         expect(textarea.element.style.textAlign).toBe('center')
-        // 一次点击 = 收口一步（mergeKey 同门 `sel:path:key`，收口后置 null）
+        // 一次变更 = 收口一步（mergeKey 同门 `sel:path:key`，收口后置 null）
         expect(editor.store.history).toHaveLength(1)
         expect(editor.store.history[0]!.mergeKey).toBeNull()
     })
@@ -784,6 +835,35 @@ describe('工具条输入件夺焦：blur 豁免（会话保持）', () => {
         // 草稿落库）——textarea 已失焦后的二次 blur 不再发事件，故先 focus 复原
         textarea.element.focus()
         await select.trigger('pointerup')
+        textarea.element.blur()
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        expect(editor.store.history).toHaveLength(1)
+        expect(editor.store.doc!.layers[0]).toMatchObject({ text: '未提交的草稿' })
+        expect(editor.store.ui.editing).toBeNull()
+    })
+
+    it('下拉触发钮（输入件同门）：pointerdown 不拦默认（放行夺焦），夺焦 blur 不提交、会话保持', async () => {
+        const editor = makeEditor([textLayer()])
+        const wrapper = mountOverlay(editor)
+        const textarea = await beginEditing(wrapper, ['layers', 0])
+        textarea.element.value = '未提交的草稿'
+        await textarea.trigger('input')
+        const trigger = wrapper.find('[data-toolbar-align-horizontal]')
+
+        // 触发钮 @pointerdown.stop：根的 prevent 不生效（defaultPrevented=false，
+        // 真实浏览器由此夺焦），窗口捕获桥照常置豁免 → 夺焦 blur 不提交
+        const event = new MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 0 })
+        trigger.element.dispatchEvent(event)
+        expect(event.defaultPrevented).toBe(false)
+        textarea.element.blur()
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        expect(editor.store.history).toHaveLength(0)
+        expect(editor.store.ui.editing).toEqual({ path: ['layers', 0], expression: false })
+        expect(wrapper.find('textarea').exists()).toBe(true)
+
+        // pointerup 复位豁免：焦点先落回 textarea，再 blur 走既有提交路径
+        textarea.element.focus()
+        trigger.element.dispatchEvent(new MouseEvent('pointerup', { bubbles: true }))
         textarea.element.blur()
         await new Promise((resolve) => setTimeout(resolve, 0))
         expect(editor.store.history).toHaveLength(1)
@@ -875,7 +955,7 @@ describe('补全绑定：enabled 随会话模式翻转、候选源与面板同�
         expect(wrapper.find('textarea').element.value).toBe('{{') // 零配对（静态 {{ 是字面）
 
         // 工具条切表达式：enabled 实时翻转，同一 textarea 内 {{ 即配对出 }} 并弹候选
-        await clickPill(wrapper, 'expression')
+        await pickContentType(wrapper, 'expression')
         await type(wrapper, '{{', 2)
         expect(wrapper.find('textarea').element.value).toBe('{{}}')
         expect(popupOpen()).toBe(true)
@@ -890,7 +970,7 @@ describe('补全绑定：enabled 随会话模式翻转、候选源与面板同�
         await type(wrapper, '{{', 2)
         expect(popupOpen()).toBe(true)
 
-        await clickPill(wrapper, 'static')
+        await pickContentType(wrapper, 'static')
         expect(popupOpen()).toBe(false)
         expect(wrapper.find('textarea').exists()).toBe(true)
     })

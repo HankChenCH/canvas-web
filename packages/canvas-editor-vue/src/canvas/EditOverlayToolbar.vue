@@ -1,29 +1,52 @@
 <script setup lang="ts">
 /**
  * EditOverlayToolbar：编辑浮层工具条（canvas-web-edit-overlay-toolbar 工单 03/04，
- * ADR 0019）——ContentTypePill 原地演进：内容类型切换浮层降为工具条首段（CONTEXT
- * 词条「内容类型切换浮层」），工单 04 续接字体/字号/字色/水平对齐/垂直对齐/自动
- * 换行五组样式段成七段单行（左→右定稿布局，对齐为两段三键非九宫格）。
+ * ADR 0019；edit-toolbar-declutter 工票 03 下拉化重排）——内容类型由两键 pill 换为
+ * 下拉（shared DropdownMenu 底座，#trigger 受控插槽自绘触发钮），盒内对齐由两段
+ * 三键换为同一视觉段内两个独立下拉，全部控件的原生 title 换为 shared Tooltip
+ * （工票 01）。七段单行折为六段（内容类型｜字体｜字号｜字色｜对齐组｜自动换行），
+ * 纯折叠不重排（spec 决策 6）。
  *
  * - 编辑会话期由 TextEditingOverlay 内挂在图层框上缘中点（翻转/钳制换算在
  *   useTextEditing.toolbarStyle）；选中态不显示（工具条仅编辑会话期存在）。
- *   屏幕恒定尺寸：屏幕坐标定位、无 scale 变换（与 textarea/旧 pill 的场景像素
- *   换算系分叉，浮层定位两套并存），任何缩放级别下可读可点；字号段读数恒为
- *   场景像素值（文档值，不随 zoom 折算）。
- * - 内容类型段（静态｜表达式）：激活项高亮随 ui.editing.expression（会话活标志
- *   ，ADR 0019）；切换语义上抛 change 归绑定层 setExpressionMode（仅翻会话标志，
- *   零文档变更零历史步），本组件零状态（ValueTypeSegmented 同门）。
+ *   屏幕恒定尺寸：屏幕坐标定位、无 scale 变换（与 textarea 的场景像素换算系
+ *   分叉，浮层定位两套并存），任何缩放级别下可读可点；字号段读数恒为场景像素
+ *   值（文档值，不随 zoom 折算）。
+ * - 内容类型下拉（spec 决策 1）：触发钮 = 当前态文字（静态/表达式）+ ▾，菜单两
+ *   条纯文字项（不造图标——表达式无图标语汇）、当前项打勾（checked）。切换语义
+ *   零变化：仅翻会话标志（ui.editing.expression）、零文档变更零历史步，仍是模式
+ *   切换唯一入口，会话期面板内容面锁定随动；本组件零状态（ValueTypeSegmented
+ *   同门）。
+ * - 对齐两下拉（spec 决策 2）：同一视觉段相邻，组内不加分隔线、与前后段保持段
+ *   间距；触发钮 = 当前值图标（lucide 物件对齐族，映射沿用现有镜像）+ ▾，菜单项
+ *   = 图标 + 常显文字 + 当前项打勾 + 值目验钩子。重复选当前值不上报（零历史步
+ *   守卫保留）；一次变更 = updateSpec 收口一步（mergeKey 语义不变）；编辑框实时
+ *   联动（textEditLayout 现算，零改动）。
  * - 五组样式段（工单 04）：显示值全部来自 props（TextEditingOverlay 投影内核
  *   textEditLayout——面板/工具条双入口同源，state 无分叉）；写入上抛 style 归
  *   绑定层 updateStyleField（面板同门权威写：updateSpec + `sel:path:key`
  *   mergeKey，新层样式槽随权威写自动捕获）。合并语义与面板一致——select/change
  *   类一次点击 = final 收口一步；拾色拖动 input live 合并、change 收口；字号
  *   步进连续点按合并（nudge 同门开放键）。本组件零状态（字号输入草稿除外）。
- * - 焦点语义：根拦 pointerdown 默认行为——按钮类点按不夺 textarea 焦点（免 blur
- *   延迟提交路径）；字体下拉/字号输入/拾色器三输入件 @pointerdown.stop 放行
- *   默认行为（可聚焦/可开弹层），其夺焦引发的 blur 由 useTextEditing 豁免（
- *   点面板同门）。不 stop 冒泡（输入件除外）——豁免判定（ownsEventTarget 覆盖
- *   整条工具条）仍由表面组件 pointerdown 处理器亲见。
+ * - 触发钮归输入件同门（@pointerdown.stop 放行夺焦，spec 决策 5）——时序约束：
+ *   窗口捕获桥 pointerdown 置 blur 豁免、pointerup 复位；若走按钮类 root.prevent
+ *   路径（不夺焦），click → 开菜单 → 焦点入菜单发生在复位之后，textarea 的 blur
+ *   将越过豁免窗触发延迟提交、会话当场退出。stop 放行使夺焦 blur 落在豁免窗内
+ *   （字体下拉/拾色器既有同门）。.stop 只阻断根的 preventDefault，不阻断窗口
+ *   捕获桥（capture 先于目标段）——豁免判定（ownsEventTarget 覆盖整条工具条）
+ *   仍由表面组件 pointerdown 处理器亲见。
+ *   已知组合面（工票 01 消费备注的呈现面）：Tooltip focusin 即时出泡，鼠标点触
+ *   发钮会出现「pointerdown 隐 → 夺焦 focusin 再显」的一帧回显，菜单分发回焦触
+ *   发钮时气泡即时现出（焦点在哪提示跟到哪，是 Tooltip 的键盘可达设计）；气泡
+ *   pointer-events:none 不劫持指针，与下拉的交互语义无冲突。
+ * - data-* 目验钩子映射（spec 决策 7）：data-content-pill 段上不动；
+ *   data-pill-static/expression → 内容类型菜单项；data-toolbar-align-horizontal/
+ *   vertical → 对齐轴触发钮（语义从「段」改挂「轴触发钮」）；data-align-h/v=<值>
+ *   → 对齐菜单项；data-toolbar-font / -font-size(-dec/-inc) / -font-color /
+ *   -autowrap 不动。
+ * - 无障碍（spec 决策 8）：原生 title 清零，全部控件接 Tooltip（悬停 + 键盘聚焦
+ *   出泡、aria-describedby 随显隐写摘）；自动换行开关 aria-pressed 保留；菜单项
+ *   可勾选态 role=menuitemradio + aria-checked 由底座按 checked 字段渲染（工票 02）。
  * - 视觉令牌自带主题（ContextMenu 同门，不依赖宿主接线）。
  */
 import type { LucideIcon } from '@lucide/vue'
@@ -47,11 +70,14 @@ import {
     type VerticalAlign,
 } from '@hankchen/canvas-editor'
 
+import DropdownMenu from '../shared/DropdownMenu.vue'
 import { injectFontPicker } from '../shared/fontPicker'
 import PanelIcon from '../shared/PanelIcon.vue'
+import Tooltip from '../shared/Tooltip.vue'
+import type { DropdownMenuEntry } from '../shared/useDropdownMenu'
 
 const props = defineProps<{
-    /** 当前会话模式（ui.editing.expression 投影）：激活项高亮随之 */
+    /** 当前会话模式（ui.editing.expression 投影）：触发钮文字与菜单勾选随之 */
     mode: 'static' | 'expression'
     /** 字体引用（textEditLayout.font 原串；空串 = 内置默认字体） */
     font: string
@@ -83,11 +109,25 @@ function write(key: readonly string[], value: unknown, final: boolean): void {
     emit('styleWrite', { key, value, final })
 }
 
-/** 两项静态定义（内容类型段，原 pill 的段定义原地收编为首段） */
-const SEGMENTS: readonly { value: 'static' | 'expression'; label: string }[] = [
+// ---- 内容类型下拉段（工票 03：两键 pill 原地换装下拉，菜单项 = 原 pill 键面） ----
+
+/** 两项静态定义（原 pill 的段定义原地收编为菜单项源） */
+const MODES: readonly { value: 'static' | 'expression'; label: string }[] = [
     { value: 'static', label: '静态' },
     { value: 'expression', label: '表达式' },
 ]
+
+const modeLabel = computed(() => (props.mode === 'expression' ? '表达式' : '静态'))
+
+/** 菜单项：纯文字 + 当前项打勾；data-pill-* 目验钩子自段移挂菜单项（spec 决策 7） */
+const contentTypeItems = computed<DropdownMenuEntry[]>(() =>
+    MODES.map((mode) => ({
+        label: mode.label,
+        checked: mode.value === props.mode,
+        dataAttrs: { [`data-pill-${mode.value}`]: 'true' },
+        run: () => pick(mode.value),
+    })),
+)
 
 function pick(value: 'static' | 'expression'): void {
     if (value === props.mode) return
@@ -194,26 +234,48 @@ function onColorChange(event: Event): void {
     write(['fontColor'], (event.target as HTMLInputElement).value, true)
 }
 
-// ---- 对齐两段三键（现值高亮；图标映射 AlignField 同门镜像——域隔离各自持有） ----
+// ---- 对齐组两下拉（工票 03：两段三键收编为同组两下拉；图标映射 AlignField 同门镜像——域隔离各自持有） ----
 
-const HALIGN_META: Record<HorizontalAlign, { icon: LucideIcon; title: string }> = {
-    left: { icon: AlignStartVertical, title: '左对齐' },
-    center: { icon: AlignCenterVertical, title: '居中对齐' },
-    right: { icon: AlignEndVertical, title: '右对齐' },
+const HALIGN_META: Record<HorizontalAlign, { icon: LucideIcon; label: string }> = {
+    left: { icon: AlignStartVertical, label: '左对齐' },
+    center: { icon: AlignCenterVertical, label: '居中对齐' },
+    right: { icon: AlignEndVertical, label: '右对齐' },
 }
 
-const VALIGN_META: Record<VerticalAlign, { icon: LucideIcon; title: string }> = {
-    top: { icon: AlignStartHorizontal, title: '顶对齐' },
-    center: { icon: AlignCenterHorizontal, title: '居中对齐' },
-    bottom: { icon: AlignEndHorizontal, title: '底对齐' },
+const VALIGN_META: Record<VerticalAlign, { icon: LucideIcon; label: string }> = {
+    top: { icon: AlignStartHorizontal, label: '顶对齐' },
+    center: { icon: AlignCenterHorizontal, label: '居中对齐' },
+    bottom: { icon: AlignEndHorizontal, label: '底对齐' },
 }
 
-const HALIGN_OPTIONS = HORIZONTAL_ALIGNS.map((value) => ({ value, ...HALIGN_META[value] }))
-const VALIGN_OPTIONS = VERTICAL_ALIGNS.map((value) => ({ value, ...VALIGN_META[value] }))
+/** 菜单项：图标 + 常显文字 + 当前项打勾；data-align-h/v=<值> 钩子挂菜单项（spec 决策 7） */
+const hAlignItems = computed<DropdownMenuEntry[]>(() =>
+    HORIZONTAL_ALIGNS.map((value) => ({
+        label: HALIGN_META[value].label,
+        icon: HALIGN_META[value].icon,
+        checked: value === props.horizontalAlign,
+        dataAttrs: { 'data-align-h': value },
+        run: () => pickAlign('horizontal', value),
+    })),
+)
+
+const vAlignItems = computed<DropdownMenuEntry[]>(() =>
+    VERTICAL_ALIGNS.map((value) => ({
+        label: VALIGN_META[value].label,
+        icon: VALIGN_META[value].icon,
+        checked: value === props.verticalAlign,
+        dataAttrs: { 'data-align-v': value },
+        run: () => pickAlign('vertical', value),
+    })),
+)
+
+/** 触发钮当前值图标（不展开菜单即可读出当前对齐状态，spec 故事 3） */
+const hAlignIcon = computed(() => HALIGN_META[props.horizontalAlign].icon)
+const vAlignIcon = computed(() => VALIGN_META[props.verticalAlign].icon)
 
 function pickAlign(axis: 'horizontal' | 'vertical', value: HorizontalAlign | VerticalAlign): void {
     if (value === (axis === 'horizontal' ? props.horizontalAlign : props.verticalAlign)) return
-    // 已选中分段不上报（免冗余历史步，AlignField 同门）；一次点击 = 收口一步
+    // 已选中值不上报（免冗余历史步，AlignField 同门）；一次变更 = 收口一步
     write(axis === 'horizontal' ? ['align', 'horizontal'] : ['align', 'vertical'], value, true)
 }
 
@@ -233,132 +295,167 @@ function toggleAutowrap(): void {
         data-edit-toolbar
         @pointerdown.prevent
     >
-        <!-- 段 1：内容类型（首段，原 pill 本体）：data-content-pill / data-pill-* 目验
-             与测试钩子沿用（模式切换唯一入口，会话期面板锁定段同源随动） -->
+        <!-- 段 1：内容类型下拉（首段，原 pill 本体换装；工票 03）：data-content-pill
+             目验钩子留段上（spec 决策 7），data-pill-* 移挂菜单项。触发钮经 #trigger
+             受控插槽自绘（当前态文字 + ▾，a11y 两属性由消费方写）——@pointerdown.stop
+             归输入件同门放行夺焦（见头注时序约束） -->
         <span class="cn-edit-toolbar__segment" role="group" aria-label="内容类型" data-content-pill>
-            <button
-                v-for="segment in SEGMENTS"
-                :key="segment.value"
-                type="button"
-                class="cn-edit-toolbar__item"
-                :class="{ 'cn-edit-toolbar__item--active': segment.value === mode }"
-                :aria-pressed="segment.value === mode"
-                :data-pill-static="segment.value === 'static' ? true : undefined"
-                :data-pill-expression="segment.value === 'expression' ? true : undefined"
-                @click="pick(segment.value)"
-            >
-                {{ segment.label }}
-            </button>
+            <DropdownMenu label="内容类型" :items="contentTypeItems">
+                <template #trigger="{ open, toggle, triggerRef, onKeydown }">
+                    <Tooltip label="内容类型">
+                        <button
+                            :ref="triggerRef"
+                            type="button"
+                            class="cn-edit-toolbar__item cn-edit-toolbar__menu-trigger"
+                            aria-haspopup="menu"
+                            :aria-expanded="open"
+                            @pointerdown.stop
+                            @click="toggle"
+                            @keydown="onKeydown"
+                        >
+                            {{ modeLabel }}
+                            <span class="cn-edit-toolbar__caret" aria-hidden="true">▾</span>
+                        </button>
+                    </Tooltip>
+                </template>
+            </DropdownMenu>
         </span>
         <!-- 段 2：字体下拉（清单注入缝，未注入退化两态；输入件 stop 放行聚焦/开弹层） -->
         <span class="cn-edit-toolbar__segment">
-            <select
-                class="cn-edit-toolbar__font"
-                data-toolbar-font
-                :value="font"
-                title="字体"
-                @pointerdown.stop
-                @change="onFontChange"
-            >
-                <option v-for="option in fontOptions" :key="option.value" :value="option.value">
-                    {{ option.label }}
-                </option>
-            </select>
+            <Tooltip label="字体">
+                <select
+                    class="cn-edit-toolbar__font"
+                    data-toolbar-font
+                    :value="font"
+                    aria-label="字体"
+                    @pointerdown.stop
+                    @change="onFontChange"
+                >
+                    <option v-for="option in fontOptions" :key="option.value" :value="option.value">
+                        {{ option.label }}
+                    </option>
+                </select>
+            </Tooltip>
         </span>
         <!-- 段 3：字号步进（读数恒场景像素——屏幕恒定尺寸下与属性面板、终图一致） -->
         <span class="cn-edit-toolbar__segment" role="group" aria-label="字号">
-            <button
-                type="button"
-                class="cn-edit-toolbar__mini"
-                data-toolbar-font-size-dec
-                title="字号减 1"
-                @click="stepSize(-1)"
-            >
-                <PanelIcon :icon="Minus" :size="11" />
-            </button>
-            <input
-                v-model="sizeDraft"
-                class="cn-edit-toolbar__size"
-                data-toolbar-font-size
-                type="number"
-                :min="SIZE_MIN"
-                :step="1"
-                :aria-label="`字号（场景像素）`"
-                title="字号（场景像素）"
-                @pointerdown.stop
-                @input="onSizeInput"
-                @change="onSizeFinish"
-                @blur="onSizeFinish"
-                @focus="sizeFocused = true"
-            />
-            <button
-                type="button"
-                class="cn-edit-toolbar__mini"
-                data-toolbar-font-size-inc
-                title="字号加 1"
-                @click="stepSize(1)"
-            >
-                <PanelIcon :icon="Plus" :size="11" />
-            </button>
+            <Tooltip label="字号减 1">
+                <button
+                    type="button"
+                    class="cn-edit-toolbar__mini"
+                    data-toolbar-font-size-dec
+                    aria-label="字号减 1"
+                    @click="stepSize(-1)"
+                >
+                    <PanelIcon :icon="Minus" :size="11" />
+                </button>
+            </Tooltip>
+            <Tooltip label="字号（场景像素）">
+                <input
+                    v-model="sizeDraft"
+                    class="cn-edit-toolbar__size"
+                    data-toolbar-font-size
+                    type="number"
+                    :min="SIZE_MIN"
+                    :step="1"
+                    :aria-label="`字号（场景像素）`"
+                    @pointerdown.stop
+                    @input="onSizeInput"
+                    @change="onSizeFinish"
+                    @blur="onSizeFinish"
+                    @focus="sizeFocused = true"
+                />
+            </Tooltip>
+            <Tooltip label="字号加 1">
+                <button
+                    type="button"
+                    class="cn-edit-toolbar__mini"
+                    data-toolbar-font-size-inc
+                    aria-label="字号加 1"
+                    @click="stepSize(1)"
+                >
+                    <PanelIcon :icon="Plus" :size="11" />
+                </button>
+            </Tooltip>
         </span>
         <!-- 段 4：字色拾色（输入件 stop 放行聚焦/开取色器） -->
         <span class="cn-edit-toolbar__segment">
-            <input
-                class="cn-edit-toolbar__color"
-                data-toolbar-font-color
-                type="color"
-                :value="swatchHex"
-                aria-label="字色"
-                title="字色"
-                @pointerdown.stop
-                @input="onColorInput"
-                @change="onColorChange"
-            />
+            <Tooltip label="字色">
+                <input
+                    class="cn-edit-toolbar__color"
+                    data-toolbar-font-color
+                    type="color"
+                    :value="swatchHex"
+                    aria-label="字色"
+                    @pointerdown.stop
+                    @input="onColorInput"
+                    @change="onColorChange"
+                />
+            </Tooltip>
         </span>
-        <!-- 段 5/6：水平/垂直对齐三键（现值 accent 高亮，两段三键非九宫格——定稿布局） -->
-        <span class="cn-edit-toolbar__segment" role="group" aria-label="水平对齐" data-toolbar-align-horizontal>
-            <button
-                v-for="option in HALIGN_OPTIONS"
-                :key="option.value"
-                type="button"
-                class="cn-edit-toolbar__item cn-edit-toolbar__icon-item"
-                :class="{ 'cn-edit-toolbar__item--active': option.value === horizontalAlign }"
-                :aria-pressed="option.value === horizontalAlign"
-                :title="`水平对齐：${option.title}`"
-                :data-align-h="option.value"
-                @click="pickAlign('horizontal', option.value)"
-            >
-                <PanelIcon :icon="option.icon" :size="12" />
-            </button>
+        <!-- 段 5：对齐组（工票 03：两下拉相邻同组，组内不加分隔线；触发钮 = 当前值
+             图标 + ▾，轴 aria-label 与 data-toolbar-align-* 钩子挂触发钮；菜单项 =
+             图标 + 文字 + 当前项打勾，data-align-h/v=<值> 挂菜单项）。触发钮同为
+             输入件同门（@pointerdown.stop 放行夺焦，见头注时序约束） -->
+        <span class="cn-edit-toolbar__segment cn-edit-toolbar__align-group" role="group" aria-label="对齐">
+            <DropdownMenu label="水平对齐" :items="hAlignItems">
+                <template #trigger="{ open, toggle, triggerRef, onKeydown }">
+                    <Tooltip label="水平对齐">
+                        <button
+                            :ref="triggerRef"
+                            type="button"
+                            class="cn-edit-toolbar__item cn-edit-toolbar__icon-item cn-edit-toolbar__menu-trigger"
+                            data-toolbar-align-horizontal
+                            aria-label="水平对齐"
+                            aria-haspopup="menu"
+                            :aria-expanded="open"
+                            @pointerdown.stop
+                            @click="toggle"
+                            @keydown="onKeydown"
+                        >
+                            <PanelIcon :icon="hAlignIcon" :size="12" />
+                            <span class="cn-edit-toolbar__caret" aria-hidden="true">▾</span>
+                        </button>
+                    </Tooltip>
+                </template>
+            </DropdownMenu>
+            <DropdownMenu label="垂直对齐" :items="vAlignItems">
+                <template #trigger="{ open, toggle, triggerRef, onKeydown }">
+                    <Tooltip label="垂直对齐">
+                        <button
+                            :ref="triggerRef"
+                            type="button"
+                            class="cn-edit-toolbar__item cn-edit-toolbar__icon-item cn-edit-toolbar__menu-trigger"
+                            data-toolbar-align-vertical
+                            aria-label="垂直对齐"
+                            aria-haspopup="menu"
+                            :aria-expanded="open"
+                            @pointerdown.stop
+                            @click="toggle"
+                            @keydown="onKeydown"
+                        >
+                            <PanelIcon :icon="vAlignIcon" :size="12" />
+                            <span class="cn-edit-toolbar__caret" aria-hidden="true">▾</span>
+                        </button>
+                    </Tooltip>
+                </template>
+            </DropdownMenu>
         </span>
-        <span class="cn-edit-toolbar__segment" role="group" aria-label="垂直对齐" data-toolbar-align-vertical>
-            <button
-                v-for="option in VALIGN_OPTIONS"
-                :key="option.value"
-                type="button"
-                class="cn-edit-toolbar__item cn-edit-toolbar__icon-item"
-                :class="{ 'cn-edit-toolbar__item--active': option.value === verticalAlign }"
-                :aria-pressed="option.value === verticalAlign"
-                :title="`垂直对齐：${option.title}`"
-                :data-align-v="option.value"
-                @click="pickAlign('vertical', option.value)"
-            >
-                <PanelIcon :icon="option.icon" :size="12" />
-            </button>
-        </span>
-        <!-- 段 7：自动换行开关 -->
+        <!-- 段 6：自动换行开关（纯按钮：根拦 pointerdown 不夺焦，aria-pressed 保留） -->
         <span class="cn-edit-toolbar__segment">
-            <button
-                type="button"
-                class="cn-edit-toolbar__item cn-edit-toolbar__icon-item"
-                :class="{ 'cn-edit-toolbar__item--active': autowrap }"
-                :aria-pressed="autowrap"
-                data-toolbar-autowrap
-                title="自动换行"
-                @click="toggleAutowrap"
-            >
-                <PanelIcon :icon="TextWrap" :size="12" />
-            </button>
+            <Tooltip label="自动换行">
+                <button
+                    type="button"
+                    class="cn-edit-toolbar__item cn-edit-toolbar__icon-item"
+                    :class="{ 'cn-edit-toolbar__item--active': autowrap }"
+                    :aria-pressed="autowrap"
+                    data-toolbar-autowrap
+                    aria-label="自动换行"
+                    @click="toggleAutowrap"
+                >
+                    <PanelIcon :icon="TextWrap" :size="12" />
+                </button>
+            </Tooltip>
         </span>
     </div>
 </template>
@@ -406,6 +503,11 @@ function toggleAutowrap(): void {
     border-radius: 5px;
 }
 
+/* 对齐组（工票 03）：两下拉相邻同组，组内不加分隔线，仅留呼吸空隙 */
+.cn-edit-toolbar__align-group {
+    gap: 2px;
+}
+
 .cn-edit-toolbar__item {
     padding: 3px 10px;
     border: 0;
@@ -415,10 +517,6 @@ function toggleAutowrap(): void {
     line-height: 1.4;
     white-space: nowrap;
     cursor: pointer;
-}
-
-.cn-edit-toolbar__item + .cn-edit-toolbar__item {
-    border-left: 1px solid var(--cn-line);
 }
 
 .cn-edit-toolbar__item:hover {
@@ -431,12 +529,25 @@ function toggleAutowrap(): void {
     cursor: default;
 }
 
-/* 图标键（对齐三键/换行开关）：内容类型段的文字键窄一档 */
+/* 图标键（换行开关/对齐触发钮）：文字键窄一档 */
 .cn-edit-toolbar__icon-item {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     padding: 3px 6px;
+}
+
+/* 下拉触发钮（工票 03）：当前值/当前态 + ▾ 指示的同排小组合 */
+.cn-edit-toolbar__menu-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+}
+
+.cn-edit-toolbar__caret {
+    font-size: 10px;
+    line-height: 1;
+    color: var(--cn-muted);
 }
 
 /* 字体下拉：紧凑暗色（清单外引用由选项面兜底，不撑条） */
