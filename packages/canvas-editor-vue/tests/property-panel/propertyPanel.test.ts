@@ -52,6 +52,13 @@ const textLayer = (overrides: Record<string, unknown> = {}): Layer => ({
     ...overrides,
 } as Layer)
 
+/** 按行标签定位 select（图片层表单 fit/clip 双 select，image-clip-shape 起不再唯一） */
+function selectByLabel(wrapper: ReturnType<typeof mount>, label: string) {
+    const row = wrapper.findAll('label').find((l) => l.text().includes(label))
+    expect(row, `label「${label}」的行存在`).toBeTruthy()
+    return row!.find('select')
+}
+
 describe('PropertyField：<component :is> 注册表分发', () => {
     it('按 control 类型分发到注册表组件', () => {
         const field: FieldDef = { key: ['position', 'x'], label: 'X', control: 'number', integer: true }
@@ -927,13 +934,6 @@ describe('适配字段（image-fit 工单 05，ADR 0024 四档）：可写可回
         return { editor, wrapper }
     }
 
-    /** 按行标签定位 select（图片层表单 fit/clip 双 select，image-clip-shape 起不再唯一） */
-    function selectByLabel(wrapper: ReturnType<typeof mount>, label: string) {
-        const row = wrapper.findAll('label').find((l) => l.text().includes(label))
-        expect(row, `label「${label}」的行存在`).toBeTruthy()
-        return row!.find('select')
-    }
-
     it('缺省回显铺满裁切：wire 无 fit 键的层经投影读 cover，选项为中文文案（四档，ADR 0024）', async () => {
         const { editor, wrapper } = await mountWithEditor([imageLayer()])
         expect(editor.store.doc!.layers[0]!.type === 'ImageLayer' && editor.store.doc!.layers[0]!.fit).toBeUndefined()
@@ -996,12 +996,6 @@ describe('裁剪形状字段（image-clip-shape 工票 05，ADR 0026 二档）�
         editor.setSelection(['layers', 0])
         await wrapper.vm.$nextTick()
         return { editor, wrapper }
-    }
-
-    function selectByLabel(wrapper: ReturnType<typeof mount>, label: string) {
-        const row = wrapper.findAll('label').find((l) => l.text().includes(label))
-        expect(row, `label「${label}」的行存在`).toBeTruthy()
-        return row!.find('select')
     }
 
     it('缺省回显矩形：wire 无 clip 键的层经投影读 rect，二档中文选项', async () => {

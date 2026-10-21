@@ -5,8 +5,8 @@
 ## 2.1.0 - 2026-10-21
 
 - 形状能力后端（ADR 0026，可选能力口加法扩展）：新增 `drawEllipse(x, y, width, height, fillColor, stroke)` 椭圆绘制原语——内切椭圆填充与描边一体（`ctx.ellipse` 路径），fill/stroke 一体表达圆形框的背景与圆周环
-- 新增 `drawImageMasked(src, srcRect, dstRect, maskRect)` 掩码 blit 原语——双矩形 blit 语义与 `drawImage` 完全一致（含整图哨兵），后以 `maskRect` 内切椭圆裁剪合成（save/clip/restore），掩码外透明
-- 两成员齐备即形状能力后端，核心渲染臂（`@hankchen/canvas` ≥2.1）自动探测承接 `spec.clip: "circle"` 圆形档三步分派（椭圆背景 → 遮罩 blit → 圆周描边）；像素取样矩阵与 PHP/Go 同构（四角露下层、圆心为图、环带描边色、非方盒恒正圆、circle × fit 正交、未知值降级矩形）
+- 新增 `drawImageMasked(src, srcRect, dstRect, maskRect)` 掩码 blit 原语——双矩形 blit 语义与 `drawImage` 一致（同一收口实现，含整图哨兵；差异仅在掩码裁剪），后以 `maskRect` 内切椭圆裁剪合成（save/clip/restore），掩码外透明
+- 两成员齐备即形状能力后端，核心渲染臂（`@hankchen/canvas` ≥2.1）自动探测承接 `spec.clip: "circle"` 圆形档三步分派（椭圆背景 → 遮罩 blit → 圆周描边）；像素取样矩阵与 PHP/Go 同构（四角露下层、圆心为图、环带描边色、非方盒恒正圆、circle × fit 正交、未知值降级矩形）——采样点距圆缘留过渡带余量，缘上抗锯齿像素不保证跨端一致（不在契约内）
 - 导出路径自然承载圆形：`forkWith` 复制物化注册与形状能力，`exportPreviewPng` 接线零改动
 - 依赖升 `@hankchen/canvas` `^2.1.0`
 

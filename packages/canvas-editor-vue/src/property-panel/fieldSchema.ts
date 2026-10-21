@@ -241,7 +241,7 @@ const TEXT_SECTION: FieldSection = {
 }
 
 /**
- * 适配模式取值（image-fit 工单 05，ADR 0024 起 contain、ADR 0024 扩四档）：镜像
+ * 适配模式取值（image-fit 工单 05，ADR 0023 起 contain、ADR 0024 扩四档）：镜像
  * js-canvas 的 IMAGE_FIT_* 常量——内核 barrel 零 diff 红线不转出（editor-vue 禁直连
  * canvas），字面串对齐 wire 契约；白名单分派在核心渲染臂，未知值渲染面降级 cover
  */

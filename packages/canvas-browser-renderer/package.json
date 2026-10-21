@@ -2,7 +2,7 @@
     "name": "@hankchen/canvas-browser-renderer",
     "version": "2.1.0",
     "license": "MIT",
-    "description": "Canvas2D 五原语渲染后端（矩形/双矩形 blit 直映射/文本基线消化、字体与 QR 物化）",
+    "description": "Canvas2D 渲染后端（五原语 + 形状能力口 drawEllipse/drawImageMasked、双矩形 blit 直映射、文本基线消化、字体与 QR 物化）",
     "type": "module",
     "exports": {
         ".": {

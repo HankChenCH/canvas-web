@@ -209,8 +209,7 @@ export class Canvas2DBackend implements RenderBackend, ViewportAwareBackend {
         if (width <= 0 || height <= 0) return
 
         const ctx = this.ctx
-        ctx.beginPath()
-        ctx.ellipse(x + width / 2, y + height / 2, width / 2, height / 2, 0, 0, Math.PI * 2)
+        this.traceInscribedEllipse(x, y, width, height)
         if (fillColor !== null && fillColor !== '') {
             ctx.fillStyle = fillColor
             ctx.fill()
@@ -223,49 +222,28 @@ export class Canvas2DBackend implements RenderBackend, ViewportAwareBackend {
     }
 
     /**
-     * 掩码 blit 原语（ADR 0026 形状能力口，drawImage 的掩码形态）：双矩形 blit
-     * （守卫与整图哨兵语义和 drawImage 完全一致）后，以 maskRect 的内切椭圆裁剪
-     * 合成——save/beginPath/ellipse/clip → blit → restore，掩码外透明。maskRect
-     * 非正零副作用（掩码空 = 不可见）。核心臂对每个 fit 块逐块调用（tile 即多次
-     * save/restore 往返），裁剪态不外溢
+     * 掩码 blit 原语（ADR 0026 形状能力口，drawImage 的掩码形态）：双矩形 blit 直接收口
+     * 委托 drawImage（守卫与整图哨兵语义天然同源，消重防漂移），掩码 = maskRect 的内切
+     * 椭圆裁剪合成——save/beginPath/ellipse/clip → blit → restore，掩码外透明。dstRect/
+     * maskRect 非正与未注册 src 零副作用（守卫提前收口，免 clip 往返）。核心臂对每个
+     * fit 块逐块调用（tile 即多次 save/restore 往返），裁剪态不外溢
      */
     drawImageMasked(src: string, srcRect: BlitRect, dstRect: BlitRect, maskRect: BlitRect): void {
         if (dstRect.width <= 0 || dstRect.height <= 0) return
         if (maskRect.width <= 0 || maskRect.height <= 0) return
+        if (!this.images.has(src)) return // 未物化/未加载：只画盒的占位语义
 
-        const image = this.images.get(src)
-        if (!image) return // 未物化/未加载：只画盒的占位语义
+        this.ctx.save()
+        this.traceInscribedEllipse(maskRect.x, maskRect.y, maskRect.width, maskRect.height)
+        this.ctx.clip()
+        this.drawImage(src, srcRect, dstRect)
+        this.ctx.restore()
+    }
 
-        const srcW = naturalWidth(image)
-        const srcH = naturalHeight(image)
-        if (srcW <= 0 || srcH <= 0) return
-
-        const whole = srcRect.width <= 0 || srcRect.height <= 0
-        const ctx = this.ctx
-        ctx.save()
-        ctx.beginPath()
-        ctx.ellipse(
-            maskRect.x + maskRect.width / 2,
-            maskRect.y + maskRect.height / 2,
-            maskRect.width / 2,
-            maskRect.height / 2,
-            0,
-            0,
-            Math.PI * 2,
-        )
-        ctx.clip()
-        ctx.drawImage(
-            image as CanvasImageSource,
-            whole ? 0 : srcRect.x,
-            whole ? 0 : srcRect.y,
-            whole ? srcW : srcRect.width,
-            whole ? srcH : srcRect.height,
-            dstRect.x,
-            dstRect.y,
-            dstRect.width,
-            dstRect.height,
-        )
-        ctx.restore()
+    /** 内切椭圆路径（两形状原语共用的一份几何）：beginPath + ctx.ellipse 整周 */
+    private traceInscribedEllipse(x: number, y: number, width: number, height: number): void {
+        this.ctx.beginPath()
+        this.ctx.ellipse(x + width / 2, y + height / 2, width / 2, height / 2, 0, 0, Math.PI * 2)
     }
 
     /**
