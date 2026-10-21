@@ -106,6 +106,19 @@ function mockRect(row: DOMWrapper<Element>): void {
     vi.spyOn(row.element as HTMLElement, 'getBoundingClientRect').mockReturnValue({ height: 32, top: 0 } as DOMRect)
 }
 
+/** hover 指定行的第 cellIdx 枚 Tooltip wrapper（眼/锁/铅笔序，工票 04）走满缺省
+ *  300ms 延迟档，读气泡文案再收起（气泡 Teleport 到 body；假定时器须先启用） */
+async function rowTooltipText(wrapper: ReturnType<typeof mount>, rowIdx: number, cellIdx: number): Promise<string> {
+    const cell = wrapper.findAll('.cn-layers__row')[rowIdx]!.findAll('.cn-tooltip')[cellIdx]!
+    await cell.trigger('mouseenter')
+    await vi.advanceTimersByTimeAsync(300)
+    await flushPromises()
+    const text = document.body.querySelector('[data-tooltip]')?.textContent ?? ''
+    await cell.trigger('mouseleave')
+    await flushPromises()
+    return text
+}
+
 /** ▸ 悬停驱动开二级（工单 03）：mouseenter 不冒泡，直接在目标上派发
  *  （dropdownMenu.mount 同式）+ flushPromises 等落位编排走完 */
 async function hoverSubmenuArrow(wrapper: ReturnType<typeof mount>, index: number): Promise<void> {
@@ -710,6 +723,53 @@ describe('LayerPanel：显示/隐藏（工单 10）', () => {
     })
 })
 
+describe('LayerPanel：行内动作 Tooltip（工票 04）', () => {
+    it('三钮接 Tooltip 且原生 title 移除：根层行各 3 枚 wrapper（眼/锁/铅笔），行/格与置灰原因钮不接', () => {
+        const editor = makeEditor([textLayer(30, '底'), tableLayer([rowLayer(30), rowLayer(20)])])
+        const wrapper = mount(LayerPanel, { props: { editor } })
+        const rows = wrapper.findAll('.cn-layers__row')
+        // 面板序：表（根）、行1、行2、文本（根）——wrapper 只落两个根层行，各 3 枚
+        expect(wrapper.findAll('.cn-tooltip')).toHaveLength(6)
+        expect(rows[1]!.findAll('.cn-tooltip')).toHaveLength(0)
+        expect(rows[2]!.findAll('.cn-tooltip')).toHaveLength(0)
+
+        for (const rowIdx of [0, 3]) {
+            for (const hook of ['data-visibility', 'data-lock', 'data-rename']) {
+                const btn = rows[rowIdx]!.find(`[${hook}]`)
+                expect(btn.exists()).toBe(true)
+                expect(btn.attributes('title')).toBeUndefined() // 原生 title 清零，提示收口 Tooltip
+            }
+        }
+        // 禁用态/置灰原因钮不接 Tooltip：「+行」与 ✕ 保留原生 title（「置灰 + title」先例维持）
+        expect(wrapper.find('[data-add-row]').attributes('title')).toBe('加行（缺省行 + 缺省格与文本，行宽=表宽）')
+        expect(rows[1]!.findAll('button').find((button) => button.text() === '✕')!.attributes('title')).toBe(
+            '删除（含子层）',
+        )
+        wrapper.unmount()
+    })
+
+    it('Tooltip 文案随状态切换：显隐随 visible、锁定随 locked、重命名恒提示', async () => {
+        vi.useFakeTimers()
+        try {
+            const editor = makeEditor([textLayer(30, '底'), { ...textLayer(20, '中'), visible: false }])
+            editor.toggleLayerLock(['layers', 0]) // 面板底行（「底」）锁定
+            const wrapper = mount(LayerPanel, { props: { editor } })
+
+            // 面板顶 = 数组尾 = 隐藏层「中」：眼 label 翻转为「显示图层」；锁定/铅笔同款既有文案
+            expect(await rowTooltipText(wrapper, 0, 0)).toBe('显示图层')
+            expect(await rowTooltipText(wrapper, 0, 1)).toBe('锁定图层（画布不可点选/拖动/删除，渲染照常）')
+            expect(await rowTooltipText(wrapper, 0, 2)).toBe('重命名（双击名称或 F2）')
+
+            // 面板底 = 可见且锁定行：眼 label「隐藏图层…」、锁定 label 走解锁键位提示（lockHint 缺省 win 文本系）
+            expect(await rowTooltipText(wrapper, 1, 0)).toBe('隐藏图层（最终输出不含该层）')
+            expect(await rowTooltipText(wrapper, 1, 1)).toBe('解锁图层（Ctrl+Shift+L）')
+            wrapper.unmount()
+        } finally {
+            vi.useRealTimers()
+        }
+    })
+})
+
 // ---- 模板创作（spec §2.1/§2.2/§2.5）：菜单建模板表 + 模板态大纲操作面 ----
 
 /** 载荷形态 schema（rows-path-picker 工单 04 门态/点选面）：orderNo 标量与无可达
@@ -994,25 +1054,30 @@ describe('LayerPanel：锁定（canvas-web-layer-lock 工单 02）', () => {
 
     it('锁定钮/删除钮的键位提示按平台渲染：缺省 win 文本系（Ctrl+Shift+L），mac 桩 ⇧⌘L', async () => {
         const editor = makeEditor([textLayer(10, '顶')])
-        editor.toggleLayerLock(['layers', 0]) // 锁定行：锁定钮常显 + 删除钮置灰，两处 title 带键位提示
-        const original = window.navigator
-        Object.defineProperty(window, 'navigator', { value: { platform: 'MacIntel' }, configurable: true })
+        editor.toggleLayerLock(['layers', 0]) // 锁定行：锁定钮常显 + 删除钮置灰——锁定键位提示随工票 04 走 Tooltip label，删除保留原生 title
+        vi.useFakeTimers()
         try {
+            const original = window.navigator
+            try {
+                Object.defineProperty(window, 'navigator', { value: { platform: 'MacIntel' }, configurable: true })
+                const macWrapper = mount(LayerPanel, { props: { editor } })
+                expect(await rowTooltipText(macWrapper, 0, 1)).toBe('解锁图层（⇧⌘L）')
+                expect(macWrapper.findAll('button').find((button) => button.text() === '✕')!.attributes('title')).toBe(
+                    '图层已锁定（⇧⌘L 解锁后可删除）',
+                )
+                macWrapper.unmount()
+            } finally {
+                Object.defineProperty(window, 'navigator', { value: original, configurable: true })
+            }
+
             const wrapper = mount(LayerPanel, { props: { editor } })
-            const lock = wrapper.find('[data-lock]')
-            const remove = wrapper.findAll('button').find((button) => button.text() === '✕')!
-            expect(lock.attributes('title')).toBe('解锁图层（⇧⌘L）')
-            expect(remove.attributes('title')).toBe('图层已锁定（⇧⌘L 解锁后可删除）')
+            expect(await rowTooltipText(wrapper, 0, 1)).toBe('解锁图层（Ctrl+Shift+L）')
+            expect(wrapper.findAll('button').find((button) => button.text() === '✕')!.attributes('title')).toBe(
+                '图层已锁定（Ctrl+Shift+L 解锁后可删除）',
+            )
             wrapper.unmount()
         } finally {
-            Object.defineProperty(window, 'navigator', { value: original, configurable: true })
+            vi.useRealTimers()
         }
-
-        const wrapper = mount(LayerPanel, { props: { editor } })
-        expect(wrapper.find('[data-lock]').attributes('title')).toBe('解锁图层（Ctrl+Shift+L）')
-        expect(wrapper.findAll('button').find((button) => button.text() === '✕')!.attributes('title')).toBe(
-            '图层已锁定（Ctrl+Shift+L 解锁后可删除）',
-        )
-        wrapper.unmount()
     })
 })

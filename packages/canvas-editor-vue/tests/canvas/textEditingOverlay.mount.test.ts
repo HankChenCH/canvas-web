@@ -723,7 +723,14 @@ describe('草稿接管（会话内容独占工单 02）：旁门内容写 → te
         expect(el.value).toBe('奖状甲姓名')
 
         // 真工具条段路径（EditOverlayToolbar → setExpressionMode）翻标志：若丢 draftSeq
-        // （1 → undefined），接管 watch 会误触发并全量替换草稿
+        // （1 → undefined），接管 watch 会误触发并全量替换草稿。工票 03 下拉化两步：
+        // 触发钮 pointerdown 置 blur 豁免 → click 开菜单（焦点入菜单，夺焦 blur 落
+        // 豁免窗）→ pointerup 复位 → 点菜单项
+        const contentTrigger = wrapper.find('[data-content-pill] [aria-haspopup="menu"]')
+        await contentTrigger.trigger('pointerdown')
+        await contentTrigger.trigger('click')
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        await contentTrigger.trigger('pointerup')
         await wrapper.find('[data-pill-expression]').trigger('click')
         await settle(wrapper)
 

@@ -175,13 +175,13 @@ defineExpose({
             @compositionstart="binding.setComposing(true)"
             @compositionend="binding.setComposing(false)"
         ></textarea>
-        <!-- 编辑浮层工具条（工单 03 骨架 + 工单 04 五组样式段，原 pill 面原地演进
-             为首段）：随编辑会话开合（与 textarea 同生共死），悬挂图层框上缘中点、
+        <!-- 编辑浮层工具条（工单 03 骨架 + 工单 04 五组样式段；edit-toolbar-declutter
+             工票 03 下拉化——内容类型下拉与对齐两下拉在工具条内，原 pill 面演进为首
+             段下拉）：随编辑会话开合（与 textarea 同生共死），悬挂图层框上缘中点、
              屏幕恒定尺寸（换算在 useTextEditing.toolbarStyle）；显示值全部投影自
              内核 textEditLayout（与面板同源无分叉，字号读数恒场景像素），写入上抛
              updateStyleField（面板同门权威写：updateSpec + sel:path:key mergeKey，
-             新层样式槽随权威写自动捕获）；激活态随会话模式，切换仅翻会话标志
-             （零文档变更零历史步） -->
+             新层样式槽随权威写自动捕获）；切换仅翻会话标志（零文档变更零历史步） -->
         <EditOverlayToolbar
             v-if="editing && toolbarStyle"
             ref="toolbarRef"

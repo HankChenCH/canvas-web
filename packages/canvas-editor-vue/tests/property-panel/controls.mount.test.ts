@@ -4,8 +4,9 @@
  * 取值钳位与结构化对象的组装。控件提交语义 = input 实时（面板合步）+
  * change 收口（一步历史定格）。
  */
-import { describe, expect, it } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
+import { mount, type DOMWrapper } from '@vue/test-utils'
 
 import {
     HORIZONTAL_ALIGNS,
@@ -35,6 +36,19 @@ const noBorder = (): Border => ({ top: null, bottom: null, left: null, right: nu
 /** 数值输入框计数（简写控件的模式框数 = 1/2/4） */
 const inputCount = (wrapper: { findAll(selector: string): readonly unknown[] }): number =>
     wrapper.findAll('input[type="number"]').length
+
+/** hover 单个 Tooltip wrapper 走满缺省 300ms 延迟档，读出气泡文案再收起
+ *  （气泡 Teleport 到 body，绕过 wrapper 直查 document；工票 04 对齐段接
+ *  Tooltip 后的悬停文案断言基建，假定时器须先启用） */
+async function hoverBubbleText(cell: DOMWrapper<Element>): Promise<string> {
+    await cell.trigger('mouseenter')
+    await vi.advanceTimersByTimeAsync(300)
+    await nextTick()
+    const text = document.body.querySelector('[data-tooltip]')?.textContent ?? ''
+    await cell.trigger('mouseleave')
+    await nextTick()
+    return text
+}
 
 describe('NumberField', () => {
     it('挂载渲染当前值；input 实时发出整数化数值', async () => {
@@ -235,14 +249,33 @@ describe('AlignField（对齐分段图标按钮组，layer-panel-ux 工单 05）
         expect(wrapper.emitted('change')).toHaveLength(1)
     })
 
-    it('悬停文案按轴区分：水平左/中/右、垂直上/中/下', () => {
-        const h = mount(AlignField, { props: { field: hField, modelValue: 'left' } })
-        const hTitles = h.findAll('.cn-align__option').map((s) => s.attributes('title'))
-        expect(hTitles).toEqual(['水平：左对齐', '水平：居中对齐', '水平：右对齐'])
+    it('悬停文案按轴区分改走 Tooltip（工票 04）：原生 title 移除，气泡沿用「水平：左对齐」式组合', async () => {
+        vi.useFakeTimers()
+        try {
+            const h = mount(AlignField, { props: { field: hField, modelValue: 'left' } })
+            // 原生 title 统一清零（提示收口 Tooltip；本控件全键可用，无禁用态 title 例外）
+            expect(h.findAll('.cn-align__option').map((s) => s.attributes('title'))).toEqual([
+                undefined,
+                undefined,
+                undefined,
+            ])
 
-        const v = mount(AlignField, { props: { field: vField, modelValue: 'top' } })
-        const vTitles = v.findAll('.cn-align__option').map((s) => s.attributes('title'))
-        expect(vTitles).toEqual(['垂直：顶对齐', '垂直：居中对齐', '垂直：底对齐'])
+            const hCells = h.findAll('.cn-tooltip')
+            expect(hCells).toHaveLength(3)
+            expect(await hoverBubbleText(hCells[0]!)).toBe('水平：左对齐')
+            expect(await hoverBubbleText(hCells[1]!)).toBe('水平：居中对齐')
+            expect(await hoverBubbleText(hCells[2]!)).toBe('水平：右对齐')
+            h.unmount()
+
+            const v = mount(AlignField, { props: { field: vField, modelValue: 'top' } })
+            const vCells = v.findAll('.cn-tooltip')
+            expect(await hoverBubbleText(vCells[0]!)).toBe('垂直：顶对齐')
+            expect(await hoverBubbleText(vCells[1]!)).toBe('垂直：居中对齐')
+            expect(await hoverBubbleText(vCells[2]!)).toBe('垂直：底对齐')
+            v.unmount()
+        } finally {
+            vi.useRealTimers()
+        }
     })
 
     it('垂直轴渲染 top/center/bottom 三分段且选中态跟随', () => {

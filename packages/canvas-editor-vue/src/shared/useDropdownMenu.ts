@@ -24,12 +24,17 @@
  * 亦在本文模块级导出，焦点编排（何时迁移焦点）留呈现件。
  */
 import { onScopeDispose, ref, watch, type ComponentPublicInstance, type Ref } from 'vue'
+import type { LucideIcon } from '@lucide/vue'
 
 /** 菜单项：shortcut 为纯展示键位后缀（右侧灰字，字符串由调用方传入，底座不做
  *  平台检测）；title 承载置灰原因（壳内「置灰 + title」统一先例，ContextMenu.vue）；
  *  keepsOpen 项分发后菜单留场（面板＋模板表表单交换特例，issues/05 拍板推翻
  *  spec Q12 的「勿加」——迁移需要，且仅此一形态）；dataAttrs 透传 data-* 目验/
- *  测试钩子（状态栏 data-zoom-*、面板 data-add-layer 同缝） */
+ *  测试钩子（状态栏 data-zoom-*、面板 data-add-layer 同缝）；icon/checked 为可选
+ *  扩展（edit-toolbar-declutter 工票 02，先例同 submenu 演进）——icon 为 Lucide
+ *  组件引用（消费方按名 import 保 tree-shake），经 PanelIcon 渲染于 label 前同
+ *  一左组；checked 字段在场即换 role=menuitemradio + aria-checked（true 项右侧
+ *  ✓），未带字段维持 role=menuitem。不带新字段的既有菜单项渲染零变化 */
 export interface DropdownMenuItem {
     label: string
     title?: string
@@ -37,6 +42,13 @@ export interface DropdownMenuItem {
     shortcut?: string
     keepsOpen?: boolean
     dataAttrs?: Readonly<Record<string, string>>
+    /** 可选图标（Lucide 组件引用，经 PanelIcon 缺省档渲染——封装不引 lucide
+     *  运行时，摇树按消费方 import 走）；缺省零渲染 */
+    icon?: LucideIcon
+    /** 勾选态：字段在场（含 false）即按 menuitemradio 渲染，aria-checked 随值、
+     *  true 项右侧 ✓（aria-hidden 纯展示）；未带字段维持 role=menuitem（工票 02，
+     *  为 03 对齐/内容类型菜单备「当前项打勾」呈现） */
+    checked?: boolean
     run: () => void
 }
 

@@ -148,6 +148,13 @@ describe('会话内容独占：面板内容字段与模式段锁定（门面）'
         await nextTick()
 
         expect(modeButton(wrapper, 'static').attributes('aria-pressed')).toBe('true')
+        // 工票 03 下拉化两步：触发钮 pointerdown 置 blur 豁免 → click 开菜单（焦点
+        // 入菜单，夺焦 blur 落豁免窗）→ pointerup 复位 → 点菜单项
+        const contentTrigger = overlay.find('[data-content-pill] [aria-haspopup="menu"]')
+        await contentTrigger.trigger('pointerdown')
+        await contentTrigger.trigger('click')
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        await contentTrigger.trigger('pointerup')
         await overlay.find('[data-pill-expression]').trigger('click')
         await nextTick()
 
