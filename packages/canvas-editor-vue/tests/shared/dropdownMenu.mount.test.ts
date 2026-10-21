@@ -14,6 +14,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
+import { AlignCenter, AlignLeft } from '@lucide/vue'
 import type { DropdownMenuEntry } from '../../src/shared/useDropdownMenu'
 
 import DropdownMenu from '../../src/shared/DropdownMenu.vue'
@@ -597,6 +598,98 @@ const hover = async (el: HTMLElement): Promise<void> => {
     el.dispatchEvent(new MouseEvent('mouseenter'))
     await flushPromises()
 }
+
+// ---- 菜单项 icon/checked 可选扩展（edit-toolbar-declutter 工票 02）----
+// 为 03 对齐/内容类型菜单备「图标 + 常显文字 + 当前项打勾」的呈现能力：icon 经
+// PanelIcon 渲染于 label 前同一左组；checked 字段在场即 role=menuitemradio +
+// aria-checked（true 项右侧 ✓）。不带新字段的既有菜单项渲染零变化——无 svg/无
+// 左组/无 ✓，role 维持 menuitem。
+
+/** 对齐菜单 fixture（03 盒内对齐同型：icon + label 左组 + 当前项打勾）+ 纯文字项 */
+const ICON_CHECK_ITEMS: DropdownMenuEntry[] = [
+    { label: '左对齐', icon: AlignLeft, checked: true, run: () => void runs.push('left') },
+    { label: '居中对齐', icon: AlignCenter, checked: false, run: () => void runs.push('center') },
+    { label: '纯文字项', run: () => void runs.push('plain') },
+]
+
+describe('DropdownMenu：菜单项 icon/checked 扩展（edit-toolbar-declutter 工票 02）', () => {
+    const mountIconCheckMenu = () =>
+        mount(DropdownMenu, { props: { label: '对齐', items: ICON_CHECK_ITEMS }, attachTo: document.body })
+
+    /** 挂载进文档（焦点断言前提）+ 开菜单等焦点编排完成 */
+    const openIconCheckMenu = async (): Promise<ReturnType<typeof mountIconCheckMenu>> => {
+        const wrapper = mountIconCheckMenu()
+        await wrapper.find('[data-dropdown-trigger]').trigger('click')
+        await flushPromises()
+        return wrapper
+    }
+
+    it('icon 渲染存在：PanelIcon 统一档（14px/描边 2/装饰 aria-hidden）与 label 同一左组', async () => {
+        const wrapper = await openIconCheckMenu()
+        const first = itemEls(wrapper)[0] as HTMLElement
+        const svg = first.querySelector('svg')
+        expect(svg).not.toBeNull()
+        expect(svg?.getAttribute('width')).toBe('14')
+        expect(svg?.getAttribute('height')).toBe('14')
+        expect(svg?.getAttribute('stroke-width')).toBe('2')
+        expect(svg?.getAttribute('aria-hidden')).toBe('true')
+        // icon + label 归同一左组：组是行首子（icon 在 label 前），组外无第二个 label
+        const lead = first.querySelector('.cn-dropdown__item-lead')
+        expect(lead).not.toBeNull()
+        expect(lead?.contains(svg as Node)).toBe(true)
+        expect(lead?.querySelector('.cn-dropdown__item-label')?.textContent).toContain('左对齐')
+        expect(first.querySelectorAll('.cn-dropdown__item-label')).toHaveLength(1)
+        wrapper.unmount()
+    })
+
+    it('checked 字段在场：role=menuitemradio + aria-checked 随值（true 右侧 ✓ aria-hidden；false 无 ✓）', async () => {
+        const wrapper = await openIconCheckMenu()
+        const items = itemEls(wrapper)
+        expect(items[0]?.getAttribute('role')).toBe('menuitemradio')
+        expect(items[0]?.getAttribute('aria-checked')).toBe('true')
+        const mark = items[0]?.querySelector('.cn-dropdown__check')
+        expect(mark).not.toBeNull()
+        expect(mark?.getAttribute('aria-hidden')).toBe('true')
+        expect(mark?.textContent).toBe('✓')
+
+        expect(items[1]?.getAttribute('role')).toBe('menuitemradio')
+        expect(items[1]?.getAttribute('aria-checked')).toBe('false')
+        expect(items[1]?.querySelector('.cn-dropdown__check')).toBeNull()
+        wrapper.unmount()
+    })
+
+    it('不带新字段的既有项渲染零变化：无 svg/无左组/无 ✓，role 维持 menuitem 且无 aria-checked', async () => {
+        const wrapper = await openIconCheckMenu()
+        const plain = itemEls(wrapper)[2] as HTMLElement
+        expect(plain.getAttribute('role')).toBe('menuitem')
+        expect(plain.hasAttribute('aria-checked')).toBe(false)
+        expect(plain.querySelector('svg')).toBeNull()
+        expect(plain.querySelector('.cn-dropdown__item-lead')).toBeNull()
+        expect(plain.querySelector('.cn-dropdown__check')).toBeNull()
+        // 既有结构不引入左组壳：行首元素子 = label span（与改动前 DOM 同形）
+        expect(plain.firstElementChild?.classList.contains('cn-dropdown__item-label')).toBe(true)
+        wrapper.unmount()
+    })
+
+    it('键盘导航与激活不回归：icon/checked 项同 [data-dropdown-item] 导航序，Enter 分发即收回焦触发钮', async () => {
+        const wrapper = await openIconCheckMenu()
+        expect(document.activeElement).toBe(itemEls(wrapper)[0])
+
+        const fireKey = async (el: HTMLElement, key: string): Promise<KeyboardEvent> => {
+            const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+            el.dispatchEvent(event)
+            await flushPromises()
+            return event
+        }
+        await fireKey(itemEls(wrapper)[0] as HTMLElement, 'ArrowDown')
+        expect(document.activeElement).toBe(itemEls(wrapper)[1])
+        await fireKey(itemEls(wrapper)[1] as HTMLElement, 'Enter')
+        expect(runs).toEqual(['center'])
+        expect(menuEl(wrapper)).toBeUndefined()
+        expect(document.activeElement).toBe(triggerEl(wrapper))
+        wrapper.unmount()
+    })
+})
 
 describe('DropdownMenu：submenu 两段式渲染与 a11y（工单 02）', () => {
     it('两段式一级行：主体（label+shortcut 灰字）+ ▸ 钮（aria-haspopup/aria-expanded/tabindex=-1）；普通条目零两段结构', async () => {

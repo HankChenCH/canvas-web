@@ -60,10 +60,21 @@
  * ▸→浮层的 6px 跨界由浮层 ::before 桥接命中区覆盖——跨界移动物不触发容器
  * mouseleave 误收。键盘与焦点全序见 onMenuKeydown 注释块（→ 开二级入首项、
  * ←/Esc 先收二级再收菜单、二级内 ↑↓ 循环跳置灰、Tab 沿现状）。
+ *
+ * 菜单项 icon/checked 可选扩展（edit-toolbar-declutter 工票 02，先例同 submenu
+ * 演进）：为 03 对齐/内容类型菜单备「图标 + 常显文字 + 当前项打勾」的呈现能力。
+ * icon 为 Lucide 组件引用（消费方按名 import 保 tree-shake，底座经 PanelIcon
+ * 缺省档渲染——14px/描边 2 与菜单 12px 字号协调），与 label 归同一左组（两端式
+ * 布局左端不破）；checked 字段在场（含 false）即换 role=menuitemradio +
+ * :aria-checked（true 项右侧 ✓，aria-hidden 纯展示——状态传达归 aria-checked），
+ * 未带字段维持 role=menuitem。纯可选扩展：不带新字段的既有菜单项渲染零变化
+ * （无左组壳/无 svg/无 ✓），键盘导航与激活序不感知新字段（[data-dropdown-item]
+ * 查询与 disabled 判定同前）。submenu 两段式条目不涉及本扩展。
  */
 import { nextTick, shallowRef, ref, watch, type ComponentPublicInstance } from 'vue'
 
 import { isEditableEventTarget } from './editableTarget'
+import PanelIcon from './PanelIcon.vue'
 import {
     SUBMENU_GAP_PX,
     focusTargetOnMenuClose,
@@ -597,10 +608,15 @@ function onContainerLeave(): void {
                         </template>
                     </div>
                 </div>
+                <!-- 普通菜单项：icon/checked 为可选扩展（edit-toolbar-declutter
+                     工票 02）——icon+label 同一左组；checked 字段在场（'in' 判定，
+                     含 false）即 menuitemradio + :aria-checked（true 右侧 ✓）；
+                     不带新字段的项与扩展前 DOM 同形（渲染零变化） -->
                 <button
                     v-else
                     type="button"
-                    role="menuitem"
+                    :role="'checked' in entry ? 'menuitemradio' : 'menuitem'"
+                    :aria-checked="'checked' in entry ? entry.checked : undefined"
                     class="cn-dropdown__item"
                     data-dropdown-item
                     tabindex="-1"
@@ -609,8 +625,13 @@ function onContainerLeave(): void {
                     v-bind="entry.dataAttrs"
                     @click="run(entry)"
                 >
-                    <span class="cn-dropdown__item-label">{{ entry.label }}</span>
+                    <span v-if="entry.icon" class="cn-dropdown__item-lead">
+                        <PanelIcon :icon="entry.icon" />
+                        <span class="cn-dropdown__item-label">{{ entry.label }}</span>
+                    </span>
+                    <span v-else class="cn-dropdown__item-label">{{ entry.label }}</span>
                     <span v-if="entry.shortcut" class="cn-dropdown__shortcut">{{ entry.shortcut }}</span>
+                    <span v-if="'checked' in entry && entry.checked === true" class="cn-dropdown__check" aria-hidden="true">✓</span>
                 </button>
             </template>
             <!-- 菜单体附加内容（面板＋ rowsPath 表单特例）：在容器包含判定内，
@@ -722,6 +743,25 @@ function onContainerLeave(): void {
     line-height: 1.4;
     color: var(--cn-muted);
     font-variant-numeric: tabular-nums;
+}
+
+/* 左组（edit-toolbar-declutter 工票 02）：icon + label 同组靠左——两端式布局
+   （label 左 / shortcut 右）的左端成组，icon 不被 space-between 拆开；无 icon
+   项不渲染本组，既有 DOM 零变化 */
+.cn-dropdown__item-lead {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+/* 勾选标记（工票 02）：checked=true 项右侧 ✓——aria-hidden 纯展示（状态传达归
+   aria-checked），accent 色标当前项（悬停变色的继承来自行，此处钉住不变） */
+.cn-dropdown__check {
+    flex: none;
+    font-size: 11px;
+    line-height: 1;
+    color: var(--cn-accent);
 }
 
 /* 分组分隔线（'separator' 条目） */
