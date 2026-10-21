@@ -2,6 +2,11 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## 2.1.0 - 2026-10-21
+
+- 图片属性面板「裁剪形状」二档选择：矩形（缺省，不裁）/圆形（ADR 0026，image-clip-shape 工票 05）——图片组、适配模式之后；仅图片层渲染（IMAGE 区段注册面）；静态声明无表达式态，缺省态经 `layerFieldTarget` 投影回显 rect（fit 缺省投影同门），显式 rect 落领域值（wire 归一不落键归核心 encode）
+- 依赖链跟随：`@hankchen/canvas`（经 canvas-editor）升 `^2.1.0`
+
 ## 2.0.0 - 2026-10-19
 
 - 图片属性面板「适配」选择扩四档：铺满裁切（cover，缺省）/完整显示（contain）/拉伸铺满（fill）/平铺（tile）（ADR 0024，image-fit 工票 05）；静态声明无表达式态不变，`layerFieldTarget` 缺省投影 cover 回显不变

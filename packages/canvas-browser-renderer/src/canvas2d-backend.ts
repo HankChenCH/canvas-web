@@ -1,8 +1,9 @@
 /// <reference lib="dom" />
 
 /**
- * Canvas2D 五原语后端。按包红线整体不开 DOM lib，仅本文件局部引入
- * CanvasRenderingContext2D 类型（AGENTS.md 红线 2）。
+ * Canvas2D 五原语后端（ADR 0026 起兼形状能力后端：drawEllipse + drawImageMasked
+ * 加法可选原语对齐备，核心渲染臂探测后承接圆形档）。按包红线整体不开 DOM lib，
+ * 仅本文件局部引入 CanvasRenderingContext2D 类型（AGENTS.md 红线 2）。
  *
  * 内容绘制语义（ADR 0024）：
  * - drawImage：双矩形 blit 直映射——srcRect → dstRect 原生九参 ctx.drawImage，
@@ -12,9 +13,15 @@
  * - drawText：布局层只给纯对齐锚点，基线差由本端以 TextMetrics 消化（ADR-0003 同款——
  *   PHP 的 GD 基线魔数 round(fontSize*0.1) 不移植）；字体经 fonts.ts 的判定与注册缝。
  *
+ * 形状原语（ADR 0026，可选能力口——两成员齐备核心臂才走圆形三步，未实现即矩形降级）：
+ * - drawEllipse：内切椭圆填充 + 描边一体（ctx.ellipse 路径），原语零形状语义、
+ *   零 fit 语义，内切圆矩形与描边参数解析全在核心分派层；
+ * - drawImageMasked：drawImage 的掩码形态——双矩形 blit 后以 maskRect 的内切椭圆
+ *   裁剪合成（save/clip/restore），掩码外透明。
+ *
  * 可选能力口（ADR 0023 引入、ADR 0024 扩全 fit 前置）：imageIntrinsicSize 供源图
  * 内在尺寸，核心渲染臂据此算 cover 裁窗 / fill 整图 / contain 收缩 / tile 单元——
- * 查询口非绘制原语，五原语契约冻结。
+ * 查询口非绘制原语。
  */
 import type { BlitRect, Border, BorderSide, RenderBackend, TextDrawOptions } from '@hankchen/canvas'
 
@@ -172,7 +179,7 @@ export class Canvas2DBackend implements RenderBackend, ViewportAwareBackend {
      * drawImage 同一 src 引用、同一次物化回写的 images 表（预览与导出 forkWith 共享，
      * 零参数穿透）。尺寸取 naturalWidth/Height 优先（与 drawImage 同门）；未注册/
      * 非法尺寸返回 null，渲染臂统一退化 fill 形态（整图拉伸进目标矩形；PHP
-     * getimagesize 失败同门结局）。查询口非绘制原语，五原语契约冻结不动
+     * getimagesize 失败同门结局）。查询口非绘制原语
      */
     imageIntrinsicSize(src: string): { width: number; height: number } | null {
         const image = this.images.get(src)
@@ -182,6 +189,83 @@ export class Canvas2DBackend implements RenderBackend, ViewportAwareBackend {
         const height = naturalHeight(image)
         if (width <= 0 || height <= 0) return null
         return { width, height }
+    }
+
+    /**
+     * 椭圆绘制原语（ADR 0026 形状能力口）：(x, y) 起 width×height 外接矩形的内切
+     * 椭圆，fillColor 填充与 stroke 描边一体（ctx.ellipse 路径，fill 先于 stroke——
+     * 圆形框的描边环压在背景填充上）。fillColor null/空串跳过（drawRect 同门）；
+     * 非正宽高零副作用（负半径会抛 IndexSizeError，防线归后端）。原语零形状语义、
+     * 零 fit 语义，几何与描边参数解析全在核心分派层
+     */
+    drawEllipse(
+        x: number,
+        y: number,
+        width: number,
+        height: number,
+        fillColor: string | null,
+        stroke: BorderSide | null,
+    ): void {
+        if (width <= 0 || height <= 0) return
+
+        const ctx = this.ctx
+        ctx.beginPath()
+        ctx.ellipse(x + width / 2, y + height / 2, width / 2, height / 2, 0, 0, Math.PI * 2)
+        if (fillColor !== null && fillColor !== '') {
+            ctx.fillStyle = fillColor
+            ctx.fill()
+        }
+        if (stroke) {
+            ctx.strokeStyle = stroke.color
+            ctx.lineWidth = stroke.width
+            ctx.stroke()
+        }
+    }
+
+    /**
+     * 掩码 blit 原语（ADR 0026 形状能力口，drawImage 的掩码形态）：双矩形 blit
+     * （守卫与整图哨兵语义和 drawImage 完全一致）后，以 maskRect 的内切椭圆裁剪
+     * 合成——save/beginPath/ellipse/clip → blit → restore，掩码外透明。maskRect
+     * 非正零副作用（掩码空 = 不可见）。核心臂对每个 fit 块逐块调用（tile 即多次
+     * save/restore 往返），裁剪态不外溢
+     */
+    drawImageMasked(src: string, srcRect: BlitRect, dstRect: BlitRect, maskRect: BlitRect): void {
+        if (dstRect.width <= 0 || dstRect.height <= 0) return
+        if (maskRect.width <= 0 || maskRect.height <= 0) return
+
+        const image = this.images.get(src)
+        if (!image) return // 未物化/未加载：只画盒的占位语义
+
+        const srcW = naturalWidth(image)
+        const srcH = naturalHeight(image)
+        if (srcW <= 0 || srcH <= 0) return
+
+        const whole = srcRect.width <= 0 || srcRect.height <= 0
+        const ctx = this.ctx
+        ctx.save()
+        ctx.beginPath()
+        ctx.ellipse(
+            maskRect.x + maskRect.width / 2,
+            maskRect.y + maskRect.height / 2,
+            maskRect.width / 2,
+            maskRect.height / 2,
+            0,
+            0,
+            Math.PI * 2,
+        )
+        ctx.clip()
+        ctx.drawImage(
+            image as CanvasImageSource,
+            whole ? 0 : srcRect.x,
+            whole ? 0 : srcRect.y,
+            whole ? srcW : srcRect.width,
+            whole ? srcH : srcRect.height,
+            dstRect.x,
+            dstRect.y,
+            dstRect.width,
+            dstRect.height,
+        )
+        ctx.restore()
     }
 
     /**

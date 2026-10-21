@@ -1,6 +1,6 @@
 {
     "name": "@hankchen/canvas-browser-renderer",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "license": "MIT",
     "description": "Canvas2D 五原语渲染后端（矩形/双矩形 blit 直映射/文本基线消化、字体与 QR 物化）",
     "type": "module",
@@ -39,7 +39,7 @@
         "typecheck": "tsc --noEmit -p tsconfig.json"
     },
     "dependencies": {
-        "@hankchen/canvas": "^2.0.0",
+        "@hankchen/canvas": "^2.1.0",
         "qrcode": "^1.5.4"
     },
     "devDependencies": {

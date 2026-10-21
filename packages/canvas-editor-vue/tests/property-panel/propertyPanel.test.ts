@@ -927,13 +927,18 @@ describe('适配字段（image-fit 工单 05，ADR 0024 四档）：可写可回
         return { editor, wrapper }
     }
 
+    /** 按行标签定位 select（图片层表单 fit/clip 双 select，image-clip-shape 起不再唯一） */
+    function selectByLabel(wrapper: ReturnType<typeof mount>, label: string) {
+        const row = wrapper.findAll('label').find((l) => l.text().includes(label))
+        expect(row, `label「${label}」的行存在`).toBeTruthy()
+        return row!.find('select')
+    }
+
     it('缺省回显铺满裁切：wire 无 fit 键的层经投影读 cover，选项为中文文案（四档，ADR 0024）', async () => {
         const { editor, wrapper } = await mountWithEditor([imageLayer()])
         expect(editor.store.doc!.layers[0]!.type === 'ImageLayer' && editor.store.doc!.layers[0]!.fit).toBeUndefined()
 
-        // 图片层表单里唯一的 select 即「适配」（imageSrc 降级纯路径输入，无下拉）
-        const select = wrapper.find('select')
-        expect(select.exists()).toBe(true)
+        const select = selectByLabel(wrapper, '适配')
         expect((select.element as HTMLSelectElement).value).toBe('cover')
         expect(select.findAll('option').map((o) => o.text())).toEqual(['铺满裁切', '完整显示', '拉伸铺满', '平铺'])
         wrapper.unmount()
@@ -941,7 +946,7 @@ describe('适配字段（image-fit 工单 05，ADR 0024 四档）：可写可回
 
     it('切「完整显示」：updateSpec 落 fit=contain 一步历史；undo 回缺省并回显铺满裁切', async () => {
         const { editor, wrapper } = await mountWithEditor([imageLayer()])
-        const select = wrapper.find('select')
+        const select = selectByLabel(wrapper, '适配')
 
         await select.setValue('contain')
         const layer = editor.store.doc!.layers[0]!
@@ -953,15 +958,15 @@ describe('适配字段（image-fit 工单 05，ADR 0024 四档）：可写可回
         const undone = editor.store.doc!.layers[0]!
         expect(undone.type === 'ImageLayer' && undone.fit).toBeUndefined()
         // 回显随投影读缺省态（不残留 contain 显示）
-        expect((wrapper.find('select').element as HTMLSelectElement).value).toBe('cover')
+        expect((selectByLabel(wrapper, '适配').element as HTMLSelectElement).value).toBe('cover')
         wrapper.unmount()
     })
 
     it('切回「铺满裁切」：显式 cover 落领域值（wire 归一不落键归核心 encode）', async () => {
         const { editor, wrapper } = await mountWithEditor([imageLayer({ fit: 'contain' })])
-        expect((wrapper.find('select').element as HTMLSelectElement).value).toBe('contain')
+        expect((selectByLabel(wrapper, '适配').element as HTMLSelectElement).value).toBe('contain')
 
-        await wrapper.find('select').setValue('cover')
+        await selectByLabel(wrapper, '适配').setValue('cover')
         const layer = editor.store.doc!.layers[0]!
         expect(layer.type === 'ImageLayer' && layer.fit).toBe('cover')
         wrapper.unmount()
@@ -971,11 +976,77 @@ describe('适配字段（image-fit 工单 05，ADR 0024 四档）：可写可回
         for (const wire of ['fill', 'tile'] as const) {
             const { editor, wrapper } = await mountWithEditor([imageLayer()])
 
-            await wrapper.find('select').setValue(wire)
+            await selectByLabel(wrapper, '适配').setValue(wire)
             const layer = editor.store.doc!.layers[0]!
             expect(layer.type === 'ImageLayer' && layer.fit).toBe(wire)
             expect(editor.store.history).toHaveLength(1)
             wrapper.unmount()
         }
+    })
+})
+
+describe('裁剪形状字段（image-clip-shape 工票 05，ADR 0026 二档）：图片组适配之后、缺省投影矩形', () => {
+    const imageLayer = (overrides: Record<string, unknown> = {}): Layer =>
+        ({ ...textLayer(), type: 'ImageLayer', src: '/a.png', expression: null, ...overrides } as Layer)
+
+    async function mountWithEditor(layers: readonly Layer[]) {
+        const editor = new EditorSession({ scheduleFrame: nullScheduler })
+        editor.openDocument({ width: 800, height: 600, background: null, layers })
+        const wrapper = mount(PropertyPanel, { props: { editor } })
+        editor.setSelection(['layers', 0])
+        await wrapper.vm.$nextTick()
+        return { editor, wrapper }
+    }
+
+    function selectByLabel(wrapper: ReturnType<typeof mount>, label: string) {
+        const row = wrapper.findAll('label').find((l) => l.text().includes(label))
+        expect(row, `label「${label}」的行存在`).toBeTruthy()
+        return row!.find('select')
+    }
+
+    it('缺省回显矩形：wire 无 clip 键的层经投影读 rect，二档中文选项', async () => {
+        const { editor, wrapper } = await mountWithEditor([imageLayer()])
+        expect(editor.store.doc!.layers[0]!.type === 'ImageLayer' && editor.store.doc!.layers[0]!.clip).toBeUndefined()
+
+        const select = selectByLabel(wrapper, '裁剪形状')
+        expect((select.element as HTMLSelectElement).value).toBe('rect')
+        expect(select.findAll('option').map((o) => o.text())).toEqual(['矩形', '圆形'])
+        wrapper.unmount()
+    })
+
+    it('切「圆形」：updateSpec 落 clip=circle 一步历史；undo 回缺省并回显矩形', async () => {
+        const { editor, wrapper } = await mountWithEditor([imageLayer()])
+        const select = selectByLabel(wrapper, '裁剪形状')
+
+        await select.setValue('circle')
+        const layer = editor.store.doc!.layers[0]!
+        expect(layer.type === 'ImageLayer' && layer.clip).toBe('circle')
+        expect(editor.store.history).toHaveLength(1)
+
+        editor.undo()
+        await wrapper.vm.$nextTick()
+        const undone = editor.store.doc!.layers[0]!
+        expect(undone.type === 'ImageLayer' && undone.clip).toBeUndefined()
+        // 回显随投影读缺省态（不残留 circle 显示）
+        expect((selectByLabel(wrapper, '裁剪形状').element as HTMLSelectElement).value).toBe('rect')
+        wrapper.unmount()
+    })
+
+    it('切回「矩形」：显式 rect 落领域值（wire 归一不落键归核心 encode）', async () => {
+        const { editor, wrapper } = await mountWithEditor([imageLayer({ clip: 'circle' })])
+        expect((selectByLabel(wrapper, '裁剪形状').element as HTMLSelectElement).value).toBe('circle')
+
+        await selectByLabel(wrapper, '裁剪形状').setValue('rect')
+        const layer = editor.store.doc!.layers[0]!
+        expect(layer.type === 'ImageLayer' && layer.clip).toBe('rect')
+        wrapper.unmount()
+    })
+
+    it('仅图片层渲染：文本层无「裁剪形状」行（注册表 IMAGE 区段专属）', async () => {
+        const { wrapper } = await mountWithEditor([
+            { ...textLayer() },
+        ])
+        expect(wrapper.findAll('label').some((l) => l.text().includes('裁剪形状'))).toBe(false)
+        wrapper.unmount()
     })
 })

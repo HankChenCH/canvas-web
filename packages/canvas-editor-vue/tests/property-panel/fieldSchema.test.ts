@@ -172,7 +172,7 @@ describe('适配字段（image-fit 工单 05，ADR 0023）', () => {
 
     it('IMAGE 区段 src 之后追加 fit（适配）；其余 type 无此字段', () => {
         const imageSection = fieldSectionsForType('ImageLayer').find((s) => s.title === '图片')!
-        expect(imageSection.fields.map((f) => f.key.join('.'))).toEqual(['src', 'fit'])
+        expect(imageSection.fields.map((f) => f.key.join('.'))).toEqual(['src', 'fit', 'clip'])
         for (const type of ['TextLayer', 'QrCodeLayer', 'TableLayer'] as const) {
             expect(fieldKeys(fieldSectionsForType(type))).not.toContain('fit')
         }
@@ -193,20 +193,71 @@ describe('适配字段（image-fit 工单 05，ADR 0023）', () => {
         expect(fit.resource).toBeUndefined()
     })
 
-    it('layerFieldTarget：fit 缺省投影为 cover 回显；contain/未知值/非图片层原样透传', () => {
+    it('layerFieldTarget：fit 缺省投影为 cover 回显；双字段已声明（含未知值）/非图片层原样透传', () => {
         // 缺省态（wire 无 fit 键）：投影补 cover，readField 命中（否则字段被过滤不渲染）
         const bare = imageLayer()
         expect(bare.fit).toBeUndefined()
         expect(readField(layerFieldTarget(bare), ['fit'])).toEqual({ ok: true, value: 'cover' })
 
-        // 已声明/未知值：引用透传（未知值显示交给控件域外行为，投影不越权归一）
-        const contained = { ...bare, fit: 'contain' }
+        // 双字段齐备：引用透传（未知值显示交给控件域外行为，投影不越权归一；
+        // clip 缺省也会触发拷贝——投影以「两个可缺省字段齐备」为透传门）
+        const contained = { ...bare, fit: 'contain', clip: 'circle' }
         expect(layerFieldTarget(contained)).toBe(contained)
-        const unknown = { ...bare, fit: 'seventies' }
+        const unknown = { ...bare, fit: 'seventies', clip: 'star' }
         expect(layerFieldTarget(unknown)).toBe(unknown)
 
         const text = layerByType('TextLayer')
         expect(layerFieldTarget(text)).toBe(text)
+    })
+})
+
+describe('裁剪形状字段（image-clip-shape 工票 05，ADR 0026）', () => {
+    const imageLayer = (): Extract<Layer, { type: 'ImageLayer' }> => layerByType('ImageLayer') as Extract<Layer, { type: 'ImageLayer' }>
+
+    it('IMAGE 区段 src/fit 之后追加 clip（殿后语义与 wire 键序同门）；其余 type 无此字段', () => {
+        const imageSection = fieldSectionsForType('ImageLayer').find((s) => s.title === '图片')!
+        expect(imageSection.fields.map((f) => f.key.join('.'))).toEqual(['src', 'fit', 'clip'])
+        for (const type of ['TextLayer', 'QrCodeLayer', 'TableLayer'] as const) {
+            expect(fieldKeys(fieldSectionsForType(type))).not.toContain('clip')
+        }
+    })
+
+    it('clip 字段描述：select 控件、二档值域 + 中文选项、静态声明无表达式态', () => {
+        const clip = flatFields(fieldSectionsForType('ImageLayer')).find((f) => f.key[0] === 'clip')!
+        expect(clip.control).toBe('select')
+        expect(clip.domain).toEqual(['rect', 'circle'])
+        expect(clip.optionLabels).toEqual({ rect: '矩形', circle: '圆形' })
+        // 静态声明：不带 data/resource 标记——无取值方式段，提交走 updateSpec
+        expect(clip.data).toBeUndefined()
+        expect(clip.resource).toBeUndefined()
+    })
+
+    it('layerFieldTarget：clip 缺省投影为 rect 回显（fit 缺省投影同门）；双字段齐备/非图片层原样透传', () => {
+        // 缺省态（wire 无 clip 键）：投影补 rect，readField 命中（否则字段被过滤不渲染）
+        const bare = imageLayer()
+        expect(bare.clip).toBeUndefined()
+        expect(readField(layerFieldTarget(bare), ['clip'])).toEqual({ ok: true, value: 'rect' })
+
+        // 双字段齐备：引用透传（未知值显示不越权归一，渲染面降级矩形归核心臂）
+        const circled = { ...bare, clip: 'circle', fit: 'contain' }
+        expect(layerFieldTarget(circled)).toBe(circled)
+        const unknown = { ...bare, clip: 'star', fit: 'cover' }
+        expect(layerFieldTarget(unknown)).toBe(unknown)
+
+        const text = layerByType('TextLayer')
+        expect(layerFieldTarget(text)).toBe(text)
+    })
+
+    it('fit 与 clip 双缺省一次投影补齐（两字段互不覆盖）', () => {
+        const bare = imageLayer()
+        const target = layerFieldTarget(bare)
+        expect(readField(target, ['fit'])).toEqual({ ok: true, value: 'cover' })
+        expect(readField(target, ['clip'])).toEqual({ ok: true, value: 'rect' })
+        // fit 已声明时 clip 缺省仍投影
+        const fitted = { ...bare, fit: 'contain' }
+        const fittedTarget = layerFieldTarget(fitted)
+        expect(readField(fittedTarget, ['fit'])).toEqual({ ok: true, value: 'contain' })
+        expect(readField(fittedTarget, ['clip'])).toEqual({ ok: true, value: 'rect' })
     })
 })
 
