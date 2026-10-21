@@ -52,6 +52,7 @@ import {
 
 import PanelIcon from '../shared/PanelIcon.vue'
 import DropdownMenu from '../shared/DropdownMenu.vue'
+import Tooltip from '../shared/Tooltip.vue'
 import type { DropdownMenuEntry } from '../shared/useDropdownMenu'
 import { ARM_LAYER_CREATE_HINT, detectShortcutPlatform, shortcutActionLabel } from '../shared/shortcutsHelp'
 import { useTransientFeedback } from '../shared/useTransientFeedback'
@@ -569,43 +570,65 @@ watch(panel.renaming, async (path) => {
                 >
                     {{ row.label }}
                 </span>
-                <button
+                <!-- 行内动作三钮悬停提示（edit-toolbar-declutter 工票 04）：逐钮包
+                     shared Tooltip、原生 title 移除（+行/删除等禁用态置灰原因 title
+                     例外不接——禁用按钮不派发鼠标事件，自定义提示不可达）。wrapper
+                     镜像键本体的 hover 门控：hidden/flex 用 important 变体——Tailwind
+                     v4 工具类在 @layer utilities，压不过组件 scoped 的 inline-flex
+                     缺省，普通变体改不动 wrapper 显隐、会留 0 宽占位多出 gap 空隙；
+                     shrink-0 同步键本体的不收缩语义 -->
+                <Tooltip
                     v-if="isRootRow(row)"
-                    type="button"
-                    data-visibility
-                    class="cn-layers__eye size-5 shrink-0 items-center justify-center rounded text-cn-muted hover:bg-cn-accent/15 hover:text-cn-accent"
-                    :class="row.node.visible ? 'hidden group-hover:flex' : 'flex'"
-                    :title="row.node.visible ? '隐藏图层（最终输出不含该层）' : '显示图层'"
-                    :aria-pressed="!row.node.visible"
-                    @click.stop="toggleVisibility(row)"
+                    :label="row.node.visible ? '隐藏图层（最终输出不含该层）' : '显示图层'"
+                    class="shrink-0"
+                    :class="row.node.visible ? 'hidden! group-hover:flex!' : 'flex!'"
                 >
-                    <PanelIcon :icon="row.node.visible ? Eye : EyeOff" :size="11" :stroke-width="2" />
-                </button>
+                    <button
+                        type="button"
+                        data-visibility
+                        class="cn-layers__eye size-5 shrink-0 items-center justify-center rounded text-cn-muted hover:bg-cn-accent/15 hover:text-cn-accent"
+                        :class="row.node.visible ? 'hidden group-hover:flex' : 'flex'"
+                        :aria-pressed="!row.node.visible"
+                        @click.stop="toggleVisibility(row)"
+                    >
+                        <PanelIcon :icon="row.node.visible ? Eye : EyeOff" :size="11" :stroke-width="2" />
+                    </button>
+                </Tooltip>
                 <!-- 锁定钮（canvas-web-layer-lock 工单 02）：眼睛同款 hover 门控，锁定态
                      常显闭锁（aria-pressed = locked）；锁定行不加透明度类——锁定 ≠ 隐藏
-                     （hidden 降不透明度表达「不出现」，locked 表达「出现但受保护」） -->
-                <button
+                     （hidden 降不透明度表达「不出现」，locked 表达「出现但受保护」）；
+                     Tooltip label 随锁定态切换（工票 04，锁定后 = 解锁键位提示） -->
+                <Tooltip
                     v-if="isRootRow(row)"
-                    type="button"
-                    data-lock
-                    class="cn-layers__lock size-5 shrink-0 items-center justify-center rounded text-cn-muted hover:bg-cn-accent/15 hover:text-cn-accent"
-                    :class="row.node.locked ? 'flex' : 'hidden group-hover:flex'"
-                    :title="row.node.locked ? lockHint : '锁定图层（画布不可点选/拖动/删除，渲染照常）'"
-                    :aria-pressed="row.node.locked"
-                    @click.stop="toggleLock(row)"
+                    :label="row.node.locked ? lockHint : '锁定图层（画布不可点选/拖动/删除，渲染照常）'"
+                    class="shrink-0"
+                    :class="row.node.locked ? 'flex!' : 'hidden! group-hover:flex!'"
                 >
-                    <PanelIcon :icon="row.node.locked ? Lock : LockOpen" :size="11" :stroke-width="2" />
-                </button>
-                <button
+                    <button
+                        type="button"
+                        data-lock
+                        class="cn-layers__lock size-5 shrink-0 items-center justify-center rounded text-cn-muted hover:bg-cn-accent/15 hover:text-cn-accent"
+                        :class="row.node.locked ? 'flex' : 'hidden group-hover:flex'"
+                        :aria-pressed="row.node.locked"
+                        @click.stop="toggleLock(row)"
+                    >
+                        <PanelIcon :icon="row.node.locked ? Lock : LockOpen" :size="11" :stroke-width="2" />
+                    </button>
+                </Tooltip>
+                <Tooltip
                     v-if="isRootRow(row)"
-                    type="button"
-                    data-rename
-                    class="cn-layers__delete hidden size-5 shrink-0 items-center justify-center rounded text-cn-muted hover:bg-cn-accent/15 hover:text-cn-accent group-hover:flex"
-                    title="重命名（双击名称或 F2）"
-                    @click.stop="startRename(row)"
+                    label="重命名（双击名称或 F2）"
+                    class="hidden! group-hover:flex! shrink-0"
                 >
-                    <PanelIcon :icon="Pencil" :size="11" :stroke-width="2" />
-                </button>
+                    <button
+                        type="button"
+                        data-rename
+                        class="cn-layers__delete hidden size-5 shrink-0 items-center justify-center rounded text-cn-muted hover:bg-cn-accent/15 hover:text-cn-accent group-hover:flex"
+                        @click.stop="startRename(row)"
+                    >
+                        <PanelIcon :icon="Pencil" :size="11" :stroke-width="2" />
+                    </button>
+                </Tooltip>
                 <button
                     v-if="row.node.role === 'root' && row.node.type === 'TableLayer'"
                     type="button"

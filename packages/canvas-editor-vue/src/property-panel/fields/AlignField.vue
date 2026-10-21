@@ -9,6 +9,12 @@
  * 图标与悬停文案按域值映射（选型：lucide 物件对齐族——轴线所在侧即对齐
  * 侧，水平轴用竖轴线 Align*Vertical，垂直轴用横轴线 Align*Horizontal）；
  * 未知取值域退化为文字分段（注册表「宽容不告警」语义的控件侧对位）。
+ *
+ * 悬停提示（edit-toolbar-declutter 工票 04）：每键包 shared Tooltip，悬停/
+ * 键盘聚焦出「水平：左对齐」式气泡，原生 title 移除（全键可用、无禁用态
+ * title 例外）。宫格形态不破——wrapper 经 attrs 透传继承 flex-1/min-w-0
+ * （分段等宽与收缩语义原样），键内图标居中与 focus-visible ring 落键本体
+ * 不动。
  */
 import type { LucideIcon } from '@lucide/vue'
 import {
@@ -24,6 +30,7 @@ import { computed } from 'vue'
 import { HORIZONTAL_ALIGNS, VERTICAL_ALIGNS } from '@hankchen/canvas-editor'
 
 import PanelIcon from '../../shared/PanelIcon.vue'
+import Tooltip from '../../shared/Tooltip.vue'
 import type { FieldDef } from '../fieldSchema'
 
 const props = defineProps<{ field: FieldDef; modelValue: string }>()
@@ -72,23 +79,30 @@ function pick(value: string): void {
         role="group"
         :aria-label="field.label"
     >
-        <button
+        <!-- 悬停提示逐键包 Tooltip（工票 04）：label 沿用「轴：值文案」组合；
+             wrapper attrs 透传继承 flex-1/min-w-0 保宫格等宽（组件缺省 inline-flex
+             不影响——flex item 下块状化后与原按钮直排等价） -->
+        <Tooltip
             v-for="(option, index) in options"
             :key="option.value"
-            type="button"
-            class="cn-align__option flex min-w-0 flex-1 items-center justify-center p-0 transition-colors duration-100 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cn-accent/40"
-            :class="[
-                index > 0 ? 'border-l border-cn-field-line' : '',
-                option.value === modelValue
-                    ? 'cn-align__option--active bg-cn-accent-soft text-cn-accent'
-                    : 'text-cn-muted hover:text-cn-fg',
-            ]"
-            :aria-pressed="option.value === modelValue"
-            :title="option.title"
-            @click.prevent="pick(option.value)"
+            :label="option.title"
+            class="min-w-0 flex-1"
         >
-            <PanelIcon v-if="option.icon" :icon="option.icon" />
-            <span v-else class="truncate px-1 text-[10px] leading-none">{{ option.value }}</span>
-        </button>
+            <button
+                type="button"
+                class="cn-align__option flex min-w-0 flex-1 items-center justify-center p-0 transition-colors duration-100 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cn-accent/40"
+                :class="[
+                    index > 0 ? 'border-l border-cn-field-line' : '',
+                    option.value === modelValue
+                        ? 'cn-align__option--active bg-cn-accent-soft text-cn-accent'
+                        : 'text-cn-muted hover:text-cn-fg',
+                ]"
+                :aria-pressed="option.value === modelValue"
+                @click.prevent="pick(option.value)"
+            >
+                <PanelIcon v-if="option.icon" :icon="option.icon" />
+                <span v-else class="truncate px-1 text-[10px] leading-none">{{ option.value }}</span>
+            </button>
+        </Tooltip>
     </span>
 </template>
