@@ -111,13 +111,15 @@ function write(key: readonly string[], value: unknown, final: boolean): void {
 
 // ---- 内容类型下拉段（工票 03：两键 pill 原地换装下拉，菜单项 = 原 pill 键面） ----
 
-/** 两项静态定义（原 pill 的段定义原地收编为菜单项源） */
+/** 两项静态定义（原 pill 的段定义原地收编为菜单项源）：label 是唯一文案源——
+ *  触发钮当前态文字（modeLabel）与菜单项同查此表，改文案只动这一处 */
 const MODES: readonly { value: 'static' | 'expression'; label: string }[] = [
     { value: 'static', label: '静态' },
     { value: 'expression', label: '表达式' },
 ]
 
-const modeLabel = computed(() => (props.mode === 'expression' ? '表达式' : '静态'))
+/** 触发钮文字 = 当前项 label（自 MODES 查表派生，不另设文案字面量） */
+const modeLabel = computed(() => MODES.find((mode) => mode.value === props.mode)?.label ?? props.mode)
 
 /** 菜单项：纯文字 + 当前项打勾；data-pill-* 目验钩子自段移挂菜单项（spec 决策 7） */
 const contentTypeItems = computed<DropdownMenuEntry[]>(() =>
