@@ -12,16 +12,18 @@ Vue 3 薄绑定：composables 切片桥、画布表面组件、schema 驱动属�
   表达式补全五件（completion 数据契约与接受手术 / completionAnchor 光标锚点测量 / useExpressionCompletion 浮层控件 / ExpressionCompletionPopup 呈现件 / expressionContext 上下文判定与候选源适配——属性面板与画布文本编辑两域共用，画布接线归表达式就地编辑 spec；rows-path-completion 的裸路径补全控件 usePathCompletion 与 rowsPathCompletionSource 手输源随 rowsPath 作者面纯点选化零消费方，已于 rows-path-picker 工单 05 整体退役——useExpressionCompletion 与表达式补全面零改动）、rowsPath 点选器候选源组装 rowsPathPickerSource（rows-path-picker 工单 02，模块文件 rowsPathPickerSource.ts：剪枝枚举件包 CompletionSource 注入缝 + 「行数组」徽标常量 ROWS_PATH_ARRAY_BADGE + 漂移判定纯函数 rowsPathValueDrifts——属性面板/建表表单/右键轻表单三入口共用）与 schema 声明切片桥 useDataSourceSchema（工单 04 自 status-bar 收口——状态栏读数段与建表表单两域共用）与表达式语法诊断 useExpressionDiagnostics（expression-syntax-diagnostics 工单 02：kind → 中文文案映射 + 非受控宿主监听同步 composable——属性面板与画布文本编辑两域共用）、
   资源表达式级联路径选择器 ExpressionPathPicker + 候选模型纯函数 pathPickerModel + `{{}}` 拆装纯函数 resourceTemplate（resource-expression-single-ref 工单 05，ADR 0020：资源内容字段的作者面 = 纯菜单点选不设手输缝——v-model 直绑裸点路径、外壳拆装归字段控件壳；逐层 `source(已积累路径)` 取候选按 kind==='path' 过滤函数桶、object 下钻叶子提交；source null 未绑声明整体只读回显）与弹层视口定位纯函数 popupPosition（工单 05/06 伴生修复：下方放不下向上翻转、翻转仍不足钳制视口内 + 横向右缘收口——表达式浮层/裸路径浮层/选择器菜单三处同函数消费）、
   HelpDialog（帮助面板展示件，Teleport body、注册表 bindings/platform 双注入缝）与 shortcutsHelp（分组展示名/平台键位符号纯函数）、
-  悬停提示 Tooltip（edit-toolbar-declutter 工票 01：包裹任意控件的延迟气泡呈现件——label + delay props（缺省 300ms），悬停/键盘聚焦出泡、离开/失焦/按下即隐，pointerdown 隐藏挂 wrapper capture 段（按钮类 root.prevent 与输入件 stop 两形态通吃），aria-describedby 写摘与暗色令牌归组件自带，气泡 Teleport body + popupPosition 视口定位、z-50 压菜单弹层；零消费方交付，消费在工票 03/04）、
+  悬停提示 Tooltip（edit-toolbar-declutter 工票 01：包裹任意控件的延迟气泡呈现件——label + delay props（缺省 300ms），悬停/键盘聚焦出泡、离开/失焦/按下即隐，pointerdown 隐藏挂 wrapper capture 段（按钮类 root.prevent 与输入件 stop 两形态通吃），aria-describedby 写摘归组件自带、主题令牌归 theme.css 单源（portal 根类 `.cn-tooltip__bubble` 在枚举清单内），气泡 Teleport body + popupPosition 视口定位、z-50 压菜单弹层；零消费方交付，消费在工票 03/04）、
   下拉菜单底座 DropdownMenu + useDropdownMenu（editor-top-toolbar 工单 02/04：触发钮 + 弹层一体呈现件——点击开合/点外收/Esc 收在 composable、a11y 对齐状态栏缩放菜单先例、菜单项 { label, title?, disabled?, shortcut?, keepsOpen?, dataAttrs?, icon?, checked?, run } + 'separator' 分段（edit-toolbar-declutter 工票 02 起 icon/checked 可选：icon 为 Lucide 组件引用经 PanelIcon 渲染 label 前同一左组、checked 字段在场即 role=menuitemradio + aria-checked + true 项右侧 ✓——不带新字段渲染零变化）、分发即收；键盘导航（工单 04）= 开时焦点入菜单/↑↓ 循环跳置灰/Home+End/Enter+Space 显式激活防双跑/Esc 收起回焦触发钮 + Tab 关闭续走原生 Tab 序（焦点先回触发钮幸免卸载坠 body，触发钮非终态）（落点计算 nextEnabledItemIndex 纯函数在 composable 模块，焦点编排在组件，菜单根 @keydown.stop 模态化）；工单 05 起五处菜单全归底座——工具栏三下拉内建触发钮直用，状态栏缩放菜单/面板＋经 #trigger/#body 受控插槽消费（自绘触发钮 a11y 两属性由消费方写、direction="up" 向上弹层、keepsOpen 项分发留场（模板表表单交换特例）、dataAttrs 透传 data-* 目验钩子、body 插槽内可编辑目标方向键不劫持、closed 事件随收清理））、
   字体清单注入缝 fontPicker（FONT_PICKER_KEY/injectFontPicker，edit-overlay-toolbar 工单 04 自属性面板域迁入——面板字体控件与编辑浮层工具条字体段两域共用，宿主 provide 一次控件树任意深度可取）、
   面板图标统一封装 PanelIcon（lucide 图标经 icon prop 注入，统一尺寸/描边默认，
   封装不引 lucide 运行时以保 tree-shake）——唯一允许被各域引用的层。
-- `src/panel-theme.css` — 面板设计令牌（子路径出口 `./panel-theme.css`）。
+- `src/theme.css` — 主题令牌单源（editor-theme-light-dark 工票 01）：夜间缺省调色板块 + 日间三信号整组覆盖 + select 箭头等结构性规则，子路径出口 `./theme.css`；`src/panel-theme.css` 已退化为兼容 shim（`@import './theme.css'`，旧出口保留）。
+- `src/shared/useCnTheme.ts` — 主题状态 composable（工票 04）：模块级单例 ref + set/toggle，写 `data-cn-theme` 到目标元素，可选 localStorage 持久化；与 VueUse `useDark` 同信号契约（README「主题」节）。
 - `tests/` — 与 src 域镜像（`tests/canvas/`、`tests/property-panel/`…）；跨包 fixture 经 `../../..` 取 `canvas-editor/tests/support/fixtures`。
 
 ## Import 纪律（dependency-cruiser `editor-vue-*-isolation` 规则锁定）
 
+- **色令牌只出自 theme.css**（editor-theme-light-dark 工票 06 收口）：凡随主题变色的令牌只能在 `src/theme.css` 定义（`tests/theme.test.ts` 结构断言 + `tests/theme-canvas.test.ts` 守卫锁定）；组件 scoped 样式只 `var()` 消费、零新增硬编码主题色——Vue scoped `[data-v]` 提升特异性且注入时序晚于入口 css，组件内定义色令牌会压过 theme.css 的日间覆盖。几何/尺寸类局部变量（如 `--cn-ruler-thickness`）留组件。
 - 域 → shared 单向可引；**域间横向 import 禁止**；shared 不得反向依赖任何域。
 - 域内用相对路径；`fields/` 回引域根用 `../fieldSchema` 等。不建 tsconfig 别名（全仓约定无 paths）。
 - 加新组件先判落位：属于既有域就进该域；被 ≥2 个域共享的切片桥进 shared；全新领域（如将来的大纲面板）开新域目录 + barrel + package.json 子路径出口 + depcruise 域隔离规则，三处同步。
@@ -29,7 +31,7 @@ Vue 3 薄绑定：composables 切片桥、画布表面组件、schema 驱动属�
 ## 出口
 
 - 包根 barrel（`src/index.ts`）只做按域 `export *` + PACKAGE_NAME；域 barrel 内显式具名导出。改公共符号面时核对根 barrel 注释。
-- 子路径出口：`./canvas`、`./property-panel`、`./layer-panel`、`./status-bar`、`./shared`、`./panel-theme.css`，与域目录一一对应；新增域必须同步 `package.json` exports。
+- 子路径出口：`./canvas`、`./property-panel`、`./layer-panel`、`./status-bar`、`./shared`、`./theme.css`、`./panel-theme.css`（shim），与域目录一一对应；新增域必须同步 `package.json` exports（`exports` 与 `publishConfig.exports` 两处，见根 AGENTS.md 双轨 gotcha）。
 
 ## Commands
 
