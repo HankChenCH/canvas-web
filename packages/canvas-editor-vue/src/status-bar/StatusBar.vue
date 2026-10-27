@@ -201,15 +201,9 @@ const zoomItems = computed<DropdownMenuEntry[]>((): DropdownMenuEntry[] => [
 </template>
 
 <style scoped>
-/* 令牌与 panel-theme.css 同值：状态栏自带主题，不依赖宿主接线，也不渗漏 */
+/* 主题令牌统一出自 theme.css（editor-theme 工票 03 收口）：.cn-statusbar 是
+   枚举根类，夜间缺省与日间覆盖都由它供给，此处只 var() 消费 */
 .cn-statusbar {
-    --cn-bg: #0b1220;
-    --cn-bg-elevated: #101a2e;
-    --cn-fg: #e6edf7;
-    --cn-muted: #7c8ca5;
-    --cn-line: #1e2a40;
-    --cn-accent: #38bdf8;
-
     display: flex;
     align-items: center;
     gap: 10px;

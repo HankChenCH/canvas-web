@@ -7,7 +7,7 @@
  * - portal 到 body + fixed 定位（躲 288px 面板 overflow 裁剪），锚点坐标由
  *   useExpressionCompletion 测算（mirror div 光标测量），随 scroll/resize 重算；
  * - 根元素自带 .cn-props：portal 后脱离面板 DOM 子树，靠它重建令牌命名空间
- *   （panel-theme.css 的 --cn-* 系在浮层内照常解析）；
+ *   （theme.css 的 --cn-* 系在浮层内照常解析，日间随 html 信号整组切换）；
  * - 根拦 mousedown（prevent + stop）：点击候选不夺宿主焦点（浮层不因失焦误
  *   关）、不冒泡到 document 的点外关闭；根拦 pointerdown（stop，rows-path-completion
  *   工单 04 review）：pointerdown 先于 mousedown 且拦不住 mousedown 的 stop——
@@ -16,8 +16,8 @@
  * - 工单 10 增量：候选说明展示回落 description ?? title（D8 两字段分离透传，
  *   二者皆缺省维持现状）。开放映射占位提示行（工单 10，D10）已随契约废除移除
  *   （ADR 0020，resource-expression-single-ref 工单 04）；
- * - 视觉沿 panel-theme 令牌（cn-field/cn-accent 系），option 几何以 tailwind
- *   utility 留在模板，抬升底色/阴影与高亮态收口在 panel-theme.css。
+ * - 视觉沿 theme.css 令牌（cn-field/cn-accent 系），option 几何以 tailwind
+ *   utility 留在模板，抬升底色/阴影与高亮态收口在 theme.css。
  */
 import { nextTick, ref, watch } from 'vue'
 

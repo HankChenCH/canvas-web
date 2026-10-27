@@ -35,8 +35,9 @@
  *   rows-path-picker 工单 04 建表表单入下拉 body 消费面所必需）；自身点外收
  *   判定含浮层本体（onWindowPointerDown 容器面），不受影响。
  * - 根元素自带 .cn-props 命名空间承载（浮层同 ExpressionCompletionPopup：portal
- *   后脱离面板 DOM 子树，靠根类名重建 --cn-* 令牌解析）；视觉沿 panel-theme
- *   令牌，几何以 tailwind utility 留在模板。
+ *   后脱离面板 DOM 子树，靠根类名重建 --cn-* 令牌解析）；视觉沿 theme.css
+ *   单源令牌（editor-theme 工票 01，日间随 html 信号整组切换），几何以
+ *   tailwind utility 留在模板。
  */
 import { computed, nextTick, onScopeDispose, ref, watch } from 'vue'
 

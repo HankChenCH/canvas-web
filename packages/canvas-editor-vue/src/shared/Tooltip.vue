@@ -39,9 +39,10 @@ let tooltipSeq = 0
  *   弹层（z-40）及其 submenu（z-41）之上。两者与暗色主题令牌一样归样式表面，
  *   jsdom 不算样式表不可断言（DropdownMenu z-40 先例同注）。
  *
- * 样式自带令牌（与菜单/右键菜单同族暗色面）：令牌直接定义在气泡元素上——
- * 气泡 Teleport 出 wrapper 子树后不再是 .cn-tooltip 后代，令牌必须随元素走，
- * 不依赖宿主接线也不渗漏。data-tooltip 钩子供测试/目验定位。
+ * 主题令牌出自 theme.css（editor-theme 工票 03 收口）：气泡 Teleport 出
+ * wrapper 子树后不再是 .cn-tooltip 后代，但气泡自身带 portal 根类
+ * .cn-tooltip__bubble（theme.css 枚举清单内），经 html 祖先链继承主题信号。
+ * data-tooltip 钩子供测试/目验定位。
  */
 import { nextTick, onUnmounted, ref } from 'vue'
 
@@ -173,15 +174,11 @@ onUnmounted(clearHoverTimer)
     display: inline-flex;
 }
 
-/* 气泡：暗色抬升面（菜单/右键菜单同族令牌）。令牌定义在气泡自身——Teleport
-   出 wrapper 后不继承 .cn-tooltip 上的任何值；fixed + 内联视口坐标（见组件
-   头注「fixed 定位」）；pointer-events: none 被动浮示不劫持指针；z-50 在
-   DropdownMenu 弹层（z-40）/submenu（z-41）之上 */
+/* 气泡：主题化抬升面（菜单/右键菜单同族令牌）。Teleport 出 wrapper 后令牌
+   随气泡自身的 portal 根类 .cn-tooltip__bubble 从 theme.css 供给（见头注）；
+   fixed + 内联视口坐标（见组件头注「fixed 定位」）；pointer-events: none 被
+   动浮示不劫持指针；z-50 在 DropdownMenu 弹层（z-40）/submenu（z-41）之上 */
 .cn-tooltip__bubble {
-    --cn-fg: #e6edf7;
-    --cn-line: #1e2a40;
-    --cn-bg-elevated: #101a2e;
-
     position: fixed;
     z-index: 50;
     pointer-events: none;
@@ -189,7 +186,7 @@ onUnmounted(clearHoverTimer)
     background: var(--cn-bg-elevated);
     border: 1px solid var(--cn-line);
     border-radius: 6px;
-    box-shadow: 0 4px 16px rgba(2, 6, 23, 0.4);
+    box-shadow: var(--cn-shadow-sm);
     color: var(--cn-fg);
     font-size: 12px;
     line-height: 1.4;
