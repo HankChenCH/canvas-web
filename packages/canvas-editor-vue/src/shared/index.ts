@@ -25,7 +25,9 @@
  * 两浮层与选择器菜单共用）与悬停提示 Tooltip（edit-toolbar-declutter 工票 01：
  * 包裹任意控件的延迟气泡——悬停/键盘聚焦出泡、离开/失焦/按下即隐，pointerdown
  * 隐藏挂 wrapper capture 段，aria-describedby 接线与暗色令牌自带；零消费方
- * 交付，消费在工票 03/04）。
+ * 交付，消费在工票 03/04）与编辑器主题状态 useCnTheme（editor-theme-light-dark
+ * 工票 04：日间/夜间单例 ref + set/toggle，写出即同步 data-cn-theme 信号到目标
+ * 元素，可选 storageKey 持久化——宿主与包内组件共享主题状态，spec §5）。
  * 这是唯一允许被各域引用的层——域间横向 import 被依赖红线
  * （editor-vue-*-isolation）禁止，跨域消费一律收口到这里。
  * 下拉底座（editor-top-toolbar 工单 02 起入出口）：composable 与基础条目类型。
@@ -72,6 +74,7 @@ export {
     type PopupViewportPosition,
 } from './popupPosition'
 export { useHistory, type HistoryAvailability } from './useHistory'
+export { useCnTheme, type CnTheme } from './useCnTheme'
 export { useSelection } from './useSelection'
 export { DATA_SOURCE_GATE_HINT, useDataSourceSchema, useDataSourceSchemaRejection } from './useDataSourceSchema'
 export { useShortcuts } from './useShortcuts'
