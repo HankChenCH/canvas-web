@@ -1,0 +1,406 @@
+/**
+ * 编辑器外观设计令牌——单源（editor-theme-light-dark spec §2，ADR 0001）。
+ *
+ * 铁律：凡随主题变色的 --cn-* 令牌一律且只能在本文件定义；组件 scoped 样式
+ * 零硬编码色、只 var() 消费。原因：Vue scoped 样式带 [data-v-x] 提升特异性、
+ * 且注入时序晚于入口 css——组件内定义色令牌会压过下面的日间覆盖。
+ * 几何/尺寸类局部变量（如 --cn-ruler-thickness）不在此列，留组件。
+ *
+ * 结构：
+ *   ① 夜间（缺省）调色板块——定义在全部主题消费根类上（清单见 spec §2.3）；
+ *      无任何主题信号时走这里，观感 = 收口前的现网值（零回归）。
+ *   ② 日间整组覆盖——三种信号写法等价（[data-cn-theme='light'] ∥
+ *      [data-theme='light'] ∥ html class light）；信号只设 html 一处
+ *      （body 级 portal 浮层经 html 祖先链继承），多处设置属未定义行为。
+ *   ③ 结构性规则——select 箭头双态 data-URI + 原 panel-theme.css 的面板
+ *      控件族规则整体迁入（本文件内容即其超集；panel-theme.css 已退化为
+ *      @import 本文件的兼容 shim，旧 import 路径不破坏）。
+ *
+ * 宿主接入（Tailwind v4）：工具类（bg-cn-bg、text-cn-muted…）由宿主编译器经
+ * @source 扫描本包源码生成，@theme inline 把 --cn-* 映射成 --color-cn-* 颜色族
+ * （接线样例见 playground/src/style.css）；shadow 类令牌用 Tailwind v4 变量
+ * 任意值语法 shadow-(--cn-shadow-md) 直接引用运行时变量。接入 css 三步：
+ *   1. devDeps 加 tailwindcss + @tailwindcss/vite，vite 插件启用；
+ *   2. 应用 css：@import "tailwindcss"; @source "<本包 src 路径>";
+ *   3. import '@hankchen/canvas-editor-vue/theme.css'
+ *      （或旧路径 './panel-theme.css'，等价）。
+ *
+ * 换肤：宿主可在根类上覆盖 --cn-* 单令牌——主题整组值之上、宿主覆盖之下。
+ * 主题方向：夜间 = 暗色「精密仪器」检视面板（深蓝灰底、发丝线、天蓝 accent）；
+ * 日间 = 板岩灰系（accent 加深保白底对比，spec §3）。
+ */
+
+/* ------------------------------------------------------------------ */
+/* ① 夜间（缺省）调色板块——spec §3 令牌表「夜间」列，值 = 现网收口       */
+/* ------------------------------------------------------------------ */
+
+.cn-props,
+.cn-statusbar,
+.cn-surface,
+.cn-ruler,
+.cn-context-menu,
+.cn-find-bar,
+.cn-align-float,
+.cn-edit-toolbar,
+.cn-guides,
+.cn-text-overlay,
+.cn-help,
+.cn-tooltip,
+.cn-dropdown {
+    /* 表面与文字 */
+    --cn-bg: #0b1220;
+    --cn-bg-elevated: #101a2e;
+    --cn-hover: #16223a;
+    --cn-fg: #e6edf7;
+    --cn-fg-2: #c3cddd;
+    --cn-fg-3: #aab6c8;
+    --cn-muted: #7c8ca5;
+
+    /* 边界：容器发丝线 / 壳层强线 / 输入框描边 / 图层行卡片描边 */
+    --cn-line: #1e2a40;
+    --cn-line-strong: #2a3a58;
+    --cn-field-line: #2a3a57;
+    --cn-card-line: #23324d;
+
+    /* 输入底（半透明石板，叠在面板底色上） */
+    --cn-field: rgba(148,163,184,.07);
+
+    /* 半透明条底（标尺/查找条/对齐浮条等浮于纸面的条状 chrome） */
+    --cn-bar-bg: rgb(11 18 32 / .92);
+
+    /* accent（天蓝）及其派生：淡底 / 选中辉光 / 60% 描边 / 其上的可读前景 */
+    --cn-accent: #38bdf8;
+    --cn-accent-soft: rgba(56,189,248,.12);
+    --cn-accent-glow: rgba(56,189,248,.35);
+    --cn-accent-line: rgba(56,189,248,.6);
+    --cn-on-accent: #06283d;
+
+    /* 表达式前置色（layer-panel-expression-prefix 工单 02）：带标记内容层行内
+       片段串的用色（图层面板 .cn-layers__prefix 消费）；原型 .ex 色值为参考值 */
+    --cn-expression: #5dd3b0;
+
+    /* 危险/告警 */
+    --cn-danger: #f87171;
+
+    /* 画布对齐辅助线（GuidesOverlay；glow/will-delete/snap 变体暂留组件，
+       收口归 editor-theme 后续画布域工票） */
+    --cn-guide-line: #38bdf8;
+
+    /* 投影三档（几何统一一套）+ 模态遮罩 */
+    --cn-shadow-sm: 0 4px 16px rgba(2,6,23,.4);
+    --cn-shadow-md: 0 12px 32px rgba(2,6,23,.55);
+    --cn-shadow-lg: 0 24px 64px rgba(2,6,23,.6);
+    --cn-backdrop: rgba(2,6,23,.55);
+
+    /* 数字/代码用等宽字族（面板的「仪器刻度」字形）；静态不随主题 */
+    --cn-font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas,
+        monospace;
+
+    /* 原生控件（number 步进器、color、checkbox）走暗色渲染 */
+    color-scheme: dark;
+}
+
+/* 面板底色/前景（原 panel-theme.css 的 .cn-props 表面涂装，原样收口；
+   其余根类的表面涂装由各自组件 scoped 样式承担，此处不代劳） */
+.cn-props {
+    background-color: var(--cn-bg);
+    color: var(--cn-fg);
+}
+
+/* ------------------------------------------------------------------ */
+/* ② 日间整组覆盖——spec §3 令牌表「日间」列；信号只设 html 一处         */
+/* ------------------------------------------------------------------ */
+
+:is([data-cn-theme='light'], [data-theme='light'], html.light)
+    :is(
+    .cn-props,
+    .cn-statusbar,
+    .cn-surface,
+    .cn-ruler,
+    .cn-context-menu,
+    .cn-find-bar,
+    .cn-align-float,
+    .cn-edit-toolbar,
+    .cn-guides,
+    .cn-text-overlay,
+    .cn-help,
+    .cn-tooltip,
+    .cn-dropdown) {
+    /* 表面与文字（板岩灰系） */
+    --cn-bg: #ffffff;
+    --cn-bg-elevated: #f8fafc;
+    --cn-hover: #eef2f7;
+    --cn-fg: #0f172a;
+    --cn-fg-2: #334155;
+    --cn-fg-3: #475569;
+    --cn-muted: #64748b;
+
+    /* 边界 */
+    --cn-line: #e2e8f0;
+    --cn-line-strong: #cbd5e1;
+    --cn-field-line: #cbd5e1;
+    --cn-card-line: #e2e8f0;
+
+    /* 输入底 */
+    --cn-field: rgba(15,23,42,.04);
+
+    /* 半透明条底 */
+    --cn-bar-bg: rgb(255 255 255 / .92);
+
+    /* accent 加深保白底对比 */
+    --cn-accent: #0284c7;
+    --cn-accent-soft: rgba(2,132,199,.10);
+    --cn-accent-glow: rgba(2,132,199,.30);
+    --cn-accent-line: rgba(2,132,199,.55);
+    --cn-on-accent: #ffffff;
+
+    /* 表达式前置色 */
+    --cn-expression: #0d9488;
+
+    /* 危险/告警 */
+    --cn-danger: #dc2626;
+
+    /* 画布对齐辅助线 */
+    --cn-guide-line: #0284c7;
+
+    /* 投影三档（几何同夜间，色改石板灰）+ 模态遮罩 */
+    --cn-shadow-sm: 0 4px 16px rgba(15,23,42,.12);
+    --cn-shadow-md: 0 12px 32px rgba(15,23,42,.18);
+    --cn-shadow-lg: 0 24px 64px rgba(15,23,42,.22);
+    --cn-backdrop: rgba(15,23,42,.35);
+
+    /* 原生控件走日间渲染；--cn-font-mono 静态不随主题，不在此重定义 */
+    color-scheme: light;
+}
+
+/* ------------------------------------------------------------------ */
+/* ③ 结构性规则                                                         */
+/* ------------------------------------------------------------------ */
+
+/* SelectField 的自绘箭头（appearance-none 后由背景 svg 补上指示）——
+   箭头描边色随主题：夜间 = --cn-muted 现值，日间 = --cn-muted 日间值 */
+.cn-props .cn-select {
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237c8ca5' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 6px center;
+    background-size: 10px;
+}
+
+:is([data-cn-theme='light'], [data-theme='light'], html.light) .cn-props .cn-select {
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+.cn-props .cn-select option {
+    background-color: var(--cn-bg-elevated);
+    color: var(--cn-fg);
+}
+
+/* 数据字段表达式态输入框描边（工单 02 落地、工单 06 保留）：取值方式切换已
+   升级为分段选择器（ValueTypeSegmented，tailwind 配方在组件模板），原 {{ }}
+   徽章令牌随控件退役。双类名选择器压过控件上的单类 tailwind border 色 */
+.cn-props .cn-field--expression {
+    border-color: var(--cn-accent);
+}
+
+/* pair 自适应 prefix 切换钮（工票 03）：徽章方钮视觉语言（原 {{ }} 徽章钮同族，
+   该钮已于工单 06 升级为分段选择器）的「自」字徽章。
+   双类名选择器压过控件上的单类 tailwind border 色，无需 !important */
+.cn-props .cn-props__auto-toggle {
+    font-size: 9px;
+    line-height: 1;
+    padding: 3px 3px;
+    border-radius: 4px;
+    border: 1px solid var(--cn-field-line);
+    color: var(--cn-muted);
+    background: transparent;
+    cursor: pointer;
+}
+
+.cn-props .cn-props__auto-toggle:hover {
+    color: var(--cn-fg);
+    border-color: var(--cn-muted);
+}
+
+.cn-props .cn-props__auto-toggle--active {
+    border-color: var(--cn-accent);
+    color: var(--cn-accent);
+    background: var(--cn-accent-soft);
+}
+
+/* 简写控件的模式循环钮（工单 04）：1/2/4 值模式单按钮循环，徽章方钮视觉语言
+   的图标方钮。双类名选择器压过控件上的单类 tailwind
+   border 色，无需 !important */
+.cn-props .cn-props__mode-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border-radius: 4px;
+    border: 1px solid var(--cn-field-line);
+    color: var(--cn-muted);
+    background: transparent;
+    cursor: pointer;
+}
+
+.cn-props .cn-props__mode-toggle:hover {
+    color: var(--cn-fg);
+    border-color: var(--cn-muted);
+}
+
+/* 自适应禁用态的预览值区分展示（工票 03）：模板子树的解析盒非文档权威值，
+   斜体 + 弱化提示（悬停有完整说明），与声明值一眼可辨 */
+.cn-props .cn-field--preview {
+    font-style: italic;
+}
+
+/* ---- 图层行卡片 + 根层拖拽把手（工单 08）----
+   行 = 独立描边卡片条目（非行间分隔线）；描边走令牌 --cn-card-line。行卡片的
+   选中/悬停/落点提示状态与把手样式收口在本文件（类名由 LayerPanel.vue 按 ui
+   分支绑定），不依赖宿主 tailwind 令牌映射；行的几何（内距/字号/行距 gap）
+   仍以 tailwind utility 留在组件模板。 */
+.cn-props .cn-layers__row {
+    border: 1px solid var(--cn-card-line);
+    border-radius: 6px;
+}
+
+.cn-props .cn-layers__row--hovered {
+    border-color: var(--cn-field-line);
+    background-color: var(--cn-field);
+}
+
+.cn-props .cn-layers__row--selected {
+    border-color: var(--cn-accent);
+    background-color: var(--cn-accent-soft);
+    color: var(--cn-accent);
+}
+
+/* 拖放落点提示：插入边点亮（行上半 = 顶边 before，下半 = 底边 after） */
+.cn-props .cn-layers__row--drop-before {
+    border-top-color: var(--cn-accent);
+}
+
+.cn-props .cn-layers__row--drop-after {
+    border-bottom-color: var(--cn-accent);
+}
+
+/* 六点把手：根层行常显（非 hover 门控），拖拽仅从此处发起；行/格不加把手 */
+.cn-props .cn-layers__handle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 20px;
+    border-radius: 3px;
+    color: var(--cn-muted);
+    cursor: grab;
+}
+
+.cn-props .cn-layers__handle:hover {
+    color: var(--cn-fg);
+    background-color: var(--cn-field);
+}
+
+.cn-props .cn-layers__handle:active {
+    cursor: grabbing;
+}
+
+/* 行内重命名输入框（工单 09）：覆盖行标签同槽（flex-1 由模板 utility 承担）——
+   accent 描边 + 抬升底色标识编辑态，字号/字族与 .cn-layers__label 对齐 */
+.cn-props .cn-layers__rename-input {
+    padding: 0 3px;
+    font-family: var(--cn-font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    color: var(--cn-fg);
+    background-color: var(--cn-bg-elevated);
+    border: 1px solid var(--cn-accent);
+    border-radius: 3px;
+    outline: none;
+}
+
+/* 表达式前置（layer-panel-expression-prefix 工单 02）：带标记内容层行内、拖柄
+   与标签之间的等宽小字片段串（内容与全文提示都由内核投影携带，面板零计算）。
+   溢出契约（spec 决策 7）：名称 flex-1 truncate 先截，前置 flex:none + max-width
+   封顶后自身省略——title 提示完整片段串。字号 10.5px 为原型 .ex 参考值，
+   line-height 对齐行标签 leading-4，行高不因前置变化 */
+.cn-props .cn-layers__prefix {
+    flex: none;
+    max-width: 96px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--cn-font-mono);
+    font-size: 10.5px;
+    line-height: 16px;
+    color: var(--cn-expression);
+}
+
+/* 隐藏行（layer-panel-ux 工单 10）：降不透明度示意不可见态（与闭眼钮常显同源），
+   约 50%——选中/悬停描边保持可辨（隐藏 ≠ 不可操作，显隐/属性编辑照常） */
+.cn-props .cn-layers__row--hidden {
+    opacity: 0.5;
+}
+
+/* 模板子树行（模板创作 spec §2.2 D1）：虚线描边卡片区分「声明态结构」与实体
+   行/格——选中/悬停态换 accent 虚线（意图锁定，具体令牌与 layer-panel-ux 协调） */
+.cn-props .cn-layers__row--template {
+    border-style: dashed;
+    border-color: var(--cn-field-line);
+}
+
+.cn-props .cn-layers__row--template.cn-layers__row--hovered {
+    border-color: var(--cn-accent);
+    border-style: dashed;
+    background-color: var(--cn-field);
+}
+
+.cn-props .cn-layers__row--template.cn-layers__row--selected {
+    border-color: var(--cn-accent);
+    border-style: dashed;
+}
+
+/* 非空校验标错（模板创作 spec §2.4 P4）：拦截期红框——空串永不落库 */
+.cn-props .cn-field--invalid {
+    border-color: var(--cn-danger);
+}
+
+/* ---- 表达式补全浮层（content-completion 工单 04）----
+   portal 到 body（躲 288px 面板 overflow 裁剪）后脱离面板 DOM 子树，根元素
+   自带 .cn-props 重建令牌命名空间；此处只收抬升底色/投影与高亮态（option
+   几何以 tailwind utility 留在组件模板）。投影走共享 --cn-shadow-md
+   （editor-theme 工票 01：面板原 0 16px 40px -12px 并入，几何统一取一套）。 */
+.cn-props.cn-completion {
+    background-color: var(--cn-bg-elevated);
+    box-shadow: var(--cn-shadow-md);
+}
+
+.cn-props .cn-completion__option--active {
+    background-color: var(--cn-accent-soft);
+    color: var(--cn-accent);
+}
+
+/* ---- 资源路径选择器浮层（resource-expression-single-ref 工单 05）----
+   portal 到 body 后脱离面板 DOM 子树，根元素自带 .cn-props 重建令牌命名空间；
+   抬升底色/投影与高亮态与补全浮层同语言（option 几何以 tailwind utility 留在
+   组件模板）。只读展示框的盒子视觉（bg/border/圆角）同 cn-field 输入框族。 */
+.cn-props.cn-pathpicker__menu {
+    background-color: var(--cn-bg-elevated);
+    box-shadow: var(--cn-shadow-md);
+}
+
+.cn-props .cn-pathpicker__option--active {
+    background-color: var(--cn-accent-soft);
+}
+
+/* 选择器的状态描边（工单 05）：PropertyField 的状态类（cn-field--expression/
+   cn-field--invalid）经 fallthrough 落在选择器根盒（flex 容器无边框），描边经
+   后代选择器落到只读展示框——与 cn-field--invalid 单类规则同值的定向版 */
+.cn-props .cn-field--expression .cn-pathpicker__value {
+    border-color: var(--cn-accent);
+}
+
+.cn-props .cn-field--invalid .cn-pathpicker__value {
+    border-color: var(--cn-danger);
+}
