@@ -83,7 +83,7 @@ function pick(anchor: Anchor): void {
                     class="cn-anchor__cell relative aspect-square min-w-0 rounded-[4px] border p-0 transition-colors duration-100"
                     :class="
                         anchor === modelValue
-                            ? 'cn-anchor__cell--active border-cn-accent bg-cn-accent shadow-[0_0_8px_rgba(56,189,248,0.35)]'
+                            ? 'cn-anchor__cell--active border-cn-accent bg-cn-accent shadow-(--cn-accent-glow)'
                             : 'border-cn-field-line bg-cn-field hover:border-cn-muted/50'
                     "
                     :aria-pressed="anchor === modelValue"
