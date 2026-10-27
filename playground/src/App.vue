@@ -57,7 +57,15 @@
 // 表达式」条目（标记层双击 = 编辑表达式并保持标记、pill 切写路径、删空片段或切静态
 // 解标、Esc 分流、zoom 锚点折算、一步历史）；「表格模板态与表达式标记」条目的双击
 // 语义同步修订（画布侧改就地编辑保持标记，面板侧字面写解标不变）。
+// editor-theme 工票 05：壳层日/夜主题——VueUse useDark 犬food（attribute 模式写
+// data-cn-theme 到 html，initialValue 'dark' 固定缺省夜间、不跟随系统偏好，
+// localStorage 记忆自带）+ 工具栏日/夜切换钮 + 壳层 --shell-* 令牌单源上移 html 并
+// 加日间整组覆盖（纸面 demo 内容不参与主题）+ 网格底纹线色随主题（gridBackdrop
+// color 可写字段 + invalidate('content') 重绘）。
 import { computed, nextTick, onBeforeUnmount, provide, ref, shallowRef, watch } from 'vue'
+// 日/夜主题（editor-theme 工票 05）：VueUse useDark 犬food——ADR 0001 推荐配置，
+// attribute 模式把主题信号写到 html 一处（spec §7/§8）
+import { useDark, useToggle } from '@vueuse/core'
 
 import {
     Canvas2DBackend,
@@ -748,6 +756,8 @@ function onReady({ contentCanvas, overlayCanvas }: CanvasSurfaceReady) {
     const backend = new GridBackdropBackend(contentCtx)
     gridBackdrop = backend
     gridBackdrop.enabled = gridEnabled.value
+    // 线色随当前主题落值（editor-theme 工票 05）：运行时切色走 watch(isDark)
+    gridBackdrop.color = gridColor()
     contentBackend = backend
     // 跨域资源可经 new Materializer(backend, { imageProxy }) 注入代理改写；
     // 本页资源全部同源，无需代理。
@@ -798,6 +808,47 @@ function onKeydown(event: KeyboardEvent): void {
     }
 }
 window.addEventListener('keydown', onKeydown)
+
+// ---- 日/夜主题（editor-theme 工票 05，spec §7/§8 + ADR 0001）：VueUse useDark 犬food ----
+
+/** 网格线色两态值：暗桌淡青（现网值不动）/ 亮桌淡墨（spec §7 提案）。只作用于
+ *  纸面之外的桌面（evenodd 挖掉纸面矩形），纸面 demo 内容不参与主题 */
+const GRID_COLOR_DARK = 'rgba(56, 189, 248, 0.12)'
+const GRID_COLOR_LIGHT = 'rgba(15, 23, 42, 0.08)'
+
+/**
+ * useDark 推荐配置（ADR 0001 写入 README 的一行）+ initialValue 固定缺省夜间：
+ * - attribute 模式把 `data-cn-theme="dark"/"light"` 写到 html（selector 缺省即
+ *   document.documentElement）——信号只设 html 一处，且两侧信号恒可见（spec Q7）；
+ * - 无 localStorage 时初始即 'dark'（useStorage 回落 initialValue），不读
+ *   prefers-color-scheme、不自动跟随系统（spec Q4/§11）——VueUse 文档核实：
+ *   useColorMode 仅在存储值/初始值为 'auto'（其缺省）时才跟随系统；
+ * - localStorage（key 'vueuse-color-scheme'）记忆由 useDark 自带，刷新保持。
+ * 已知 VueUse 行为（记录给 README 工票）：isDark 布尔 setter 在切回与系统偏好
+ * 一致的侧时会向 storage 写 'auto'（state 恒解析回具体值，信号观感不变）——
+ * 纯官方 API 无法关掉，宿主在意可自管 storageKey 读写。
+ */
+const isDark = useDark({
+    attribute: 'data-cn-theme',
+    valueDark: 'dark',
+    valueLight: 'light',
+    initialValue: 'dark',
+})
+const toggleDark = useToggle(isDark)
+
+/** 当前主题的网格线色（onReady 初始着色与切换重绘共用） */
+function gridColor(): string {
+    return isDark.value ? GRID_COLOR_DARK : GRID_COLOR_LIGHT
+}
+
+/** 主题切换后：网格线色直改（GridBackdropBackend.color 可写字段，仿 enabled
+ *  先例）+ 内容层重绘——网格垫在内容层 begin 之后，档位 content 足够（覆盖层
+ *  gizmo 不动）；画布未就绪（onReady 前）无需处理，onReady 按当前主题取色 */
+watch(isDark, () => {
+    if (!gridBackdrop) return
+    gridBackdrop.color = gridColor()
+    editor.invalidate('content')
+})
 
 // ---- 桌面网格（原型）：区分画布与背景的底纹开关 ----
 
@@ -856,7 +907,8 @@ onBeforeUnmount(() => {
 
         <!-- 工具栏重组（editor-top-toolbar 工单 03，spec 变体 A）：44px 单行六组。
              分组与归口拍板见文件头「工单 03」注释块（单点维护，防注释与实现漂移）：
-             文件｜历史｜＋插入▾｜查找｜排列▾｜视图▾｜右端网格开关。三下拉底座 =
+             文件｜历史｜＋插入▾｜查找｜排列▾｜视图▾｜右端网格开关 + 日/夜主题钮
+             （editor-theme 工票 05）。三下拉底座 =
              editor-vue/shared DropdownMenu（工单 02），触发钮 ghost 形态自带；插入
              组亮色（.tb-insert 经 :deep 着色）引导高频动作。查找钮 = beginFind()
              与 ⌘F 同缝。网格钮 margin-left:auto 弹性空隙推右端。隐藏文件入口
@@ -934,7 +986,10 @@ onBeforeUnmount(() => {
             <span class="toolbar-divider" aria-hidden="true"></span>
             <!-- 右端开关：桌面网格（原型）。网格垫在内容层 begin 后、只画纸面外
                  桌面（evenodd 挖掉纸面矩形）——桌面有纹理、纸面保持平滑，边界恒
-                 清晰；导出走 fork 后端不带网格。独立开关不入视图下拉（spec Q1）。 -->
+                 清晰；导出走 fork 后端不带网格。独立开关不入视图下拉（spec Q1）。
+                 其右日/夜主题钮（editor-theme 工票 05）：useDark 布尔往返，信号
+                 写 html data-cn-theme（VueUse 犬food，spec §7）；图标复用壳层
+                 字符方案（？/✕/● 同门），钮面示目标侧。 -->
             <button
                 type="button"
                 class="tb-grid"
@@ -944,6 +999,14 @@ onBeforeUnmount(() => {
                 @click="toggleGrid"
             >
                 网格
+            </button>
+            <button
+                type="button"
+                data-theme-toggle
+                :title="isDark ? '切换日间主题（当前夜间；选择记忆在 localStorage，刷新保持）' : '切换夜间主题（当前日间；选择记忆在 localStorage，刷新保持）'"
+                @click="toggleDark()"
+            >
+                {{ isDark ? '☀ 日间' : '☾ 夜间' }}
             </button>
             <!-- 隐藏文件入口：打开 graph JSON / 本机选图 -->
             <input ref="openInput" type="file" accept=".json,application/json" class="hidden" @change="onOpenGraphFile" />
@@ -1140,14 +1203,17 @@ onBeforeUnmount(() => {
     </main>
 </template>
 
-<style scoped>
-/* 全视口暗色工作台壳（工单 05，spec 决策 6）：100vh 四行网格——头栏 48 / 工具栏
-   44 / 工作台 1fr / 状态栏 auto（组件自然高 ≈30），页面零滚动。小视口降级：工作台
-   行压缩（minmax(0,1fr)）+ 面板自内滚 + 工具栏横向内滚，不回退成页滚。壳层暗色
-   令牌 = 原型 #070d18/#0b1220 族（与状态栏 --cn-bg 同源）；editor-vue 面板/状态栏
-   令牌零改动。对齐浮条随 .stage 级联取令牌；帮助抽屉 Teleport 出 body，自带一份
-   同值令牌块（工单 04 内联字面量在此吸收）。 */
-.stage {
+<style>
+/* 壳层令牌单源（editor-theme 工票 05，spec §7）：--shell-* 定义从 .stage 上移
+   html——① 令牌与主题信号同在 html 一处（spec §2.2「信号只设 html 一处」）；
+   ② Teleport 到 body 的帮助抽屉（.help-overlay 在 .stage 级联之外）改经 html
+   继承，不再自带一份同值副本；③ 日间整组挂在 html[data-cn-theme='light'] 下
+   （useDark attribute 模式落点），夜间 = 缺省（无信号即现网值，零回归）。
+   此块不能写进 scoped：scoped 编译会给选择器追加 [data-v-x]，html 级规则永远
+   匹配不上；同理 .stage 上的同名定义会压过 html 级覆盖（元素自有声明胜过继承），
+   故必须整体上移。--shell-font-mono 静态不随主题；纸面（文档内容）颜色不进本组。 */
+html {
+    color-scheme: dark; /* 壳层滚动条/原生控件随主题（.cn-* 根自设 color-scheme，不受影响） */
     --shell-bg: #070d18;
     --shell-panel: #0b1220;
     --shell-panel-92: rgb(11 18 32 / 0.92);
@@ -1161,9 +1227,43 @@ onBeforeUnmount(() => {
     --shell-accent: #38bdf8;
     --shell-on-accent: #06202b;
     --shell-insert: #7dd3fc;
+    --shell-backdrop: rgb(2 6 23 / 0.6);
     --shell-font-mono: 'SF Mono', Menlo, Consolas, monospace;
     --shell-desktop: radial-gradient(1100px 600px at 50% 40%, #101b30 0%, #0a1120 70%);
+}
 
+/* 日间整组（spec §7 提案值）。提案未列的两枚按同族明暗关系自定并记录：
+   --shell-backdrop 对齐 spec §3 --cn-backdrop 的日间值（15 23 42 / .35）；
+   --shell-desktop 反转明暗（板岩-200 中心 → 板岩-300 边缘，保持暗色版
+   「中心亮、边缘深」的渐变结构），使亮色网格线 rgba(15,23,42,0.08) 可辨 */
+html[data-cn-theme='light'] {
+    color-scheme: light;
+    --shell-bg: #f1f5f9;
+    --shell-panel: #ffffff;
+    --shell-panel-92: rgb(255 255 255 / 0.92);
+    --shell-line: #e2e8f0;
+    --shell-line-strong: #cbd5e1;
+    --shell-hover: #eef2f7;
+    --shell-fg: #0f172a;
+    --shell-fg-2: #334155;
+    --shell-fg-3: #475569;
+    --shell-muted: #64748b;
+    --shell-accent: #0284c7;
+    --shell-on-accent: #ffffff;
+    --shell-insert: #0284c7;
+    --shell-backdrop: rgb(15 23 42 / 0.35);
+    --shell-desktop: radial-gradient(1100px 600px at 50% 40%, #e2e8f0 0%, #cbd5e1 70%);
+}
+</style>
+
+<style scoped>
+/* 全视口工作台壳（工单 05，spec 决策 6）：100vh 四行网格——头栏 48 / 工具栏
+   44 / 工作台 1fr / 状态栏 auto（组件自然高 ≈30），页面零滚动。小视口降级：工作台
+   行压缩（minmax(0,1fr)）+ 面板自内滚 + 工具栏横向内滚，不回退成页滚。壳层
+   --shell-* 令牌已上移 html（editor-theme 工票 05，日/夜两组见上方全局样式块，
+   本元素经级联继承）；editor-vue 面板/状态栏令牌零改动。对齐浮条与帮助抽屉随
+   html 级联取令牌。 */
+.stage {
     display: grid;
     grid-template-rows: 48px 44px minmax(0, 1fr) auto;
     height: 100vh;
@@ -1410,23 +1510,16 @@ onBeforeUnmount(() => {
 }
 
 /* 帮助抽屉（工单 02）：宿主级浮层，右缘滑出面板 + 半透明遮罩；Teleport 到 body，
-   fixed 定位不占文档流。工单 05 暗色统一落定：面板族令牌自带一份（Teleport 出
-   .stage 不级联，同值块见 .stage 注释）。 */
+   fixed 定位不占文档流。editor-theme 工票 05 起不再自带令牌副本——.help-overlay
+   在 .stage 级联之外，原工单 04 的同值块已由令牌上移 html 消解（本抽屉经 body ←
+   html 继承），日/夜随信号整组切换；遮罩同步走 --shell-backdrop 令牌。 */
 .help-overlay {
-    --shell-panel: #0b1220;
-    --shell-line: #1e2a40;
-    --shell-line-strong: #2a3a58;
-    --shell-fg: #e6edf7;
-    --shell-fg-2: #c3cddd;
-    --shell-fg-3: #aab6c8;
-    --shell-muted: #7c8ca5;
-
     position: fixed;
     inset: 0;
     z-index: 60;
     display: flex;
     justify-content: flex-end;
-    background: rgb(2 6 23 / 0.6);
+    background: var(--shell-backdrop);
 }
 
 .help-drawer {

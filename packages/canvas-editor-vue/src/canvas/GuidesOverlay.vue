@@ -336,7 +336,7 @@ function onGuidePointerCancel(e: PointerEvent): void {
 
 <style scoped>
 /* 线色/辉光消费 theme.css 共享令牌（editor-theme spec §2.1 铁律）：根类
-   .cn-guides 在主题消费根类清单内，--cn-guide-*/--cn-snap-* 色令牌已迁入
+   .cn-guides 在主题消费根类清单内，--cn-guide-* / --cn-snap-* 色令牌已迁入
    theme.css，随 html 主题信号明暗切换。参考线与吸附线的视觉区分（根
    CONTEXT.md 两概念）：参考线实线、驻留；吸附线虚线、瞬时回显（色相对比由
    令牌族保证）。命中条厚度/虚线齿距/收边圆角等几何留 CSS 变量供宿主覆盖。
