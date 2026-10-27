@@ -46,6 +46,8 @@
 .cn-text-overlay,
 .cn-help,
 .cn-tooltip,
+/* Tooltip 气泡是 Teleport 到 body 的独立 portal 根（spec §2.2），带自己的根类 */
+.cn-tooltip__bubble,
 .cn-dropdown {
     /* 表面与文字 */
     --cn-bg: #0b1220;
@@ -133,6 +135,7 @@
     .cn-text-overlay,
     .cn-help,
     .cn-tooltip,
+    .cn-tooltip__bubble,
     .cn-dropdown) {
     /* 表面与文字（板岩灰系） */
     --cn-bg: #ffffff;

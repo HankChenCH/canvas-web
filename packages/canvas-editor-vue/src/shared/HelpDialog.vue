@@ -125,15 +125,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 </template>
 
 <style scoped>
-/* 令牌与 panel-theme.css 同值：面板自带主题（暗色检视面），不依赖宿主接线 */
+/* 主题令牌统一出自 theme.css（editor-theme 工票 03 收口）：.cn-help 是
+   Teleport 到 body 的 portal 根类（枚举清单内），经 html 祖先链继承信号，
+   此处只 var() 消费 */
 .cn-help {
-    --cn-bg: #0b1220;
-    --cn-bg-elevated: #101a2e;
-    --cn-fg: #e6edf7;
-    --cn-muted: #7c8ca5;
-    --cn-line: #1e2a40;
-    --cn-accent: #38bdf8;
-
     position: fixed;
     inset: 0;
     z-index: 50;
@@ -141,7 +136,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     align-items: center;
     justify-content: center;
     padding: 24px;
-    background: rgba(2, 6, 23, 0.55);
+    background: var(--cn-backdrop);
 }
 
 .cn-help__panel {
@@ -153,7 +148,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     background: var(--cn-bg-elevated);
     border: 1px solid var(--cn-line);
     border-radius: 12px;
-    box-shadow: 0 24px 64px rgba(2, 6, 23, 0.6);
+    box-shadow: var(--cn-shadow-lg);
 }
 
 .cn-help__header {
@@ -184,7 +179,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 }
 
 .cn-help__close:hover {
-    background: rgba(148, 163, 184, 0.07);
+    background: var(--cn-field);
     color: var(--cn-fg);
 }
 
@@ -234,7 +229,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     padding: 1px 6px;
     border: 1px solid var(--cn-line);
     border-radius: 5px;
-    background: rgba(148, 163, 184, 0.07);
+    background: var(--cn-field);
     color: var(--cn-muted);
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 11px;

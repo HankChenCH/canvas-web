@@ -649,19 +649,10 @@ function onContainerLeave(): void {
 </template>
 
 <style scoped>
-/* 自带主题，不依赖宿主接线也不渗漏：菜单壳五令牌与 panel-theme.css 同值；
-   触发钮 ghost 形态两令牌（--cn-fg-2/--cn-hover）沿壳层暗色族（App.vue
-   .toolbar button / FindBar 自带块同值） */
+/* 主题令牌统一出自 theme.css（editor-theme 工票 03 收口）：.cn-dropdown 是
+   枚举根类，菜单壳/子菜单固定定位但留在容器 DOM 子树内，令牌沿子树继承；
+   此处只 var() 消费 */
 .cn-dropdown {
-    --cn-fg: #e6edf7;
-    --cn-fg-2: #c3cddd;
-    --cn-muted: #7c8ca5;
-    --cn-line: #1e2a40;
-    --cn-bg-elevated: #101a2e;
-    --cn-hover: #16223a;
-    --cn-accent: #38bdf8;
-    --cn-accent-soft: rgba(56, 189, 248, 0.12);
-
     position: relative;
     display: inline-flex;
 }
@@ -692,7 +683,7 @@ function onContainerLeave(): void {
     color: var(--cn-muted);
 }
 
-/* 菜单壳：暗色抬升面（状态栏缩放菜单/右键菜单同观感）。fixed + 内联视口坐标
+/* 菜单壳：主题化抬升面（状态栏缩放菜单/右键菜单同观感）。fixed + 内联视口坐标
    （见组件头注「fixed 弹层定位」）——left 与 top/bottom 之一（随 direction）由
    打开时计算，CSS 不再持有相对偏移 */
 .cn-dropdown__menu {
@@ -706,7 +697,7 @@ function onContainerLeave(): void {
     background: var(--cn-bg-elevated);
     border: 1px solid var(--cn-line);
     border-radius: 10px;
-    box-shadow: 0 12px 32px rgba(2, 6, 23, 0.55);
+    box-shadow: var(--cn-shadow-md);
 }
 
 .cn-dropdown__item {
@@ -823,7 +814,7 @@ function onContainerLeave(): void {
     background: var(--cn-bg-elevated);
     border: 1px solid var(--cn-line);
     border-radius: 10px;
-    box-shadow: 0 12px 32px rgba(2, 6, 23, 0.55);
+    box-shadow: var(--cn-shadow-md);
 }
 
 /* 跨界桥：▸→浮层的 6px 间隙补上命中区——跨界移动物仍落在浮层（容器 DOM 后代）

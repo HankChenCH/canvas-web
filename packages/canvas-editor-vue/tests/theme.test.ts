@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest'
  */
 const themeCss = readFileSync(fileURLToPath(new URL('../src/theme.css', import.meta.url)), 'utf8')
 
-/** spec §2.3 主题消费根类清单（已核实，13 个） */
+/** spec §2.3 主题消费根类清单（spec 列 13 个 + 工票 03 增补 portal 根 .cn-tooltip__bubble） */
 const ROOT_CLASSES = [
     '.cn-props',
     '.cn-statusbar',
@@ -26,6 +26,7 @@ const ROOT_CLASSES = [
     '.cn-text-overlay',
     '.cn-help',
     '.cn-tooltip',
+    '.cn-tooltip__bubble',
     '.cn-dropdown',
 ] as const
 
