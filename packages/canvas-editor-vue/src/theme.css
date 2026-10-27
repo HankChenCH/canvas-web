@@ -79,12 +79,20 @@
        片段串的用色（图层面板 .cn-layers__prefix 消费）；原型 .ex 色值为参考值 */
     --cn-expression: #5dd3b0;
 
-    /* 危险/告警 */
+    /* 危险/告警（danger-soft = 危险态淡底，ContextMenu 删除项 hover 用） */
     --cn-danger: #f87171;
+    --cn-danger-soft: rgba(248,113,113,.12);
 
-    /* 画布对齐辅助线（GuidesOverlay；glow/will-delete/snap 变体暂留组件，
-       收口归 editor-theme 后续画布域工票） */
+    /* 画布对齐辅助线（GuidesOverlay 迁入，editor-theme 工票 02）：参考线实线
+       天青 + 同族辉光，拖回删除转红、吸附线玫红虚线（根 CONTEXT.md 两概念必须
+       可区分）。几何量（--cn-snap-dash/--cn-guide-hit/--cn-guide-clip-radius）
+       不随主题，留组件 scoped */
     --cn-guide-line: #38bdf8;
+    --cn-guide-glow: rgba(56,189,248,.4);
+    --cn-guide-will-delete: #f87171;
+    --cn-guide-will-delete-glow: rgba(248,113,113,.45);
+    --cn-snap-line: #fb7185;
+    --cn-snap-glow: rgba(251,113,133,.45);
 
     /* 投影三档（几何统一一套）+ 模态遮罩 */
     --cn-shadow-sm: 0 4px 16px rgba(2,6,23,.4);
@@ -157,11 +165,18 @@
     /* 表达式前置色 */
     --cn-expression: #0d9488;
 
-    /* 危险/告警 */
+    /* 危险/告警（soft 变体随 danger 同步换 hue，alpha 沿 accent-soft 同款 .12→.10） */
     --cn-danger: #dc2626;
+    --cn-danger-soft: rgba(220,38,38,.10);
 
-    /* 画布对齐辅助线 */
+    /* 画布对齐辅助线：will-delete/snap 配 #dc2626/#e11d48 系亮色（spec §3 注）；
+       辉光随各自线色同族换 hue，alpha 与夜间一致 */
     --cn-guide-line: #0284c7;
+    --cn-guide-glow: rgba(2,132,199,.4);
+    --cn-guide-will-delete: #dc2626;
+    --cn-guide-will-delete-glow: rgba(220,38,38,.45);
+    --cn-snap-line: #e11d48;
+    --cn-snap-glow: rgba(225,29,72,.45);
 
     /* 投影三档（几何同夜间，色改石板灰）+ 模态遮罩 */
     --cn-shadow-sm: 0 4px 16px rgba(15,23,42,.12);

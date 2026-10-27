@@ -595,7 +595,9 @@ onBeforeUnmount(() => {
     cursor: grabbing;
 }
 
-/* 拖文件悬停高亮（kbd-nav 工单 05）：令牌与 ContextMenu 同值（自带主题不依赖宿主），
+/* 拖文件悬停高亮（kbd-nav 工单 05）：用色消费 theme.css 共享令牌（editor-theme
+   spec §3 画布拖放提示段）——淡底 --cn-accent-soft、虚线 --cn-accent-line、提示
+   胶囊底/字 --cn-bar-bg/--cn-accent；根类 .cn-surface 在主题消费根类清单内。
    dashed 边框 + 半透明底浮在内容上，pointer-events:none 不拦 drop 落点 */
 .cn-surface__drop-hint {
     position: absolute;
@@ -604,8 +606,8 @@ onBeforeUnmount(() => {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(56, 189, 248, 0.08);
-    border: 2px dashed rgba(56, 189, 248, 0.6);
+    background: var(--cn-accent-soft);
+    border: 2px dashed var(--cn-accent-line);
     border-radius: 12px;
     pointer-events: none;
 }
@@ -613,8 +615,8 @@ onBeforeUnmount(() => {
 .cn-surface__drop-hint-text {
     padding: 6px 14px;
     border-radius: 8px;
-    background: #0b1220;
-    color: #38bdf8;
+    background: var(--cn-bar-bg);
+    color: var(--cn-accent);
     font-size: 13px;
     line-height: 1.4;
 }

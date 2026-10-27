@@ -132,25 +132,21 @@ function align(mode: AlignToCanvasMode): void {
 </template>
 
 <style scoped>
-/* 令牌与 panel-theme.css 同值：浮条自带主题（暗色检视面），不依赖宿主接线；
-   底色/描边/毛玻璃沿原型 FIG.2 .float 观感（工单 04 缩放浮条同款层次，hover
-   底 #16223a 亦出原型 .float .zb:hover，非面板令牌）。
+/* 用色消费 theme.css 共享令牌（editor-theme spec §2.1 铁律）：根类
+   .cn-align-float 在主题消费根类清单内，令牌随 html 主题信号明暗切换；条底归
+   --cn-bar-bg 半透明条底族（与标尺/查找条同值收口），hover 底走 --cn-hover、
+   投影统一 --cn-shadow-md；底色/描边/毛玻璃沿原型 FIG.2 .float 观感（工单 04
+   缩放浮条同款层次）。
    不含页面定位——挂载位置归宿主（工单 03）。 */
 .cn-align-float {
-    --cn-fg: #e6edf7;
-    --cn-muted: #7c8ca5;
-    --cn-field-line: #2a3a57;
-    --cn-accent: #38bdf8;
-    --cn-hover: #16223a;
-
     display: inline-flex;
     align-items: center;
     gap: 4px;
     padding: 5px 8px;
-    background: rgb(11 18 32 / 0.92);
+    background: var(--cn-bar-bg);
     border: 1px solid var(--cn-field-line);
     border-radius: 9px;
-    box-shadow: 0 10px 26px rgb(0 0 0 / 0.45);
+    box-shadow: var(--cn-shadow-md);
     backdrop-filter: blur(4px);
     color: var(--cn-fg);
     user-select: none;

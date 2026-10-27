@@ -463,15 +463,10 @@ function toggleAutowrap(): void {
 </template>
 
 <style scoped>
-/* 令牌与 ContextMenu 同值：自带主题（暗色检视面），不依赖宿主接线 */
+/* 用色消费 theme.css 共享令牌（editor-theme spec §2.1 铁律）：根类
+   .cn-edit-toolbar 在主题消费根类清单内，令牌随 html 主题信号明暗切换；工具条
+   级投影统一 --cn-shadow-sm */
 .cn-edit-toolbar {
-    --cn-bg-elevated: #101a2e;
-    --cn-fg: #e6edf7;
-    --cn-muted: #7c8ca5;
-    --cn-line: #1e2a40;
-    --cn-accent: #38bdf8;
-    --cn-accent-soft: rgba(56, 189, 248, 0.12);
-
     position: absolute;
     left: 0;
     top: 0;
@@ -483,7 +478,7 @@ function toggleAutowrap(): void {
     background: var(--cn-bg-elevated);
     border: 1px solid var(--cn-line);
     border-radius: 8px;
-    box-shadow: 0 8px 20px rgba(2, 6, 23, 0.45);
+    box-shadow: var(--cn-shadow-sm);
     /* 屏幕恒定尺寸（ADR 0019）：定位换算给屏幕像素（useTextEditing.toolbarStyle），
        自身不再有任何 scale 变换——zoom 只动锚点不动尺寸 */
     /* 透明点击面里的可交互件：工具条本体可点，不阻画布其余事件 */

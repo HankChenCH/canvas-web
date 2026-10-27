@@ -239,15 +239,14 @@ function finishDrag(e: PointerEvent, event: 'guide-drag-end' | 'guide-drag-cance
 </template>
 
 <style scoped>
-/* 暗色令牌与壳层/浮条同族（#0b1220 族，值同 playground --shell-* 与 AlignFloatBar
-   内联令牌）：标尺自带主题、不依赖宿主接线；厚度留 CSS 变量供宿主覆盖。
+/* 表面用色消费 theme.css 共享令牌（editor-theme spec §2.1 铁律：色令牌只在
+   theme.css 定义，随 html 主题信号明暗切换）：条底 = --cn-bar-bg（半透明条底族
+   同值收口）、发丝线 = --cn-line、刻度 = --cn-muted、读数 = --cn-fg-3（原
+   --cn-ruler-label 语义）。几何与字形留局部变量供宿主覆盖：厚度
+   --cn-ruler-thickness、等宽字族 --cn-ruler-font。
    组件自身不含页面定位——根铺满宿主给的挂载点，两条只锚定根内两缘（工单 04）。 */
 .cn-ruler {
     --cn-ruler-thickness: 20px;
-    --cn-ruler-bg: rgb(11 18 32 / 0.92);
-    --cn-ruler-line: #1e2a40;
-    --cn-ruler-tick: #7c8ca5;
-    --cn-ruler-label: #aab6c8;
     --cn-ruler-font: 'SF Mono', Menlo, Consolas, monospace;
 
     position: relative;
@@ -267,21 +266,21 @@ function finishDrag(e: PointerEvent, event: 'guide-drag-end' | 'guide-drag-cance
     pointer-events: auto;
     /* 触屏拖参考线不与页面手势争抢（同画布表面 touch-action 口径） */
     touch-action: none;
-    background: var(--cn-ruler-bg);
+    background: var(--cn-bar-bg);
 }
 
 /* 顶条：横贯上缘，刻度自下缘（内侧）竖直长出 */
 .cn-ruler__bar--top {
     right: 0;
     height: var(--cn-ruler-thickness);
-    border-bottom: 1px solid var(--cn-ruler-line);
+    border-bottom: 1px solid var(--cn-line);
 }
 
 /* 左条：纵贯左缘，刻度自右缘（内侧）水平长出 */
 .cn-ruler__bar--left {
     bottom: 0;
     width: var(--cn-ruler-thickness);
-    border-right: 1px solid var(--cn-ruler-line);
+    border-right: 1px solid var(--cn-line);
 }
 
 /* 角块：双条交汇处盖住叠底 */
@@ -292,14 +291,14 @@ function finishDrag(e: PointerEvent, event: 'guide-drag-end' | 'guide-drag-cance
     z-index: 1;
     width: var(--cn-ruler-thickness);
     height: var(--cn-ruler-thickness);
-    background: var(--cn-ruler-bg);
-    border-right: 1px solid var(--cn-ruler-line);
-    border-bottom: 1px solid var(--cn-ruler-line);
+    background: var(--cn-bar-bg);
+    border-right: 1px solid var(--cn-line);
+    border-bottom: 1px solid var(--cn-line);
 }
 
 .cn-ruler__tick {
     position: absolute;
-    background: var(--cn-ruler-tick);
+    background: var(--cn-muted);
 }
 
 .cn-ruler__bar--top .cn-ruler__tick {
@@ -330,7 +329,7 @@ function finishDrag(e: PointerEvent, event: 'guide-drag-end' | 'guide-drag-cance
     font-size: 9px;
     line-height: 1;
     white-space: nowrap;
-    color: var(--cn-ruler-label);
+    color: var(--cn-fg-3);
 }
 
 .cn-ruler__bar--top .cn-ruler__label {

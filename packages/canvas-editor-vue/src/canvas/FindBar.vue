@@ -236,15 +236,12 @@ defineExpose({
 </template>
 
 <style scoped>
-/* 令牌与 AlignFloatBar 同值：浮条自带主题（暗色检视面），不依赖宿主接线。
-   定位画布顶部居中（工单 03），z 序低于右键菜单（30）。 */
+/* 用色消费 theme.css 共享令牌（editor-theme spec §2.1 铁律）：根类 .cn-find-bar
+   在主题消费根类清单内，令牌随 html 主题信号明暗切换；条底与输入底同归
+   --cn-bar-bg 半透明条底族（spec §3「FindBar 输入 .9 一并归并」），投影统一
+   --cn-shadow-md（几何取一套）。定位画布顶部居中（工单 03），z 序低于右键菜单
+   （30）。 */
 .cn-find-bar {
-    --cn-fg: #e6edf7;
-    --cn-muted: #7c8ca5;
-    --cn-field-line: #2a3a57;
-    --cn-accent: #38bdf8;
-    --cn-hover: #16223a;
-
     position: absolute;
     top: 12px;
     left: 50%;
@@ -254,10 +251,10 @@ defineExpose({
     align-items: center;
     gap: 6px;
     padding: 6px 8px;
-    background: rgb(11 18 32 / 0.92);
+    background: var(--cn-bar-bg);
     border: 1px solid var(--cn-field-line);
     border-radius: 9px;
-    box-shadow: 0 10px 26px rgb(0 0 0 / 0.45);
+    box-shadow: var(--cn-shadow-md);
     backdrop-filter: blur(4px);
     color: var(--cn-fg);
     user-select: none;
@@ -268,7 +265,7 @@ defineExpose({
     padding: 4px 8px;
     border: 1px solid var(--cn-field-line);
     border-radius: 6px;
-    background: rgb(11 18 32 / 0.9);
+    background: var(--cn-bar-bg);
     color: var(--cn-fg);
     font-size: 13px;
     line-height: 1.4;
