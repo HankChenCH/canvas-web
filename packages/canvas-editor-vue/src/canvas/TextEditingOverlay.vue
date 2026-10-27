@@ -238,8 +238,9 @@ defineExpose({
 
 /* 诊断提示条（expression-syntax-diagnostics 工单 02；edit-overlay-toolbar 工单 03
    改挂工具条左端外侧）：与工具条同屏幕恒定系（定位换算在 toolbarTagStyle）。
-   色值取 --cn-danger/--cn-bg 同值——画布侧不在 .cn-props 令牌命名空间内，按值
-   取（补全浮层是 portal 根自重建命名空间，此处不 portal 无命名空间可用）。 */
+   用色消费 theme.css 共享令牌（editor-theme spec §2.1 铁律）：底/字走
+   --cn-bar-bg/--cn-danger（根类 .cn-text-overlay 在主题消费根类清单内），描边
+   取 danger 40% 透明（color-mix 派生随主题换 hue，夜间值同收口前）。 */
 .cn-text-overlay__diagnostic {
     position: absolute;
     top: 0;
@@ -249,10 +250,10 @@ defineExpose({
     text-overflow: ellipsis;
     white-space: nowrap;
     padding: 2px 6px;
-    border: 1px solid rgba(248, 113, 113, 0.4);
+    border: 1px solid color-mix(in srgb, var(--cn-danger) 40%, transparent);
     border-radius: 4px;
-    background: rgba(11, 18, 32, 0.88);
-    color: #f87171;
+    background: var(--cn-bar-bg);
+    color: var(--cn-danger);
     font-size: 12px;
     line-height: 16px;
     pointer-events: none; /* 被动浮示：不劫持画布指针（不可点选不拦截） */

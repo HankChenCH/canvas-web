@@ -438,22 +438,11 @@ defineExpose({ openAt, close })
 </template>
 
 <style scoped>
-/* 令牌与 panel-theme.css 同值：菜单自带主题（暗色检视面），不依赖宿主接线。
-   --cn-field-line 为轻表单点选器展示框描边补位（rows-path-picker 工单 04——
-   点选器 tailwind 色面经宿主主题映射 var(--cn-field-line)，菜单壳原令牌族缺
-   此项）；浮层本体自带 .cn-props 命名空间，不依赖本壳 */
+/* 用色消费 theme.css 共享令牌（editor-theme spec §2.1 铁律）：根类
+   .cn-context-menu 在主题消费根类清单内，令牌随 html 主题信号明暗切换；轻表单
+   点选器展示框描边（rows-path-picker 工单 04）同经根类取 --cn-field-line。
+   浮层本体自带 .cn-props 命名空间，不依赖本壳 */
 .cn-context-menu {
-    --cn-bg: #0b1220;
-    --cn-bg-elevated: #101a2e;
-    --cn-fg: #e6edf7;
-    --cn-muted: #7c8ca5;
-    --cn-line: #1e2a40;
-    --cn-field-line: #2a3a57;
-    --cn-field: rgba(148, 163, 184, 0.07);
-    --cn-accent: #38bdf8;
-    --cn-accent-soft: rgba(56, 189, 248, 0.12);
-    --cn-danger: #f87171;
-
     position: absolute;
     z-index: 30;
     min-width: 120px;
@@ -464,7 +453,7 @@ defineExpose({ openAt, close })
     background: var(--cn-bg-elevated);
     border: 1px solid var(--cn-line);
     border-radius: 10px;
-    box-shadow: 0 12px 32px rgba(2, 6, 23, 0.55);
+    box-shadow: var(--cn-shadow-md);
 }
 
 .cn-context-menu__item {
@@ -490,7 +479,7 @@ defineExpose({ openAt, close })
 }
 
 .cn-context-menu__item--delete:hover:not(:disabled) {
-    background: rgba(248, 113, 113, 0.12);
+    background: var(--cn-danger-soft);
     color: var(--cn-danger);
 }
 

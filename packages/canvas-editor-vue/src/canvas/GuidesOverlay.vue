@@ -335,18 +335,14 @@ function onGuidePointerCancel(e: PointerEvent): void {
 </template>
 
 <style scoped>
-/* 暗色令牌与壳层/标尺同族（Ruler 同款 #0b1220 族思路）：参考线层自带主题、
-   不依赖宿主接线。参考线与吸附线的视觉区分（根 CONTEXT.md 两概念）：参考线
-   实线天青、驻留；吸附线虚线玫红、瞬时回显。命中条厚度与辉光强度留 CSS 变量
-   供宿主覆盖。圆角与 .workbench .surface / .ruler-shell 同族（12px）：满幅
-   线体裁在壳圆角内，不顶出画布卡片收边。 */
+/* 线色/辉光消费 theme.css 共享令牌（editor-theme spec §2.1 铁律）：根类
+   .cn-guides 在主题消费根类清单内，--cn-guide-*/--cn-snap-* 色令牌已迁入
+   theme.css，随 html 主题信号明暗切换。参考线与吸附线的视觉区分（根
+   CONTEXT.md 两概念）：参考线实线、驻留；吸附线虚线、瞬时回显（色相对比由
+   令牌族保证）。命中条厚度/虚线齿距/收边圆角等几何留 CSS 变量供宿主覆盖。
+   圆角与 .workbench .surface / .ruler-shell 同族（12px）：满幅线体裁在壳圆角
+   内，不顶出画布卡片收边。 */
 .cn-guides {
-    --cn-guide-line: #38bdf8;
-    --cn-guide-glow: rgba(56, 189, 248, 0.4);
-    --cn-guide-will-delete: #f87171;
-    --cn-guide-will-delete-glow: rgba(248, 113, 113, 0.45);
-    --cn-snap-line: #fb7185;
-    --cn-snap-glow: rgba(251, 113, 133, 0.45);
     --cn-snap-dash: 4px;
     --cn-guide-hit: 9px;
     /* 满幅线体的壳内收边圆角：缺省与 Playground 壳层同族（12px），壳圆角不同的
