@@ -2,6 +2,11 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## 2.2.0 - 2026-10-27
+
+- 版本随 v2.2.0 lockstep（editor-theme-light-dark 特性仅在 `@hankchen/canvas-editor-vue`，本包零改动）
+
+
 ## 2.1.0 - 2026-10-21
 
 - 核心契约跟随（ADR 0026）：`@hankchen/canvas` 升 `^2.1.0`（ImageLayer 增 `clip` 裁剪形状透传），会话/内核 API 零变化——内核零 clip 感知代码，领域值经 updateSpec 直写文档

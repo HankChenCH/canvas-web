@@ -2,6 +2,11 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## 2.2.0 - 2026-10-27
+
+- 版本随 v2.2.0 lockstep（editor-theme-light-dark 特性仅在 `@hankchen/canvas-editor-vue`，本包零改动）
+
+
 ## 2.1.0 - 2026-10-21
 
 - 形状能力后端（ADR 0026，可选能力口加法扩展）：新增 `drawEllipse(x, y, width, height, fillColor, stroke)` 椭圆绘制原语——内切椭圆填充与描边一体（`ctx.ellipse` 路径），fill/stroke 一体表达圆形框的背景与圆周环
