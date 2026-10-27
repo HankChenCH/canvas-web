@@ -28,8 +28,8 @@
  * TemplateTableForm 内聚（本组件零点选态）——恒根起点剪枝候选、确认禁用至选中
  * 数组；模板表项以数据源声明为门（D1）：未绑 schema 整项置灰 + title「先绑定
  * 数据源」，判定读 useDataSourceSchema 桥（store.ui.dataSourceSchema）。
- * 视觉沿用 .cn-props 主题命名空间（与属性面板同一套设计令牌）；行卡片化 +
- * 根层拖拽把手见 panel-theme.css 的 cn-layers 区块（工单 08）。
+ * 视觉沿用 .cn-props 主题命名空间（与属性面板同一套设计令牌，单源 theme.css）；
+ * 行卡片化 + 根层拖拽把手见 theme.css 的 cn-layers 区块（工单 08）。
  *
  * 拖放约定（工单 08 起发起区域分域）：根层拖拽仅从行内六点把手发起（整行
  * draggable 摘除，规避与行选中/双击重命名手势冲突）；行/格保持整行拖拽不加
@@ -460,7 +460,7 @@ watch(panel.renaming, async (path) => {
 </script>
 
 <template>
-    <aside class="cn-props flex w-[232px] shrink-0 flex-col overflow-y-auto rounded-xl border border-cn-line bg-cn-bg text-cn-fg shadow-[0_16px_40px_-12px_rgba(2,6,23,0.55)]">
+    <aside class="cn-props flex w-[232px] shrink-0 flex-col overflow-y-auto rounded-xl border border-cn-line bg-cn-bg text-cn-fg shadow-(--cn-shadow-md)">
         <header class="sticky top-0 z-10 flex items-center justify-between border-b border-cn-line bg-cn-bg-elevated/95 px-3.5 py-2.5">
             <!-- 无 backdrop-blur：下拉底座弹层 fixed 定位的前提是祖先无 filter/
                  transform/backdrop-filter（劫持包含块 → 弹层错位 + 被 aside 裁切，
@@ -544,7 +544,7 @@ watch(panel.renaming, async (path) => {
                     <PanelIcon :icon="GripVertical" :size="12" :stroke-width="2.5" />
                 </span>
                 <!-- 表达式前置（工单 02）：只读内核投影字段（零计算），拖柄与标签
-                     之间行内显示；空串不渲染任何元素，样式走 panel-theme 令牌 -->
+                     之间行内显示；空串不渲染任何元素，样式走 theme.css 令牌 -->
                 <span
                     v-if="row.node.expressionPrefix !== ''"
                     class="cn-layers__prefix"

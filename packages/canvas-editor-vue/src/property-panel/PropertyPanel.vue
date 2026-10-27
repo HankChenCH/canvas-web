@@ -12,8 +12,9 @@
  *   pairDisplays（自适应禁用态替代显示），子字段提交经 sub-commit 回归
  *   同一条 commit 管线。
  *
- * 视觉：暗色「精密仪器」检视面板——设计令牌见 panel-theme.css（作用域在
- * .cn-props 根，自带主题不渗漏宿主）；工具类由宿主 tailwind 经 @source 编译。
+ * 视觉：暗色「精密仪器」检视面板——设计令牌单源见 theme.css（作用域在
+ * .cn-props 根，夜间缺省 + 日间覆盖随 html 主题信号切换，panel-theme.css 为
+ * 其兼容 shim）；工具类由宿主 tailwind 经 @source 编译。
  */
 import { computed, provide } from 'vue'
 
@@ -181,7 +182,7 @@ function toggleAnchorExpanded(): void {
 </script>
 
 <template>
-    <aside class="cn-props flex w-[288px] shrink-0 flex-col overflow-y-auto rounded-xl border border-cn-line bg-cn-bg text-cn-fg shadow-[0_16px_40px_-12px_rgba(2,6,23,0.55)]">
+    <aside class="cn-props flex w-[288px] shrink-0 flex-col overflow-y-auto rounded-xl border border-cn-line bg-cn-bg text-cn-fg shadow-(--cn-shadow-md)">
         <!-- 面板头：目标徽标（type 名）+ 标题 -->
         <header class="sticky top-0 z-10 border-b border-cn-line bg-cn-bg-elevated/95 px-3.5 py-2.5 backdrop-blur-sm">
             <div class="flex items-center gap-2">
