@@ -13,15 +13,16 @@
  * 绘制细节：begin 后 ctx 变换即 dpr×zoom（applyViewportTransform），线宽取
  * 1/scale = 1 物理像素；线位逐线按设备像素取整（消半像素发虚）；步长随 zoom
  * 自适应倍增——相邻线距的屏幕像素低于阈值就翻倍，5%–800% 缩放全程可辨。
- * 开关态由宿主持有直改（原型会话态，不入内核 store ui 分支），变更后宿主调
- * editor.invalidate('content') 触发内容层重绘。
+ * 开关与线色由宿主持有直改（原型会话态，不入内核 store ui 分支）——editor-theme
+ * 工票 05 起线色（color 可写字段，仿 enabled 先例）随壳层日/夜主题切色，变更后
+ * 宿主调 editor.invalidate('content') 触发内容层重绘。
  */
 import { Canvas2DBackend } from '@hankchen/canvas-browser-renderer'
 
 export interface GridBackdropOptions {
     /** 基础步长（场景像素）；屏幕线距不足时倍增 */
     step?: number
-    /** 线色（低透明度：暗桌面上呈淡青纹理，不抢纸面内容） */
+    /** 初始线色（低透明度：暗桌面上呈淡青纹理，不抢纸面内容）；运行时切色走实例 color 字段 */
     color?: string
     /** 相邻线距的最小设备像素（低于即步长翻倍） */
     minStepPx?: number
@@ -37,6 +38,13 @@ export class GridBackdropBackend extends Canvas2DBackend {
     /** 宿主开关直改；变更后须 editor.invalidate('content') 才生效 */
     enabled = true
 
+    /**
+     * 线色（editor-theme 工票 05）：运行时宿主直改的可写字段（仿 enabled 先例；
+     * 构造期经 options.color 播种）——主题切色：暗桌 'rgba(56,189,248,0.12)' /
+     * 亮桌 'rgba(15,23,42,0.08)'。变更后须 editor.invalidate('content') 才生效。
+     */
+    color: string = DEFAULTS.color
+
     private readonly gridCtx: CanvasRenderingContext2D
     private readonly options: Required<GridBackdropOptions>
 
@@ -45,12 +53,14 @@ export class GridBackdropBackend extends Canvas2DBackend {
         // 基类把 ctx 持有为 private，网格绘制复用宿主手中的同一上下文实例
         this.gridCtx = ctx
         this.options = { ...DEFAULTS, ...options }
+        this.color = this.options.color
     }
 
     begin(width: number, height: number): void {
         super.begin(width, height) // 清屏 + 施加视口变换（内容层每帧入口）
         if (!this.enabled || width <= 0 || height <= 0) return
-        paintGridBackdrop(this.gridCtx, width, height, this.options)
+        // 线色以可写字段为准（宿主主题切换直改），步长/阈值仍取构造期 options
+        paintGridBackdrop(this.gridCtx, width, height, { ...this.options, color: this.color })
     }
 }
 
