@@ -24,7 +24,7 @@ import { CanvasSurface } from '@hankchen/canvas-editor-vue/canvas'
 
 ## 主题（日间/夜间）
 
-编辑器外观（面板/状态栏/标尺/浮层/画笔/画布桌面以外的一切 chrome）支持日间/夜间两套主题；**文档纸面不参与主题**。颜色令牌单源在 [`./theme.css`](./src/theme.css)：夜间为缺省（零配置即夜间），日间由 html 上的信号整组驱动。术语与架构决策见仓库 `GLOSSARY.md` 与 `docs/adr/0001-editor-theme-tokens-and-signal.md`。
+编辑器外观（面板/状态栏/标尺/浮层/画笔/画布桌面等 chrome，术语见仓库 `GLOSSARY.md`）支持日间/夜间两套主题；**文档纸面不参与主题**。颜色令牌单源在 [`./theme.css`](./src/theme.css)：夜间为缺省（零配置即夜间），日间由 html 上的信号整组驱动。术语与架构决策见仓库 `GLOSSARY.md` 与 `docs/adr/0001-editor-theme-tokens-and-signal.md`。
 
 ### 接入（三步）
 

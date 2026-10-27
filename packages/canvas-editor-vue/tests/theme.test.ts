@@ -152,6 +152,11 @@ describe('theme.css 结构断言（spec §2/§3/§9）', () => {
         expect(light!.selector).toContain("[data-cn-theme='light']")
         expect(light!.selector).toContain("[data-theme='light']")
         expect(light!.selector).toContain('html.light')
+        // 信号前缀 :where() 零化特异性（评审整改）：日间块与夜间块同为 (0,1,0)，
+        // 宿主换肤逃生口（根类上覆盖 --cn-*）两态对称可用（spec §8.3）。
+        // selector 含朴素分块带入的块前注释，先剥掉再匹配
+        const lightSelector = light!.selector.replace(/\/\*[\s\S]*?\*\//g, '').trim()
+        expect(lightSelector).toMatch(/^:where\(/)
         for (const root of ROOT_CLASSES) {
             expect(light!.selector, `日间块选择器应含根类 ${root}`).toContain(root)
         }

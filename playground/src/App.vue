@@ -57,13 +57,13 @@
 // 表达式」条目（标记层双击 = 编辑表达式并保持标记、pill 切写路径、删空片段或切静态
 // 解标、Esc 分流、zoom 锚点折算、一步历史）；「表格模板态与表达式标记」条目的双击
 // 语义同步修订（画布侧改就地编辑保持标记，面板侧字面写解标不变）。
-// editor-theme 工票 05：壳层日/夜主题——VueUse useDark 犬food（attribute 模式写
+// editor-theme 工票 05：壳层日/夜主题——VueUse useDark 犬粮（attribute 模式写
 // data-cn-theme 到 html，initialValue 'dark' 固定缺省夜间、不跟随系统偏好，
 // localStorage 记忆自带）+ 工具栏日/夜切换钮 + 壳层 --shell-* 令牌单源上移 html 并
 // 加日间整组覆盖（纸面 demo 内容不参与主题）+ 网格底纹线色随主题（gridBackdrop
 // color 可写字段 + invalidate('content') 重绘）。
 import { computed, nextTick, onBeforeUnmount, provide, ref, shallowRef, watch } from 'vue'
-// 日/夜主题（editor-theme 工票 05）：VueUse useDark 犬food——ADR 0001 推荐配置，
+// 日/夜主题（editor-theme 工票 05）：VueUse useDark 犬粮——ADR 0001 推荐配置，
 // attribute 模式把主题信号写到 html 一处（spec §7/§8）
 import { useDark, useToggle } from '@vueuse/core'
 
@@ -809,7 +809,7 @@ function onKeydown(event: KeyboardEvent): void {
 }
 window.addEventListener('keydown', onKeydown)
 
-// ---- 日/夜主题（editor-theme 工票 05，spec §7/§8 + ADR 0001）：VueUse useDark 犬food ----
+// ---- 日/夜主题（editor-theme 工票 05，spec §7/§8 + ADR 0001）：VueUse useDark 犬粮 ----
 
 /** 网格线色两态值：暗桌淡青（现网值不动）/ 亮桌淡墨（spec §7 提案）。只作用于
  *  纸面之外的桌面（evenodd 挖掉纸面矩形），纸面 demo 内容不参与主题 */
@@ -988,7 +988,7 @@ onBeforeUnmount(() => {
                  桌面（evenodd 挖掉纸面矩形）——桌面有纹理、纸面保持平滑，边界恒
                  清晰；导出走 fork 后端不带网格。独立开关不入视图下拉（spec Q1）。
                  其右日/夜主题钮（editor-theme 工票 05）：useDark 布尔往返，信号
-                 写 html data-cn-theme（VueUse 犬food，spec §7）；图标复用壳层
+                 写 html data-cn-theme（VueUse 犬粮，spec §7）；图标复用壳层
                  字符方案（？/✕/● 同门），钮面示目标侧。 -->
             <button
                 type="button"

@@ -10,7 +10,8 @@
  *   ① 夜间（缺省）调色板块——定义在全部主题消费根类上（清单见 spec §2.3）；
  *      无任何主题信号时走这里，观感 = 收口前的现网值（零回归）。
  *   ② 日间整组覆盖——三种信号写法等价（[data-cn-theme='light'] ∥
- *      [data-theme='light'] ∥ html class light）；信号只设 html 一处
+ *      [data-theme='light'] ∥ html class light），信号前缀 :where() 降权
+ *      保宿主逃生口两态对称（见块前注）；信号只设 html 一处
  *      （body 级 portal 浮层经 html 祖先链继承），多处设置属未定义行为。
  *   ③ 结构性规则——select 箭头双态 data-URI + 原 panel-theme.css 的面板
  *      控件族规则整体迁入（本文件内容即其超集；panel-theme.css 已退化为
@@ -121,7 +122,10 @@
 /* ② 日间整组覆盖——spec §3 令牌表「日间」列；信号只设 html 一处         */
 /* ------------------------------------------------------------------ */
 
-:is([data-cn-theme='light'], [data-theme='light'], html.light)
+/* 信号前缀用 :where() 零化特异性：本块与 ① 夜间块同为 (0,1,0)，靠源序后者胜；
+   宿主换肤逃生口（根类上覆盖 --cn-* 单令牌，同特异性后加载）两态都在主题之上
+   （spec §8.3）——若用 :is() 前缀，日间块 (0,2,0) 会压过宿主覆盖，级联不对称 */
+:where([data-cn-theme='light'], [data-theme='light'], html.light)
     :is(
     .cn-props,
     .cn-statusbar,

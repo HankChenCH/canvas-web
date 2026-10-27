@@ -24,7 +24,7 @@
  * single-ref 工单 05/06：资源内容字段的作者面 = 纯菜单点选，垂直翻转/钳制定位
  * 两浮层与选择器菜单共用）与悬停提示 Tooltip（edit-toolbar-declutter 工票 01：
  * 包裹任意控件的延迟气泡——悬停/键盘聚焦出泡、离开/失焦/按下即隐，pointerdown
- * 隐藏挂 wrapper capture 段，aria-describedby 接线与暗色令牌自带；零消费方
+ * 隐藏挂 wrapper capture 段，aria-describedby 接线自带、主题令牌归 theme.css 单源（editor-theme 工票 03）；零消费方
  * 交付，消费在工票 03/04）与编辑器主题状态 useCnTheme（editor-theme-light-dark
  * 工票 04：日间/夜间单例 ref + set/toggle，写出即同步 data-cn-theme 信号到目标
  * 元素，可选 storageKey 持久化——宿主与包内组件共享主题状态，spec §5）。
