@@ -416,6 +416,15 @@ export class EditorSession {
 
     // ---- 组装与呈现参数（DOM 侧由绑定层调用） ----
 
+    /**
+     * 已提交事务序数（spec 0001 实现决策 3）：store 的单调 docVersion 计数器
+     * 透出——智能体工具面把只读工具结果挂当前版本、写工具要求调用方携带版本，
+     * 过期即拒（stale state rejection）。内核唯一增量，转发只读口。
+     */
+    get docVersion(): number {
+        return this.store.docVersion
+    }
+
     attachContentBackend(backend: RenderBackend): void {
         this.backend = backend
         this.invalidate('content')

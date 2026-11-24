@@ -353,6 +353,13 @@ function nextTextStyleEqual(a: NextTextStyle, b: NextTextStyle): boolean {
 
 export class EditorStore {
     private docValue: Canvas | null = null
+    /**
+     * docVersion 单调计数器（spec 0001 实现决策 3，内核唯一增量）：任何已提交
+     * 事务（transact 有 patch、undo/redo 回放）与 openDocument 替换文档各 +1，
+     * 会话级单调、永不重置——智能体侧 stale state rejection 的新鲜度凭据，旧
+     * 文档的版本号不得在新文档上复用。只计数，不参与历史与通知语义。
+     */
+    private docVersionValue = 0
     private uiValue: EditorUi = {
         viewport: { x: 0, y: 0, zoom: 1 },
         selection: null,
@@ -403,11 +410,17 @@ export class EditorStore {
         return this.redoSteps.length > 0
     }
 
+    /** 已提交事务序数（单调递增，见 docVersionValue 注记）；只读凭据，宿主经门面取用 */
+    get docVersion(): number {
+        return this.docVersionValue
+    }
+
     /** 打开/替换文档：ui 选择/编辑/重命名会话与双向历史一并重置（新文档不继承旧路径/旧事务）；
      *  参考线/锁定集合/查找会话/建层武装与画拉会话随当次会话清空（对位轴/文档内容防护/
      *  查询词/待命层型不跨文档），标尺显隐/锚点折叠/新层样式作为偏好保留 */
     openDocument(canvas: Canvas): void {
         this.docValue = canvas
+        this.docVersionValue += 1
         this.undoSteps = []
         this.redoSteps = []
         this.uiValue = {
@@ -441,6 +454,7 @@ export class EditorStore {
         const [next, patches, inversePatches] = produceWithPatches(this.docValue, recipe)
         if (patches.length === 0) return
 
+        this.docVersionValue += 1
         this.redoSteps = []
         const mergeKey = options.mergeKey ?? null
         const last = this.undoSteps[this.undoSteps.length - 1]
@@ -464,6 +478,7 @@ export class EditorStore {
     undo(): void {
         const step = this.undoSteps[this.undoSteps.length - 1]
         if (step === undefined || this.docValue === null) return
+        this.docVersionValue += 1
         this.undoSteps.pop()
         this.redoSteps.push(step)
         // 历史导航打断 mergeKey 会话：新顶步闭合，同键后续事务另起一步
@@ -477,6 +492,7 @@ export class EditorStore {
     redo(): void {
         const step = this.redoSteps[this.redoSteps.length - 1]
         if (step === undefined || this.docValue === null) return
+        this.docVersionValue += 1
         this.redoSteps.pop()
         this.undoSteps.push(step)
         this.closeMerge()
